@@ -152,6 +152,8 @@ impl Playback {
             consumer,
             Arc::clone(&source_done),
             Arc::new(crate::audio::tap::Tap::new(2)),
+            // Already prefilled above, so it can start pulling immediately.
+            false,
         )?;
 
         Ok(Self {

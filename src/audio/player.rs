@@ -464,7 +464,12 @@ fn run(
                 let cap = crate::audio::ring::capacity_samples(s.sample_rate, s.channels);
                 if s.producer.slots() <= cap / 2 || s.opened_at.elapsed() >= PRIME_TIMEOUT {
                     s.primed = true;
-                    s.output.resume();
+                    // Priming decides *when* it may start, not *whether* it
+                    // should. Pausing during a track change and having the
+                    // next track start itself anyway is a bug worth naming.
+                    if !state.paused.load(Ordering::Relaxed) {
+                        s.output.resume();
+                    }
                 }
             }
         }
@@ -632,13 +637,17 @@ fn open_track(
             consumer,
             Arc::clone(&source_done),
             Arc::clone(tap),
+            // Held silent until the ring has something in it. Asked for at
+            // open rather than by pausing straight afterwards: the callback
+            // starts running inside `Output::open`, so a pause on the line
+            // after it is a race the first callbacks can win, against an empty
+            // ring.
+            true,
         ) {
             Ok(output) => {
                 state
                     .bit_perfect
                     .store(output.rate_mode.is_bit_perfect(), Ordering::Relaxed);
-                // Held silent until there is something to play.
-                output.pause();
                 *stream = Some(Stream {
                     output,
                     producer,

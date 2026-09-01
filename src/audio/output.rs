@@ -47,11 +47,11 @@ pub struct OutputState {
 }
 
 impl OutputState {
-    fn new() -> Self {
+    fn new(paused: bool) -> Self {
         Self {
             frames_out: AtomicU64::new(0),
             underruns: AtomicU64::new(0),
-            paused: AtomicBool::new(false),
+            paused: AtomicBool::new(paused),
             finished: AtomicBool::new(false),
         }
     }
@@ -71,12 +71,25 @@ impl Output {
     ///
     /// `source_done` tells the callback that no more audio is coming, so that an
     /// empty ring means end-of-track rather than an underrun.
+    ///
+    /// `start_paused` decides who is responsible for the ring being non-empty
+    /// when the device first pulls, and there is no safe default: the callback
+    /// begins running the moment the stream is built, so a caller that has not
+    /// already filled the ring must open paused or the first callbacks read an
+    /// empty ring. That is a real click at the start of the track and a burst
+    /// of counted underruns for a fault nobody committed.
+    ///
+    /// Two callers, two answers. `staramp play` prefills and opens running;
+    /// the player opens paused and resumes once its ring is half full, because
+    /// it cannot prefill -- its decoder is on another thread that has not been
+    /// asked for anything yet.
     pub fn open(
         sample_rate: u32,
         channels: u16,
         mut consumer: Consumer<f32>,
         source_done: Arc<AtomicBool>,
         tap: Arc<Tap>,
+        start_paused: bool,
     ) -> Result<Self> {
         let host = cpal::default_host();
         let device = host
@@ -92,7 +105,7 @@ impl Output {
             buffer_size: cpal::BufferSize::Default,
         };
 
-        let state = Arc::new(OutputState::new());
+        let state = Arc::new(OutputState::new(start_paused));
         let cb_state = Arc::clone(&state);
 
         let stream = device

@@ -21,7 +21,7 @@ jobs:
     container: archlinux:latest
     steps:
       - run: pacman -Syu --noconfirm base-devel git jq rust clang pkgconf alsa-lib ffmpeg dbus
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Resolve the version
         id: v
         run: echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> "$GITHUB_OUTPUT"

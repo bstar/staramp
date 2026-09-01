@@ -143,16 +143,7 @@
         buildTools = with pkgs; [ pkg-config clang ];
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
 
-        mkStaramp = { pkgsFor ? pkgs, headless ? false }:
-          let
-            # Headless ffmpeg for release artifacts: a decode-only music player
-            # has no use for the GUI and sound-server pieces. Measured at 300.7
-            # MiB against 303.8 MiB on current nixpkgs, so the saving is about
-            # 1% rather than the large one this used to claim -- it is kept for
-            # the smaller attack surface, not the size.
-            ffmpegFor =
-              if headless then pkgsFor.ffmpeg-headless else pkgsFor.ffmpeg;
-          in
+        mkStaramp = { pkgsFor ? pkgs }:
           pkgsFor.rustPlatform.buildRustPackage {
             pname = "staramp";
             version = cargoToml.package.version;
@@ -160,13 +151,13 @@
             cargoLock.lockFile = ./Cargo.lock;
 
             nativeBuildInputs = with pkgsFor; [ pkg-config clang ];
-            buildInputs = [ pkgsFor.alsa-lib ffmpegFor pkgsFor.dbus ];
+            buildInputs = with pkgsFor; [ alsa-lib ffmpeg dbus ];
 
             # ffmpeg-next runs bindgen, which needs libclang and the headers of
             # the libraries it is binding.
             LIBCLANG_PATH = libclangPath;
             BINDGEN_EXTRA_CLANG_ARGS =
-              "-I${ffmpegFor.dev}/include -I${pkgsFor.alsa-lib.dev}/include";
+              "-I${pkgsFor.ffmpeg.dev}/include -I${pkgsFor.alsa-lib.dev}/include";
 
             postInstall = ''
               install -Dm644 packaging/staramp.desktop \
@@ -190,19 +181,25 @@
         packages.default = mkStaramp { };
         packages.staramp = mkStaramp { };
 
-        # Smaller closure for release tarballs. A fully static musl build was
-        # attempted and abandoned: pkgsStatic cannot evaluate ffmpeg's
-        # transitive dependencies (libpulseaudio via libopenmpt/mpg123, then
-        # elfutils), and chasing that down is a project of its own for an
-        # artifact nobody asked for. Distro packages and the portable tarball
-        # cover the same ground.
-        packages.headless = mkStaramp { headless = true; };
+        # There was a `headless` package here, built against ffmpeg-headless
+        # for release tarballs. It is gone. Its stated reason was a much
+        # smaller closure, and when that was finally measured it was 300.7 MiB
+        # against 303.8 MiB -- about 1%. It also had no consumer left: the
+        # portable tarball is built in a Debian container for its old glibc,
+        # not from nix. What it did have was a cost, a second full compile of
+        # the crate in CI, which is most of why a release sat unpublished for
+        # forty minutes.
+        #
+        # (A fully static musl build was attempted and abandoned separately:
+        # pkgsStatic cannot evaluate ffmpeg's transitive dependencies,
+        # libpulseaudio via libopenmpt/mpg123 and then elfutils. The AppImage
+        # covers that ground properly.)
 
-        # `nix flake check` used to check nothing of its own. The packages are
+        # `nix flake check` used to check nothing of its own. The package is
         # here because buildRustPackage runs `cargo test` as part of building
-        # them, so listing them makes one command cover the test suite too.
+        # it, so one command covers the test suite too.
         checks = {
-          inherit (self.packages.${system}) default headless;
+          inherit (self.packages.${system}) default;
 
           fmt = pkgs.runCommand "cargo-fmt"
             { nativeBuildInputs = [ pkgs.rustfmt ]; }

@@ -146,7 +146,11 @@ jobs:
       - run: chmod +x staramp-*.AppImage && ./staramp-*.AppImage --version
 
   publish:
-    needs: [ci, nix, debian, arch, source, tarball, verify-appimage, verify-appimage-fuse]
+    # Deliberately not `nix`. It builds no release artifact, so gating the
+    # upload on it only means the assets sit unpublished behind the slowest
+    # job in the graph. It still runs, and still turns the badge red if it
+    # breaks; it just does not hold the release hostage.
+    needs: [ci, debian, arch, source, tarball, verify-appimage, verify-appimage-fuse]
     runs-on: ubuntu-latest
     permissions:
       contents: write

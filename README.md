@@ -1,14 +1,14 @@
 # star/amp
 
-A terminal player for a more civilized age.
-
-No streaming. No radio stations. No accounts. WinAmp inspired. It plays the files on your disk,
-and it plays _all_ of them.
-
 [![nix](https://github.com/bstar/staramp/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/nix.yml)
 [![debian](https://github.com/bstar/staramp/actions/workflows/debian.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/debian.yml)
 [![arch](https://github.com/bstar/staramp/actions/workflows/arch.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/arch.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A terminal player for a more civilized age.
+
+No streaming. No radio stations. No accounts. WinAmp inspired. It plays the files on your disk,
+and it plays _all_ of them.
 
 [![star/amp playing a WavPack cue album, with the analyzer, album art and playlist](docs/screenshot.png)](docs/screenshot.png)
 

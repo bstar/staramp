@@ -420,8 +420,10 @@ impl<'a> Widget for AlbumView<'a> {
     }
 }
 
-fn file_name(p: &std::path::Path) -> Option<&str> {
-    p.file_name().and_then(|n| n.to_str())
+/// The last component of a path, which here is as likely to be a
+/// library-relative name as an absolute one.
+fn file_name(p: &str) -> Option<&str> {
+    p.rsplit('/').next().filter(|n| !n.is_empty())
 }
 
 /// Upper half block: two rows of pixels in one cell, the top from the

@@ -5,18 +5,18 @@
 //! by probing — see the note on WavPack there for why probing is not safe.
 
 use std::fs::File;
-use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{Decoder as SymDecoder, DecoderOptions};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
-use symphonia::core::io::MediaSourceStream;
+use symphonia::core::io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
 use super::{Decoder, StreamSpec};
+use crate::vfs::{Media, RemoteSource};
 
 pub struct SymphoniaDecoder {
     format: Box<dyn FormatReader>,
@@ -48,13 +48,44 @@ pub struct SymphoniaDecoder {
 }
 
 impl SymphoniaDecoder {
-    pub fn open(path: &Path) -> Result<Self> {
-        let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-        let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
-        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    /// Open `media`, named `name` for the hint and for every error message.
+    pub fn open(media: Media, name: &str) -> Result<Self> {
+        let mut remote = false;
+        let (source, file_size): (Box<dyn MediaSource>, u64) = match media {
+            Media::Local(ref p) => {
+                let f = File::open(p).with_context(|| format!("opening {name}"))?;
+                let n = f.metadata().map(|m| m.len()).unwrap_or(0);
+                (Box::new(f), n)
+            }
+            Media::Stream { reader, len } => {
+                remote = true;
+                (Box::new(RemoteSource { inner: reader, len }), len)
+            }
+        };
+
+        // The 64 KiB default is sized for a disk. Over a link with any
+        // latency it is thin, and the layer underneath is buffering seconds
+        // rather than kilobytes anyway, so ask for more per refill.
+        let opts = if remote {
+            MediaSourceStreamOptions {
+                buffer_len: 1 << 20,
+            }
+        } else {
+            MediaSourceStreamOptions::default()
+        };
+        let mss = MediaSourceStream::new(source, opts);
 
         let mut hint = Hint::new();
-        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        // `Path::extension` semantics, as the backend choice uses: a leading dot
+        // is a hidden file rather than an extension. The hint only narrows the
+        // probe, so a missing one costs a wider search and nothing else.
+        if let Some(ext) = name
+            .rsplit('/')
+            .next()
+            .unwrap_or(name)
+            .rsplit_once('.')
+            .and_then(|(stem, e)| (!stem.is_empty()).then_some(e))
+        {
             hint.with_extension(ext);
         }
 
@@ -67,12 +98,12 @@ impl SymphoniaDecoder {
 
         let probed = symphonia::default::get_probe()
             .format(&hint, mss, &fmt_opts, &MetadataOptions::default())
-            .with_context(|| format!("probing {}", path.display()))?;
+            .with_context(|| format!("probing {name}"))?;
         let format = probed.format;
 
         let track = format
             .default_track()
-            .ok_or_else(|| anyhow!("{}: no default track", path.display()))?;
+            .ok_or_else(|| anyhow!("{name}: no default track"))?;
         let track_id = track.id;
         let params = &track.codec_params;
 
@@ -83,7 +114,7 @@ impl SymphoniaDecoder {
 
         let decoder = symphonia::default::get_codecs()
             .make(params, &DecoderOptions::default())
-            .with_context(|| format!("no decoder for {}", path.display()))?;
+            .with_context(|| format!("no decoder for {name}"))?;
 
         // AAC in MP4 routinely omits both of these at the container level; they
         // only become known once a packet has been decoded.
@@ -114,14 +145,10 @@ impl SymphoniaDecoder {
         if !this.spec_known {
             // Decode one packet to learn the format. The audio is kept, not
             // discarded — `fill` leaves it buffered for the first `read`.
-            this.fill().with_context(|| {
-                format!("{}: priming to discover stream format", path.display())
-            })?;
+            this.fill()
+                .with_context(|| format!("{name}: priming to discover stream format"))?;
             if !this.spec_known {
-                return Err(anyhow!(
-                    "{}: no audio decoded, cannot determine format",
-                    path.display()
-                ));
+                return Err(anyhow!("{name}: no audio decoded, cannot determine format"));
             }
         }
 

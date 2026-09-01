@@ -32,6 +32,25 @@ pub struct Config {
     #[serde(rename = "replaygain")]
     pub rg: ReplayGainCfg,
     pub session: SessionShare,
+    pub remote: Remote,
+}
+
+/// A library on another machine, reached over SSH.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Remote {
+    /// An ssh destination: a host, a `user@host`, or an alias out of
+    /// `~/.ssh/config`. Whatever `ssh` itself would accept, because it is
+    /// `ssh` that is handed it.
+    pub host: Option<String>,
+    /// `library_root` as the *far* machine sees it. `~` is expanded there.
+    pub root: Option<String>,
+    /// How much of a track to keep buffered ahead of the decoder.
+    ///
+    /// This is what a dropped link is ridden out on, so it is measured in
+    /// seconds of music rather than bytes of file: sixteen mebibytes is about
+    /// forty-five seconds of a normal rip.
+    pub readahead_mb: Option<u64>,
 }
 
 /// How the queue is ordered.
@@ -226,6 +245,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             library_root: None,
+            remote: Remote::default(),
             playlist_dir: None,
             theme: "winamp-classic".into(),
             volume: 1.0,
@@ -412,6 +432,18 @@ mode = "off"
 # Added on top, in dB, if ReplayGain leaves things quieter than you like.
 preamp = 0.0
 prevent_clipping = true
+
+# A library on another machine, played over SSH. No server to install and
+# nothing to leave running there: staramp opens one ssh connection and reads
+# the files through it, the way it would read a disk.
+#
+# The far machine needs staramp installed and scanned, so that there is an
+# index to copy; `ssh <host>` must already work without a password prompt,
+# because there is nowhere to show one.
+#
+# [remote]
+# host = "music-server"
+# root = "~/Music"
 "#;
 
 impl Config {

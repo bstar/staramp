@@ -52,8 +52,10 @@ impl Source {
 pub struct Album {
     pub uri: String,
     pub detail: Option<AlbumDetail>,
-    /// The image on disk it came from, for display.
-    pub art: Option<PathBuf>,
+    /// What it came from, named the way the candidate names it: a
+    /// library-relative path for a sidecar image, a cache path for a fetched
+    /// one.
+    pub art: Option<String>,
     /// Decoded and shrunk, ready for the panel to sample.
     ///
     /// Decoding happens here rather than in the panel because a cover can be a
@@ -125,7 +127,11 @@ pub struct Watcher {
 impl Watcher {
     /// Start the worker. Returns `None` when there is no index to read, which
     /// is not an error -- staramp runs perfectly well before a first scan.
-    pub fn spawn(index: PathBuf, root: PathBuf, fetch: Arc<AtomicBool>) -> Option<Self> {
+    pub fn spawn(
+        index: PathBuf,
+        vfs: Arc<crate::vfs::Vfs>,
+        fetch: Arc<AtomicBool>,
+    ) -> Option<Self> {
         if !index.is_file() {
             return None;
         }
@@ -139,7 +145,7 @@ impl Watcher {
 
         std::thread::Builder::new()
             .name("staramp-art".into())
-            .spawn(move || run(index, root, fetch, rx, published, counted))
+            .spawn(move || run(index, vfs, fetch, rx, published, counted))
             .ok()?;
 
         Some(Self {
@@ -214,11 +220,17 @@ struct Entry {
     /// is what happens on a compilation: reusing it for the next track would
     /// show the wrong record.
     for_uri: Option<String>,
+    /// The embedded picture, read once when the album was gathered.
+    ///
+    /// `present` decodes the chosen candidate on every request, so without
+    /// this the audio file was reopened and its tags walked again at every
+    /// track change within the album.
+    embedded: Option<Arc<Vec<u8>>>,
 }
 
 fn run(
     index: PathBuf,
-    root: PathBuf,
+    vfs: Arc<crate::vfs::Vfs>,
     fetch: Arc<AtomicBool>,
     rx: Receiver<Request>,
     current: Arc<ArcSwapOption<Album>>,
@@ -293,7 +305,7 @@ fn run(
             Some(i) => cache.remove(i),
             None => gather(
                 &db,
-                &root,
+                &vfs,
                 fetcher.as_mut(),
                 cache_dir.as_deref(),
                 &detail,
@@ -329,7 +341,7 @@ fn run(
             );
         }
 
-        let album = present(&root, &detail, &entry, uri);
+        let album = present(&vfs, &detail, &entry, uri);
         // An unsettled entry is one the archive could not be asked about. Kept
         // out of the cache so the next track change tries again.
         if entry.settled {
@@ -344,7 +356,7 @@ fn run(
 /// Work out an album's candidate covers, fetching if the files offer none.
 fn gather(
     db: &Db,
-    root: &std::path::Path,
+    vfs: &crate::vfs::Vfs,
     fetcher: Option<&mut Fetcher>,
     cache_dir: Option<&std::path::Path>,
     detail: &AlbumDetail,
@@ -352,7 +364,8 @@ fn gather(
     fetch: bool,
 ) -> Entry {
     let started = std::time::Instant::now();
-    let found = cover::candidates(db, root, detail);
+    let found = cover::candidates(db, vfs, detail);
+    let embedded = found.embedded.map(Arc::new);
     let mut list = found.list;
     let mut settled = true;
 
@@ -407,17 +420,19 @@ fn gather(
         // A cover found for one song is that song's, not the folder's. On a
         // compilation the next track is a different record entirely.
         for_uri: per_song.then(|| uri.to_string()),
+        embedded,
     }
 }
 
 /// Turn a resolved entry into what the panel draws.
-fn present(root: &std::path::Path, detail: &AlbumDetail, entry: &Entry, uri: String) -> Album {
+fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: String) -> Album {
     let chosen = entry.candidates.get(entry.choice);
-    let image = chosen.and_then(|c| load(root, detail, c));
+    let image = chosen.and_then(|c| load(vfs, detail, c, entry.embedded.as_deref()));
     let art = match chosen {
-        Some(cover::Candidate::File(p))
-        | Some(cover::Candidate::Remote(p))
-        | Some(cover::Candidate::Original(p)) => Some(p.clone()),
+        Some(cover::Candidate::File(rel)) => Some(rel.clone()),
+        Some(cover::Candidate::Remote(p)) | Some(cover::Candidate::Original(p)) => {
+            Some(p.display().to_string())
+        }
         _ => None,
     };
     Album {
@@ -438,18 +453,37 @@ fn present(root: &std::path::Path, detail: &AlbumDetail, entry: &Entry, uri: Str
 
 /// Decode one candidate.
 fn load(
-    root: &std::path::Path,
+    vfs: &crate::vfs::Vfs,
     detail: &AlbumDetail,
     candidate: &cover::Candidate,
+    embedded: Option<&Vec<u8>>,
 ) -> Option<Arc<image::RgbImage>> {
     match candidate {
         cover::Candidate::Embedded => {
-            let bytes = cover::embedded(&root.join(&detail.file_rel))?;
-            shrink(image::load_from_memory(&bytes).ok())
+            // Gathered with the candidate list. The fallback is for an entry
+            // that somehow has the candidate without the bytes, and costs what
+            // this whole field exists to avoid.
+            let reread;
+            let bytes = match embedded {
+                Some(b) => b,
+                None => {
+                    reread = cover::embedded(vfs, &detail.file_rel)?;
+                    &reread
+                }
+            };
+            shrink(image::load_from_memory(bytes).ok())
         }
-        cover::Candidate::File(p) | cover::Candidate::Remote(p) | cover::Candidate::Original(p) => {
-            decode(p)
-        }
+        // A library image, wherever the library is.
+        cover::Candidate::File(rel) => match vfs.read(rel) {
+            Ok(bytes) => shrink(image::load_from_memory(&bytes).ok()),
+            Err(e) => {
+                tracing::debug!("cover {rel}: {e}");
+                None
+            }
+        },
+        // Fetched covers are always in the local cache, whatever the library
+        // is doing.
+        cover::Candidate::Remote(p) | cover::Candidate::Original(p) => decode(p),
     }
 }
 

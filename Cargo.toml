@@ -106,14 +106,22 @@ unicode-width = "0.2"
 # of the same size, and it removes a whole class of mirrored-spectrum bugs.
 realfft = "3"
 
-# MPRIS. mpris-server handles the fiddly parts -- the Seeked signal, batching
+ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
+ureq = "3"
+serde_json = "1.0.151"
+
+# MPRIS, and only where there is a D-Bus to publish it on.
+#
+# Target-gated rather than always-on: zbus does compile on macOS, so this is
+# not about a build failure. It is that the bus cannot exist there -- see
+# `src/mpris_stub.rs` -- and roughly two megabytes of D-Bus machinery that
+# provably cannot run is not worth linking.
+[target.'cfg(target_os = "linux")'.dependencies]
+# mpris-server handles the fiddly parts -- the Seeked signal, batching
 # PropertiesChanged -- that hand-rolling on raw zbus would mean reimplementing.
 mpris-server = "0.10"
 # Only for zbus's async runtime. The audio path never touches it.
 tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
-ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
-ureq = "3"
-serde_json = "1.0.151"
 
 # Native decode path. Non-default features are deliberate: mp3, isomp4, aac and
 # alac are all gated off by default upstream.

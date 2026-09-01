@@ -79,7 +79,114 @@ impl Db {
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
         Ok(Self { conn })
     }
+}
 
+/// One virtual track of a cue album, as the scan recorded it.
+///
+/// The same fields `cue::expand::VirtualTrack` carries, minus `backing_path`
+/// (one per album, not one per track) and `pregap_start_frame`, which `expand`
+/// writes but nothing has ever read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CueTrackRow {
+    pub ordinal: u32,
+    pub number: u32,
+    pub file_index: usize,
+    pub start_frame: u64,
+    pub end_frame: Option<u64>,
+    pub title: Option<String>,
+    pub performer: Option<String>,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub genre: Option<String>,
+    pub date: Option<String>,
+}
+
+/// A cue album as the index already knows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CueAlbumRows {
+    /// The sheet, library-root-relative.
+    pub cue_rel: String,
+    /// The one backing audio file these tracks are carved out of,
+    /// library-root-relative.
+    pub backing_rel: String,
+    pub tracks: Vec<CueTrackRow>,
+}
+
+impl Db {
+    /// Every virtual track carved out of the same backing file as `uri`.
+    ///
+    /// One query in place of the whole filesystem dance that playing a cue
+    /// track otherwise costs: reading the sheet, guessing its encoding, parsing
+    /// it, listing the directory, probing candidate filenames, and opening the
+    /// backing audio file *purely* to ask it its sample rate. The scan did all
+    /// of that once and wrote the answers down; this reads them back.
+    ///
+    /// `None` when the URI is not an indexed cue track -- an unindexed sheet, a
+    /// plain file, or a path the CLI was handed directly -- and the caller
+    /// falls back to the sheet.
+    pub fn cue_album_for_uri(&self, uri: &str) -> Result<Option<CueAlbumRows>> {
+        let mut stmt = self.conn.prepare(
+            // `b` is the backing file's own plain track row, which is where its
+            // real sample rate lives. It is load-bearing rather than
+            // informational: `scan.rs` computed every frame boundary below from
+            // that rate, defaulting to 44100 when it did not know it, while the
+            // sheet-based path reads the true rate from the file. Where the two
+            // could disagree the fast path must decline, so a NULL here is
+            // checked for below and refuses the whole album.
+            "WITH me AS (SELECT file_id, cue_file_id FROM track WHERE uri = ?1)
+             SELECT cf.rel_path, bf.rel_path, b.sample_rate,
+                    t.cue_ordinal, t.cue_track_no, t.cue_file_index,
+                    t.start_frame, t.end_frame,
+                    t.title, t.artist, t.album, t.album_artist, t.genre, t.date
+               FROM track t
+               JOIN me      ON t.file_id = me.file_id
+                           AND t.cue_file_id IS me.cue_file_id
+               JOIN file bf ON bf.id = t.file_id
+               JOIN file cf ON cf.id = t.cue_file_id
+               LEFT JOIN track b ON b.file_id = t.file_id AND b.cue_ordinal IS NULL
+              WHERE me.cue_file_id IS NOT NULL AND t.cue_ordinal IS NOT NULL
+              ORDER BY t.cue_ordinal",
+        )?;
+
+        let mut cue_rel: Option<String> = None;
+        let mut backing_rel: Option<String> = None;
+        let mut tracks = Vec::new();
+        let mut rows = stmt.query([uri])?;
+        while let Some(r) = rows.next()? {
+            if r.get::<_, Option<i64>>(2)?.is_none() {
+                // The backing file has no indexed sample rate, so the stored
+                // frames may have been computed against an assumed 44100.
+                return Ok(None);
+            }
+            cue_rel.get_or_insert_with(|| r.get::<_, String>(0).unwrap_or_default());
+            backing_rel.get_or_insert_with(|| r.get::<_, String>(1).unwrap_or_default());
+            tracks.push(CueTrackRow {
+                ordinal: r.get::<_, i64>(3)? as u32,
+                number: r.get::<_, Option<i64>>(4)?.unwrap_or(0) as u32,
+                file_index: r.get::<_, Option<i64>>(5)?.unwrap_or(0) as usize,
+                start_frame: r.get::<_, i64>(6)?.max(0) as u64,
+                end_frame: r.get::<_, Option<i64>>(7)?.map(|v| v.max(0) as u64),
+                title: r.get(8)?,
+                performer: r.get(9)?,
+                album: r.get(10)?,
+                album_artist: r.get(11)?,
+                genre: r.get(12)?,
+                date: r.get(13)?,
+            });
+        }
+
+        match (cue_rel, backing_rel) {
+            (Some(cue_rel), Some(backing_rel)) if !tracks.is_empty() => Ok(Some(CueAlbumRows {
+                cue_rel,
+                backing_rel,
+                tracks,
+            })),
+            _ => Ok(None),
+        }
+    }
+}
+
+impl Db {
     /// What the album panel needs about the track at `uri`.
     ///
     /// `None` when the URI is not indexed, which is normal: a playlist can
@@ -428,5 +535,173 @@ mod tests {
             )
             .unwrap();
         assert_eq!(raw, "Gone/Album/01.flac");
+    }
+
+    /// A disc-image cue album: one backing file, one sheet, three tracks --
+    /// plus a second album in the same directory that must not bleed into it.
+    fn seed_cue(db: &Db, backing_rate: &str) {
+        db.conn
+            .execute_batch(&format!(
+                "INSERT INTO dir (id, rel_path, scan_gen) VALUES (10, 'Rips/Album', 1);
+
+                 INSERT INTO file (id, dir_id, rel_path, size, mtime_ns, kind, scan_gen) VALUES
+                    (10, 10, 'Rips/Album/rip.wv',    1, 1, 0, 1),
+                    (11, 10, 'Rips/Album/rip.cue',   1, 1, 1, 1),
+                    (12, 10, 'Rips/Album/other.wv',  1, 1, 0, 1),
+                    (13, 10, 'Rips/Album/other.cue', 1, 1, 1, 1);
+
+                 -- The backing files' own rows. The sample rate here is what
+                 -- the scan computed every frame boundary below against.
+                 INSERT INTO track (id, uri, file_id, codec, sample_rate, hidden,
+                                    added_at, modified_at, scan_gen) VALUES
+                    (100, 'Rips/Album/rip.wv',   10, 'wavpack', {backing_rate}, 1, 0, 0, 1),
+                    (110, 'Rips/Album/other.wv', 12, 'wavpack', 44100,          1, 0, 0, 1);
+
+                 INSERT INTO track (id, uri, file_id, cue_file_id, cue_ordinal,
+                                    cue_track_no, cue_file_index,
+                                    start_frame, end_frame, title, artist, album,
+                                    codec, added_at, modified_at, scan_gen) VALUES
+                    (101, 'Rips/Album/rip.cue/track0001', 10, 11, 1, 1, 0,
+                          0,       1000000, 'One',   'A', 'Rip', 'cue', 0, 0, 1),
+                    (102, 'Rips/Album/rip.cue/track0002', 10, 11, 2, 2, 0,
+                          1000000, 2500000, 'Two',   'A', 'Rip', 'cue', 0, 0, 1),
+                    (103, 'Rips/Album/rip.cue/track0003', 10, 11, 3, 3, 0,
+                          2500000, NULL,    'Three', 'A', 'Rip', 'cue', 0, 0, 1),
+                    -- A different sheet over a different file, same folder.
+                    (111, 'Rips/Album/other.cue/track0001', 12, 13, 1, 1, 0,
+                          0,       500000,  'Other', 'B', 'Oth', 'cue', 0, 0, 1);"
+            ))
+            .unwrap();
+    }
+
+    #[test]
+    fn a_cue_track_brings_its_whole_album_back_in_one_query() {
+        let db = Db::open_in_memory().unwrap();
+        seed_cue(&db, "44100");
+
+        let rows = db
+            .cue_album_for_uri("Rips/Album/rip.cue/track0002")
+            .unwrap()
+            .expect("an indexed cue track has an album");
+
+        assert_eq!(rows.cue_rel, "Rips/Album/rip.cue");
+        assert_eq!(rows.backing_rel, "Rips/Album/rip.wv");
+        assert_eq!(rows.tracks.len(), 3, "the siblings come too");
+
+        // Ordered by ordinal, so the player can find its window by position.
+        let ordinals: Vec<u32> = rows.tracks.iter().map(|t| t.ordinal).collect();
+        assert_eq!(ordinals, vec![1, 2, 3]);
+
+        let two = &rows.tracks[1];
+        assert_eq!(two.start_frame, 1_000_000);
+        assert_eq!(two.end_frame, Some(2_500_000));
+        assert_eq!(two.title.as_deref(), Some("Two"));
+        assert_eq!(two.performer.as_deref(), Some("A"));
+
+        // NULL end_frame means "to end of file", not zero.
+        assert_eq!(rows.tracks[2].end_frame, None);
+    }
+
+    /// The other sheet in the same directory is a different album, and asking
+    /// for one must not drag in the other's tracks.
+    #[test]
+    fn a_sibling_sheet_in_the_same_folder_stays_out() {
+        let db = Db::open_in_memory().unwrap();
+        seed_cue(&db, "44100");
+
+        let rows = db
+            .cue_album_for_uri("Rips/Album/other.cue/track0001")
+            .unwrap()
+            .unwrap();
+        assert_eq!(rows.backing_rel, "Rips/Album/other.wv");
+        assert_eq!(rows.tracks.len(), 1);
+    }
+
+    /// The guard that makes the fast path safe.
+    ///
+    /// `scan::write_cue_tracks` computes frame boundaries from the backing
+    /// file's indexed sample rate and assumes 44100 when it has none, while
+    /// reading the sheet gets the real rate from the file. Where the index
+    /// cannot vouch for the rate, the two could disagree and place every track
+    /// wrongly -- so the album is declined and the caller reads the sheet.
+    #[test]
+    fn a_backing_file_with_no_indexed_sample_rate_declines() {
+        let db = Db::open_in_memory().unwrap();
+        seed_cue(&db, "NULL");
+        assert_eq!(
+            db.cue_album_for_uri("Rips/Album/rip.cue/track0002")
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn a_plain_file_and_an_unknown_uri_have_no_cue_album() {
+        let db = Db::open_in_memory().unwrap();
+        seed_cue(&db, "44100");
+        assert_eq!(db.cue_album_for_uri("Rips/Album/rip.wv").unwrap(), None);
+        assert_eq!(
+            db.cue_album_for_uri("Nowhere/x.cue/track0001").unwrap(),
+            None
+        );
+    }
+}
+
+/// How much of the real library the cue fast path actually covers.
+///
+/// The path declines whenever the backing file has no indexed sample rate, so
+/// "it compiled" is not evidence it ever runs. This counts.
+#[cfg(test)]
+mod cue_coverage {
+    use super::*;
+
+    #[test]
+    #[ignore = "reads the real library"]
+    fn how_many_cue_tracks_can_be_opened_from_the_index() {
+        let Ok(index) = crate::paths::index_file() else {
+            return;
+        };
+        let Ok(db) = Db::open_readonly(&index) else {
+            return;
+        };
+
+        let uris: Vec<String> = db
+            .conn
+            .prepare(
+                "SELECT uri FROM track
+                  WHERE cue_file_id IS NOT NULL AND hidden = 0
+                  ORDER BY uri",
+            )
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .flatten()
+            .collect();
+
+        let mut hit = 0usize;
+        for u in &uris {
+            if db.cue_album_for_uri(u).unwrap().is_some() {
+                hit += 1;
+            }
+        }
+        let missing_rate: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM track t
+                  WHERE t.cue_file_id IS NOT NULL AND t.hidden = 0
+                    AND NOT EXISTS (SELECT 1 FROM track b
+                                     WHERE b.file_id = t.file_id
+                                       AND b.cue_ordinal IS NULL
+                                       AND b.sample_rate IS NOT NULL)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        eprintln!(
+            "cue tracks {}  from the index {hit}  declined {}  (of which no backing rate {missing_rate})",
+            uris.len(),
+            uris.len() - hit,
+        );
     }
 }

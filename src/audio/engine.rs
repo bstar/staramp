@@ -18,6 +18,7 @@ use super::output::{Output, RateMode};
 use super::ring;
 use super::source;
 use crate::playlist::uri::TrackUri;
+use crate::vfs::Vfs;
 
 /// How long the decode thread sleeps when the ring is full. Short enough to
 /// refill promptly, long enough not to spin a core.
@@ -79,8 +80,10 @@ impl Playback {
         // not a file. Parsing it here means the CLI and the playlist layer
         // address tracks the same way.
         let uri = TrackUri::parse(&path.to_string_lossy());
-        let root = Path::new("");
-        let opened = source::open(root, &uri)?;
+        // The CLI names files directly, so the URIs are already absolute and
+        // there is no root to resolve them against.
+        let vfs = Vfs::local("");
+        let opened = source::open(&vfs, None, &uri)?;
         let mut dec = opened.decoder;
         let spec = dec.spec();
         let total_frames = dec.total_frames();

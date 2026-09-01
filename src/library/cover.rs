@@ -22,8 +22,11 @@ use super::db::{AlbumDetail, Db};
 pub enum Candidate {
     /// A picture in the audio file's own tags.
     Embedded,
-    /// An image file in the library.
-    File(PathBuf),
+    /// An image file in the library, named the way the index names it:
+    /// relative to the library root. Relative rather than absolute so that it
+    /// survives a remount -- and so that it means something when the library
+    /// is not on this machine at all.
+    File(String),
     /// A cover fetched from the archive and cached.
     Remote(PathBuf),
     /// A cover fetched for the record the song originally came from.
@@ -46,24 +49,20 @@ impl Candidate {
             Candidate::Embedded => "embedded".into(),
             Candidate::Remote(_) => "cover art archive".into(),
             Candidate::Original(_) => "original release".into(),
-            Candidate::File(p) => p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("image")
-                .to_string(),
+            Candidate::File(rel) => rel.rsplit('/').next().unwrap_or("image").to_string(),
         }
     }
 
     /// A stable identity for remembering a choice across restarts.
     ///
-    /// The path, so a choice survives a rescan; `Remote` and `Embedded` have
-    /// no meaningful path of their own to record.
+    /// The library-relative path, so a choice survives a rescan *and* a
+    /// remount; `Remote` and `Embedded` have no meaningful path of their own.
     pub fn id(&self) -> String {
         match self {
             Candidate::Embedded => "embedded".into(),
             Candidate::Remote(_) => "remote".into(),
             Candidate::Original(_) => "original".into(),
-            Candidate::File(p) => p.display().to_string(),
+            Candidate::File(rel) => rel.clone(),
         }
     }
 }
@@ -76,6 +75,13 @@ pub struct Candidates {
     /// Nothing here is confidently a front cover, so the archive is worth
     /// asking. A folder holding only `back.jpg` should still get a cover.
     pub wants_remote: bool,
+    /// The picture inside the audio file, already read.
+    ///
+    /// Deciding whether `Candidate::Embedded` belongs in the list means
+    /// reading it, and the caller then needs the very same bytes to draw it.
+    /// Handing them over costs nothing and saves a second walk of the tags --
+    /// which for FLAC metadata blocks and APEv2 tails is a walk of the file.
+    pub embedded: Option<Vec<u8>>,
 }
 
 /// Stems that mean "this is the front", best first.
@@ -121,12 +127,14 @@ fn looks_like_art(path: &str) -> bool {
 /// then one level down into an artwork subdirectory. What changed is that the
 /// losers are kept rather than discarded, so a wrong first guess is one click
 /// from being corrected instead of being final.
-pub fn candidates(db: &Db, root: &Path, detail: &AlbumDetail) -> Candidates {
+pub fn candidates(db: &Db, vfs: &crate::vfs::Vfs, detail: &AlbumDetail) -> Candidates {
     let mut list = Vec::new();
 
     // A picture in the file itself is unambiguous -- somebody chose it for
-    // this record -- so nothing on disk should outrank it.
-    if embedded(&root.join(&detail.file_rel)).is_some() {
+    // this record -- so nothing on disk should outrank it. Kept rather than
+    // discarded: the caller wants these exact bytes next.
+    let embedded = embedded(vfs, &detail.file_rel);
+    if embedded.is_some() {
         list.push(Candidate::Embedded);
     }
 
@@ -155,13 +163,14 @@ pub fn candidates(db: &Db, root: &Path, detail: &AlbumDetail) -> Candidates {
         list.extend(
             ranked
                 .into_iter()
-                .map(|(rel, _)| Candidate::File(root.join(rel))),
+                .map(|(rel, _)| Candidate::File(rel.clone())),
         );
     }
 
     Candidates {
         wants_remote: !confident,
         list,
+        embedded,
     }
 }
 
@@ -221,16 +230,16 @@ pub fn best(images: &[String]) -> Option<&String> {
 ///
 /// Failure of any kind is `None`: an unreadable tag on a playable file is not
 /// worth a word to the user, and every rung below this one still applies.
-pub fn embedded(path: &Path) -> Option<Vec<u8>> {
+pub fn embedded(vfs: &crate::vfs::Vfs, rel: &str) -> Option<Vec<u8>> {
     // Our own reader first, and only for ID3. The tag library mishandles
     // unsynchronised tags -- it eats both zeros of a `FF 00 00`, which is how
     // a stuffed JPEG byte is stored -- and the result decodes to a flat grey
     // rectangle rather than failing outright, so nothing downstream can tell
     // it went wrong. See `super::id3`.
-    if let Some(p) = id3_head(path).and_then(|head| super::id3::picture(&head)) {
+    if let Some(p) = id3_head(vfs, rel).and_then(|head| super::id3::picture(&head)) {
         return Some(p.data);
     }
-    lofty_picture(path)
+    lofty_picture(vfs, rel)
 }
 
 /// The start of a file, enough to hold its ID3v2 tag.
@@ -238,13 +247,12 @@ pub fn embedded(path: &Path) -> Option<Vec<u8>> {
 /// Read rather than memory-mapped, and bounded by the tag's own declared size
 /// so a corrupt header cannot ask for the whole file. `None` for anything
 /// without a tag, which costs ten bytes to find out.
-fn id3_head(path: &Path) -> Option<Vec<u8>> {
-    use std::io::Read;
-
-    let mut file = std::fs::File::open(path).ok()?;
-    let mut header = [0u8; 10];
-    file.read_exact(&mut header).ok()?;
-    if &header[..3] != b"ID3" {
+fn id3_head(vfs: &crate::vfs::Vfs, rel: &str) -> Option<Vec<u8>> {
+    // Ten bytes to find out whether there is a tag at all, and then exactly
+    // as many more as the tag itself declares. Over a link that is two small
+    // reads rather than a walk of the whole file.
+    let header = vfs.read_head(rel, 10).ok()?;
+    if header.len() < 10 || &header[..3] != b"ID3" {
         return None;
     }
     // The syncsafe size, which by construction cannot exceed 256 MB. Refusing
@@ -257,22 +265,21 @@ fn id3_head(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
 
-    // `take` + `read_to_end` rather than one `read`, which is free to come
-    // back short and would silently truncate the picture.
-    let mut out = header.to_vec();
-    let mut rest = Vec::new();
-    file.take(size as u64).read_to_end(&mut rest).ok()?;
-    out.append(&mut rest);
-    Some(out)
+    vfs.read_head(rel, 10 + size).ok()
 }
 
 /// The picture the tag library finds, for everything that is not ID3.
-fn lofty_picture(path: &Path) -> Option<Vec<u8>> {
+fn lofty_picture(vfs: &crate::vfs::Vfs, rel: &str) -> Option<Vec<u8>> {
     use lofty::file::TaggedFileExt;
     use lofty::picture::PictureType;
     use lofty::probe::Probe;
 
-    let tagged = Probe::open(path).ok()?.read().ok()?;
+    // Unlike the ID3 path above this is not a bounded read: lofty walks FLAC
+    // metadata blocks and seeks to the very end of the file for an APEv2
+    // tail. That is fine on a disk and expensive over a link, which is why
+    // `candidates` only reaches it when there is no sidecar image to prefer.
+    let reader = std::io::BufReader::new(vfs.reader(rel).ok()?);
+    let tagged = Probe::new(reader).guess_file_type().ok()?.read().ok()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
     let pictures = tag.pictures();
     // The one marked as the front, and only otherwise whatever came first --
@@ -511,8 +518,9 @@ mod tests {
         ));
         tag.save_to_path(&path, WriteOptions::default()).unwrap();
 
+        let vfs = crate::vfs::Vfs::local(&dir);
         assert_eq!(
-            embedded(&path).as_deref(),
+            embedded(&vfs, "track.wav").as_deref(),
             Some(&png[..]),
             "the embedded picture must come back byte for byte"
         );
@@ -525,9 +533,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("track.wav");
         std::fs::write(&path, silent_wav()).unwrap();
-        assert!(embedded(&path).is_none());
+        let vfs = crate::vfs::Vfs::local(&dir);
+        assert!(embedded(&vfs, "track.wav").is_none());
         // And a path that is not a file at all is not an error either.
-        assert!(embedded(&dir.join("nothing.flac")).is_none());
+        assert!(embedded(&vfs, "nothing.flac").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -559,9 +568,13 @@ mod tests {
 
     #[test]
     fn a_candidate_can_name_itself() {
-        let c = Candidate::File(PathBuf::from("/music/A/cover.jpg"));
+        let c = Candidate::File("A/B/cover.jpg".into());
         assert_eq!(c.label(), "cover.jpg");
-        assert_eq!(c.id(), "/music/A/cover.jpg", "the id survives a rescan");
+        assert_eq!(
+            c.id(),
+            "A/B/cover.jpg",
+            "relative, so the id survives a rescan and a remount alike"
+        );
         assert_eq!(Candidate::Embedded.label(), "embedded");
         assert_eq!(
             Candidate::Remote(PathBuf::from("/c/ab12.jpg")).label(),

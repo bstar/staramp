@@ -8,14 +8,22 @@ mod ipc;
 mod library;
 mod logging;
 mod mirror;
+// MPRIS is D-Bus, which exists on Linux and nowhere else this runs. The stub
+// has the same shape, so nothing downstream needs to know which one it got.
+#[cfg(target_os = "linux")]
+mod mpris;
+#[cfg(not(target_os = "linux"))]
+#[path = "mpris_stub.rs"]
 mod mpris;
 mod paths;
 mod playlist;
 mod query;
+mod remote;
 mod session;
 mod theme;
 mod ui;
 mod util;
+mod vfs;
 mod view;
 mod vis;
 
@@ -156,6 +164,24 @@ enum Command {
     },
     /// Open the player UI on a playlist, directory, or the whole library.
     Ui { target: Option<PathBuf> },
+    /// Play a library that lives on another machine, over SSH.
+    ///
+    /// Nothing is installed or left running there: one ssh connection is
+    /// opened and the files are read through it. The far machine needs
+    /// staramp installed and scanned, and `ssh <host>` must already work
+    /// without a prompt.
+    Remote {
+        /// An ssh destination -- a host, a user@host, or an alias from
+        /// ~/.ssh/config. Defaults to `[remote] host` in the config.
+        host: Option<String>,
+        /// The library root as the far machine sees it. Defaults to
+        /// `[remote] root`, and then to the far machine's own config.
+        #[arg(long)]
+        root: Option<String>,
+        /// Fetch the index again even if it looks current.
+        #[arg(long)]
+        refresh: bool,
+    },
     /// Check playlists against the index: what resolves and what does not.
     Playlists {
         /// Directory of .m3u/.m3u8 files.
@@ -224,6 +250,11 @@ fn main() -> Result<()> {
             explain,
         }) => cmd_query(expr.join(" "), count, explain),
         Some(Command::Ui { target }) => cmd_tui(target),
+        Some(Command::Remote {
+            host,
+            root,
+            refresh,
+        }) => cmd_remote(host, root, refresh),
         Some(Command::Playlists {
             dir,
             show_missing,
@@ -235,7 +266,8 @@ fn main() -> Result<()> {
 
 fn cmd_probe(input: PathBuf) -> Result<()> {
     let uri = playlist::uri::TrackUri::parse(&input.to_string_lossy());
-    let opened = audio::source::open(std::path::Path::new(""), &uri)?;
+    // The CLI names a file directly, so the URI is already absolute.
+    let opened = audio::source::open(&vfs::Vfs::local(""), None, &uri)?;
     let backend = decode::backend_for_path(&opened.backing_path);
     let spec = opened.decoder.spec();
     let frames = opened.decoder.total_frames();
@@ -300,7 +332,7 @@ fn cmd_decode(
 ) -> Result<()> {
     let output = output.unwrap_or_else(|| input.with_extension("wav"));
 
-    let mut dec = decode::open(&input)?;
+    let mut dec = decode::open_path(&input)?;
     let spec = dec.spec();
     let ch = spec.channels as usize;
 
@@ -580,6 +612,50 @@ fn cmd_cue_report(root: PathBuf, verbose_list: bool) -> Result<()> {
     Ok(())
 }
 
+/// Open a library on another machine and play it.
+///
+/// Two things cross the link and they are treated completely differently. The
+/// index is copied once, because it is small and because every browse and
+/// search afterwards then costs nothing. The audio is never copied: it is read
+/// as it plays, so starting a track does not mean waiting for a file.
+fn cmd_remote(host: Option<String>, root: Option<String>, refresh: bool) -> Result<()> {
+    let cfg = config::Config::load()?;
+    let host = host
+        .or_else(|| cfg.remote.host.clone())
+        .context("no host given -- pass one, or set [remote] host in the config")?;
+    // `~` is expanded on the far machine, by it, because there is no shell
+    // here and no way for this one to know what it means there.
+    let root = root
+        .or_else(|| cfg.remote.root.clone())
+        .unwrap_or_else(|| "~/Music".to_string());
+
+    eprintln!("connecting to {host}...");
+    let lib = remote::Library::connect(&host, &root, cfg.remote.readahead_mb)?;
+    eprintln!("connected to {}:{}", lib.host(), lib.root());
+
+    if refresh {
+        // Drop the stamp rather than the database: if the fetch then fails,
+        // what is in hand is still a working index.
+        if let Ok(local) = remote::index::local_copy(lib.host()) {
+            let mut stamp = local.into_os_string();
+            stamp.push(".stamp");
+            let _ = std::fs::remove_file(PathBuf::from(stamp));
+        }
+    }
+    let index = remote::index::sync(&lib)?;
+
+    let vfs = std::sync::Arc::new(vfs::Vfs::Remote(std::sync::Arc::new(lib)));
+    let (_root, items) = build_queue(&cfg, None, &index)?;
+    if items.is_empty() {
+        anyhow::bail!("{host} has an index but no playable tracks in it");
+    }
+
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let mut app = ui::app::App::on(vfs, items, &cfg)?;
+    app.set_graphics(graphics);
+    app.run()
+}
+
 fn index_path() -> Result<PathBuf> {
     paths::index_file()
 }
@@ -851,6 +927,7 @@ fn cmd_playlists(dir: PathBuf, show_missing: bool, check_roundtrip: bool) -> Res
 fn build_queue(
     cfg: &config::Config,
     target: Option<&Path>,
+    index: &Path,
 ) -> Result<(PathBuf, Vec<playlist::queue::QueueItem>)> {
     use playlist::queue::QueueItem;
     use playlist::uri::TrackUri;
@@ -920,7 +997,7 @@ fn build_queue(
     }
 
     // Otherwise: whatever the index knows, most recently added first.
-    let db = library::db::Db::open_readonly(&index_path()?)?;
+    let db = library::db::Db::open_readonly(index)?;
     let mut stmt = db.conn.prepare(&format!(
         "{META_SELECT}
          WHERE t.hidden = 0
@@ -1153,7 +1230,20 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
 
     // Another instance already owns the audio device. Rather than fighting it
     // for the sound card, mirror it: render its state and forward every key.
-    if let Some(m) = mirror::Mirror::connect() {
+    //
+    // Two questions, in order: is somebody already leading, and if not, can we
+    // take the lead ourselves? Asking the second is what closes the gap
+    // between them -- two windows opened together can both find no leader, and
+    // exactly one can then win the lease. The loser asks again, by which time
+    // the winner is listening.
+    let joined = mirror::Mirror::connect().or_else(|| {
+        if ipc::claim_session() {
+            None
+        } else {
+            mirror::Mirror::connect()
+        }
+    });
+    if let Some(m) = joined {
         let player_root = cfg
             .library_root
             .clone()
@@ -1179,7 +1269,7 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
         _ => Vec::new(),
     };
 
-    let (root, items) = build_queue(&cfg, target.as_deref())?;
+    let (root, items) = build_queue(&cfg, target.as_deref(), &index_path()?)?;
     if items.is_empty() && playlists.is_empty() {
         anyhow::bail!(
             "nothing to play — run `staramp scan <dir>` first, or pass a playlist or directory"

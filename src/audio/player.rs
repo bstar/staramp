@@ -6,7 +6,6 @@
 //! all: the decode thread simply starts filling the same ring from the next
 //! decoder, mid-buffer, with no discontinuity for the callback to notice.
 
-use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -25,6 +24,7 @@ use super::source;
 use super::tap::Tap;
 use crate::playlist::queue::{Queue, QueueItem, RepeatMode};
 use crate::playlist::uri::TrackUri;
+use crate::vfs::Vfs;
 
 const BACKOFF: Duration = Duration::from_millis(2);
 
@@ -111,6 +111,9 @@ impl PlayerState {
 }
 
 pub struct Player {
+    /// The library this player reads from. Held so the UI can ask what kind
+    /// of library it is without a second copy of the answer.
+    vfs: Arc<Vfs>,
     cmds: Sender<Command>,
     pub state: Arc<PlayerState>,
     pub eq: Arc<EqHandle>,
@@ -136,6 +139,9 @@ impl Player {
     pub fn detached() -> Self {
         let (tx, _rx) = bounded(64);
         Self {
+            // Nothing here reads a file, but the UI still asks what library
+            // it is looking at. An empty local root is the honest answer.
+            vfs: Arc::new(Vfs::local("")),
             cmds: tx,
             state: Arc::new(PlayerState::new()),
             eq: Arc::new(EqHandle::new(44_100)),
@@ -157,7 +163,13 @@ impl Player {
         self.rg.store(Arc::new((mode, preamp_db, prevent_clipping)));
     }
 
-    pub fn new(library_root: PathBuf) -> Result<Self> {
+    /// The library this player reads from.
+    pub fn vfs(&self) -> &Arc<Vfs> {
+        &self.vfs
+    }
+
+    pub fn new(vfs: Arc<Vfs>) -> Result<Self> {
+        let for_handle = Arc::clone(&vfs);
         let (tx, rx) = bounded(64);
         let state = Arc::new(PlayerState::new());
         let eq = Arc::new(EqHandle::new(44_100));
@@ -177,11 +189,12 @@ impl Player {
             thread::Builder::new()
                 .name("staramp-player".into())
                 .spawn(move || {
-                    run(library_root, rx, state, eq, queue, volume, tap, rg);
+                    run(vfs, rx, state, eq, queue, volume, tap, rg);
                 })?
         };
 
         Ok(Self {
+            vfs: for_handle,
             cmds: tx,
             state,
             eq,
@@ -288,7 +301,7 @@ const PRIME_TIMEOUT: Duration = Duration::from_millis(150);
 
 #[allow(clippy::too_many_arguments)]
 fn run(
-    root: PathBuf,
+    vfs: Arc<Vfs>,
     rx: Receiver<Command>,
     state: Arc<PlayerState>,
     eq: Arc<EqHandle>,
@@ -297,6 +310,18 @@ fn run(
     tap: Arc<Tap>,
     rg: Arc<arc_swap::ArcSwap<(RgMode, f32, bool)>>,
 ) {
+    // The decode thread's own read-only handle, as the art worker has its own
+    // and for the same reason: a handle already open turns a vanished index
+    // into an error rather than a hang, and nothing here can wait on the UI.
+    // Best-effort -- without it, cue tracks are opened by reading their sheet.
+    let index = crate::paths::index_file()
+        .ok()
+        .and_then(|p| crate::library::db::Db::open_readonly(&p).ok());
+
+    // The URI whose successor has already been warmed, so it happens once per
+    // track rather than on every pass through the loop.
+    let mut warmed: Option<String> = None;
+
     let mut stream: Option<Stream> = None;
     // Recomputed when a track opens. Constant for a track by definition, so
     // there is nothing to do between boundaries.
@@ -365,7 +390,8 @@ fn run(
                     if let Some((uri, gain)) = track {
                         rg_scalar = level(&gain);
                         open_track(
-                            &root,
+                            &vfs,
+                            index.as_ref(),
                             &uri,
                             &mut decoder,
                             &mut stream,
@@ -386,7 +412,8 @@ fn run(
                         Some((uri, gain)) => {
                             rg_scalar = level(&gain);
                             open_track(
-                                &root,
+                                &vfs,
+                                index.as_ref(),
                                 &uri,
                                 &mut decoder,
                                 &mut stream,
@@ -411,7 +438,8 @@ fn run(
                     if let Some((uri, gain)) = track {
                         rg_scalar = level(&gain);
                         open_track(
-                            &root,
+                            &vfs,
+                            index.as_ref(),
                             &uri,
                             &mut decoder,
                             &mut stream,
@@ -507,10 +535,8 @@ fn run(
                                 // opening properly meant re-reading the sheet
                                 // and reopening the file, which was measured at
                                 // up to 276 ms against a 200 ms ring.
-                                let window = cue
-                                    .as_ref()
-                                    .and_then(|a| a.window_onto(&root, &uri))
-                                    .cloned();
+                                let window =
+                                    cue.as_ref().and_then(|a| a.window_onto(&uri)).cloned();
                                 let moved = match (&window, decoder.as_mut()) {
                                     (Some(t), Some(d)) => {
                                         d.retarget_slice(t.start_frame, t.end_frame)
@@ -526,7 +552,8 @@ fn run(
                                     state.track_revision.fetch_add(1, Ordering::Relaxed);
                                 } else {
                                     open_track(
-                                        &root,
+                                        &vfs,
+                                        index.as_ref(),
                                         &uri,
                                         &mut decoder,
                                         &mut stream,
@@ -566,6 +593,7 @@ fn run(
                             s.output.state.underruns.load(Ordering::Relaxed),
                             Ordering::Relaxed,
                         );
+                        warm_next(&vfs, &queue, d.as_ref(), s.sample_rate, &mut warmed);
                         did_work = true;
                     }
                     Err(e) => {
@@ -583,6 +611,57 @@ fn run(
     }
 }
 
+/// How far before the end of a track its successor is made ready.
+///
+/// Only matters for a library that is not on this machine. Locally, opening
+/// the next track is a `File::open`; across a link it is several round trips,
+/// and the player opens the next track *at* the boundary with a fifth of a
+/// second of audio left in the ring. Ten seconds is enough lead for any link
+/// worth playing music over, and it costs nothing on a track that is skipped
+/// before it gets there.
+const WARM_LEAD_SECS: u64 = 10;
+
+/// Ask the library to make the next track ready, once, near the boundary.
+fn warm_next(
+    vfs: &Vfs,
+    queue: &Arc<Mutex<Queue>>,
+    d: &dyn Decoder,
+    sample_rate: u32,
+    warmed: &mut Option<String>,
+) {
+    // Nothing to gain locally, and the check is cheaper than the lock.
+    if !vfs.is_remote() || sample_rate == 0 {
+        return;
+    }
+    let Some(total) = d.total_frames() else {
+        return;
+    };
+    let lead = WARM_LEAD_SECS * sample_rate as u64;
+    if d.position() + lead < total {
+        return;
+    }
+
+    let next = {
+        let q = queue.lock().unwrap();
+        q.peek_next()
+            .and_then(|i| q.tracks().get(i))
+            .map(|t| t.uri.clone())
+    };
+    let Some(next) = next else { return };
+    let key = next.to_string();
+    if warmed.as_deref() == Some(key.as_str()) {
+        return;
+    }
+    *warmed = Some(key);
+    // `backing_path` rather than the URI: a cue virtual track's bytes are in
+    // the audio file the sheet points at, and warming `album.cue/track0007`
+    // would ask the far machine for a file that is not the one about to be
+    // read. When the next track is another window onto the file already open
+    // this warms it a second time, harmlessly -- the read is 64 KiB and the
+    // handle closes straight after.
+    vfs.warm(next.backing_path());
+}
+
 /// Where a flush belongs, and does not yet happen.
 ///
 /// The read cursor belongs to the consumer, which lives in the output callback,
@@ -598,7 +677,8 @@ fn drain(p: &mut rtrb::Producer<f32>) {
 
 #[allow(clippy::too_many_arguments)]
 fn open_track(
-    root: &Path,
+    vfs: &Vfs,
+    index: Option<&crate::library::db::Db>,
     uri: &TrackUri,
     decoder: &mut Option<Box<dyn Decoder>>,
     stream: &mut Option<Stream>,
@@ -607,7 +687,7 @@ fn open_track(
     tap: &Arc<Tap>,
     cue: &mut Option<source::CueAlbum>,
 ) {
-    let opened = match source::open(root, uri) {
+    let opened = match source::open(vfs, index, uri) {
         Ok(o) => o,
         Err(e) => {
             tracing::warn!("cannot open {uri}: {e}");

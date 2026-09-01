@@ -8,14 +8,15 @@
 //! kill-and-respawn with `-ss`, no process spawn per track, and no runtime
 //! dependency on an `ffmpeg` binary existing on `PATH`.
 
-use std::path::Path;
-use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Once};
 
 use anyhow::{anyhow, Context, Result};
 use ff::format::sample::{Sample, Type as SampleType};
 use ffmpeg_next as ff;
 
 use super::{Decoder, StreamSpec};
+use crate::vfs::Media;
 
 static FFMPEG_INIT: Once = Once::new();
 
@@ -49,6 +50,9 @@ pub struct LibavDecoder {
     /// Backing file size, for the average-bitrate calculation.
     file_size: u64,
     total_frames: Option<u64>,
+    /// Set to abandon a read that is blocked on a link that has gone away.
+    /// `None` for a local file, which cannot block indefinitely.
+    cancel: Option<Arc<AtomicBool>>,
 
     /// Converted interleaved samples not yet handed to the caller.
     buf: Vec<f32>,
@@ -59,29 +63,64 @@ pub struct LibavDecoder {
 }
 
 impl LibavDecoder {
-    pub fn open(path: &Path) -> Result<Self> {
+    /// Open `media`, named `name` for every error message.
+    pub fn open(media: Media, name: &str) -> Result<Self> {
         init_ffmpeg()?;
 
-        let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+        let mut cancel = None;
+        let (input, file_size) = match media {
+            // The local arm keeps `avformat_open_input(path)` deliberately, so
+            // libavformat's own `file:` protocol and read-ahead stay in play.
+            Media::Local(ref p) => {
+                let n = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+                let input = ff::format::input(p).with_context(|| format!("opening {name}"))?;
+                (input, n)
+            }
+            Media::Stream { reader, len } => {
+                // 256 KiB rather than the 32 KiB default: on a link where a
+                // round trip costs milliseconds, the buffer size is
+                // effectively the request size.
+                let io =
+                    ff::format::context::StreamIo::from_read_seek_with_capacity(reader, 1 << 18)
+                        .map_err(|e| anyhow!("{name}: custom io: {e}"))?;
 
-        let input =
-            ff::format::input(&path).with_context(|| format!("opening {}", path.display()))?;
+                // Not optional. Without an interrupt callback a stalled read
+                // wedges the decode thread with no way out, and errors on a
+                // custom AVIO are sticky -- `fill_buffer` latches whatever the
+                // callback returned and no further I/O happens, so there is no
+                // recovering a context that has hung once.
+                let token = Arc::new(AtomicBool::new(false));
+                cancel = Some(Arc::clone(&token));
+                let watch = Arc::clone(&token);
+                let input = ff::format::input_from_stream_with_interrupt(
+                    io,
+                    // A hint for probing only. libavformat does no I/O on it
+                    // when `pb` is already set, and it is what keeps exotic
+                    // containers probing as cheaply as a local file does.
+                    Some(name),
+                    None,
+                    move || watch.load(Ordering::Relaxed),
+                )
+                .map_err(|e| anyhow!("opening {name}: {e}"))?;
+                (input, len)
+            }
+        };
 
         let stream = input
             .streams()
             .best(ff::media::Type::Audio)
-            .ok_or_else(|| anyhow!("{}: no audio stream", path.display()))?;
+            .ok_or_else(|| anyhow!("{name}: no audio stream"))?;
         let stream_index = stream.index();
         let time_base = stream.time_base();
         let stream_duration = stream.duration();
         let container_duration = input.duration();
 
         let ctx = ff::codec::context::Context::from_parameters(stream.parameters())
-            .with_context(|| format!("{}: codec parameters", path.display()))?;
+            .with_context(|| format!("{name}: codec parameters"))?;
         let decoder = ctx
             .decoder()
             .audio()
-            .with_context(|| format!("{}: opening audio decoder", path.display()))?;
+            .with_context(|| format!("{name}: opening audio decoder"))?;
 
         let codec = decoder
             .codec()
@@ -93,8 +132,7 @@ impl LibavDecoder {
         let channels = layout.channels() as u16;
         if in_rate == 0 || channels == 0 {
             return Err(anyhow!(
-                "{}: decoder reports rate {in_rate}, {channels} channels",
-                path.display()
+                "{name}: decoder reports rate {in_rate}, {channels} channels"
             ));
         }
 
@@ -104,10 +142,7 @@ impl LibavDecoder {
         // than pushing an unplayable rate downstream and resampling twice.
         let out_rate = normalise_rate(in_rate);
         if out_rate != in_rate {
-            tracing::info!(
-                "{}: resampling {in_rate} Hz -> {out_rate} Hz at the decoder",
-                path.display()
-            );
+            tracing::info!("{name}: resampling {in_rate} Hz -> {out_rate} Hz at the decoder");
         }
 
         // Everything downstream speaks packed f32. libav hands out planar for
@@ -116,7 +151,7 @@ impl LibavDecoder {
             (decoder.format(), layout, in_rate),
             (Sample::F32(SampleType::Packed), layout, out_rate),
         )
-        .with_context(|| format!("{}: building resampler", path.display()))?;
+        .with_context(|| format!("{name}: building resampler"))?;
 
         // The stream's duration, in its own time base.
         //
@@ -143,6 +178,7 @@ impl LibavDecoder {
             codec,
             file_size,
             total_frames,
+            cancel,
             input,
             decoder,
             resampler,

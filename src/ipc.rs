@@ -26,6 +26,77 @@ pub fn socket_path() -> Result<PathBuf> {
     Ok(crate::paths::cache_dir()?.join("staramp.sock"))
 }
 
+/// The longest a socket path may be.
+///
+/// `sun_path` is 108 bytes on Linux and 104 on macOS, and the kernel truncates
+/// rather than complaining. Checked against the smaller of the two, because a
+/// path that works on one and silently loses remote control on the other is
+/// the worst of the three outcomes.
+#[cfg(not(target_os = "linux"))]
+const SUN_PATH_MAX: usize = 104;
+
+/// Claim the right to lead this session.
+///
+/// On Linux this is nothing: binding the abstract socket in [`listen`] *is*
+/// the election, atomically, and this always reports success.
+///
+/// Everywhere else the bind is not an election. A socket file left behind by a
+/// killed instance has to be unlinked first, and N windows all deciding to
+/// unlink means the last one can delete the inode the winner just bound -- so
+/// two instances can both believe they lead, and both open the audio device.
+/// A `flock` closes that: exactly one process can hold it, and the kernel
+/// releases it the instant the holder dies, `SIGKILL` included, so there is
+/// never a stale lock to reason about. Held for the life of the process.
+#[cfg(target_os = "linux")]
+pub fn claim_session() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn claim_session() -> bool {
+    static LEASE: std::sync::OnceLock<Option<std::fs::File>> = std::sync::OnceLock::new();
+
+    LEASE
+        .get_or_init(|| take_lock(&socket_path().ok()?.with_extension("lock")))
+        .is_some()
+}
+
+/// Take an exclusive, non-blocking `flock`, creating the file if needed.
+///
+/// `None` means another open file description holds it. The returned handle
+/// *is* the lock: closing the file releases it, which is precisely the
+/// property wanted here -- the kernel does that on process death however the
+/// process died, so a lock is never stale and never needs cleaning up.
+///
+/// Compiled on every platform, though only used where the socket bind is not
+/// itself an election, so that the behaviour above can be tested rather than
+/// merely assumed. `flock`'s constants are the same on Linux and the BSDs.
+fn take_lock(path: &std::path::Path) -> Option<std::fs::File> {
+    use std::os::fd::AsRawFd;
+
+    const LOCK_EX: i32 = 2;
+    const LOCK_NB: i32 = 4;
+    extern "C" {
+        #[link_name = "flock"]
+        fn libc_flock(fd: i32, operation: i32) -> i32;
+    }
+
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .ok()?;
+    // Non-blocking: a session that is already led is an answer, not something
+    // to wait for.
+    let held = unsafe { libc_flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) } == 0;
+    held.then_some(file)
+}
+
 /// The abstract socket name for a session, on Linux.
 ///
 /// Hashed rather than the path itself, because a socket name has 108 bytes to
@@ -59,11 +130,34 @@ pub fn listen(path: &std::path::Path) -> std::io::Result<UnixListener> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        // A socket left behind by a crashed instance would block binding for
-        // ever. Only remove it if nothing is listening.
-        if path.exists() && UnixStream::connect(path).is_err() {
-            let _ = std::fs::remove_file(path);
+        use std::io::{Error, ErrorKind};
+
+        // Silent truncation by the kernel is a silent loss of remote control,
+        // so say so instead. There is nothing to fall back to: the name *is*
+        // the address.
+        if path.as_os_str().len() >= SUN_PATH_MAX {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "socket path is {} bytes, over the {SUN_PATH_MAX}-byte limit: {}",
+                    path.as_os_str().len(),
+                    path.display()
+                ),
+            ));
         }
+
+        // The lease, not the bind, is the election here. Without it the unlink
+        // below is a race: see `claim_session`.
+        if !claim_session() {
+            return Err(Error::new(
+                ErrorKind::AddrInUse,
+                "another instance leads this session",
+            ));
+        }
+
+        // Holding the lease, any socket still on disk is certainly stale --
+        // its owner is dead, or we would not have the lock.
+        let _ = std::fs::remove_file(path);
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -607,6 +701,36 @@ pub fn send(request: &str) -> Result<String> {
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply)?;
     Ok(reply.trim_end().to_string())
+}
+
+#[cfg(test)]
+mod lease_tests {
+    use super::take_lock;
+
+    /// The whole point: a second claim fails while the first is alive, and
+    /// succeeds once it is gone. `flock` conflicts between open file
+    /// descriptions rather than between processes, so one process can prove
+    /// both halves.
+    #[test]
+    fn only_one_holder_at_a_time_and_closing_releases_it() {
+        let dir = std::env::temp_dir().join(format!("staramp-lease-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("session.lock");
+
+        let first = take_lock(&path).expect("an unheld lock is takeable");
+        assert!(
+            take_lock(&path).is_none(),
+            "a second holder must not get in"
+        );
+
+        drop(first);
+        assert!(
+            take_lock(&path).is_some(),
+            "closing the file releases the lock"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(test)]

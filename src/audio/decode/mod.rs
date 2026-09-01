@@ -13,6 +13,8 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use crate::vfs::Media;
+
 /// What a decoder is producing, discovered when the stream is opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamSpec {
@@ -153,16 +155,23 @@ const LIBAV_EXTS: &[&str] = &[
     "mpg", "mpeg", "mov", "mkv", "avi", "m2ts", "ts", "vob", "flv", "wmv", "m4v",
 ];
 
-/// Choose a backend from the file extension.
+/// Choose a backend from the extension in a track URI.
 ///
 /// An unknown extension goes to libav: it handles strictly more formats, so an
 /// unrecognised file is likelier to be something exotic than something
 /// mainstream with an odd name.
-pub fn backend_for_path(path: &Path) -> Backend {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase());
+///
+/// `&str` rather than `&Path` because the URI is the authority. It is always
+/// forward-slash separated, the extension is the only part that matters, and
+/// building a `Path` just to ask it for the extension is work for nothing --
+/// work that a URI whose bytes are not on this machine should not have to do.
+pub fn backend_for_uri(uri: &str) -> Backend {
+    // `Path::extension` semantics, kept deliberately: a leading dot is a hidden
+    // file rather than an extension, so `.flac` has none.
+    let name = uri.rsplit('/').next().unwrap_or(uri);
+    let ext = name
+        .rsplit_once('.')
+        .and_then(|(stem, e)| (!stem.is_empty()).then(|| e.to_ascii_lowercase()));
 
     match ext.as_deref() {
         Some(e) if SYMPHONIA_EXTS.contains(&e) => Backend::Symphonia,
@@ -171,12 +180,27 @@ pub fn backend_for_path(path: &Path) -> Backend {
     }
 }
 
-/// Open a file with the appropriate backend.
-pub fn open(path: &Path) -> Result<Box<dyn Decoder>> {
-    match backend_for_path(path) {
-        Backend::Symphonia => Ok(Box::new(symphonia::SymphoniaDecoder::open(path)?)),
-        Backend::Libav => Ok(Box::new(libav::LibavDecoder::open(path)?)),
+/// As [`backend_for_uri`], for a path that never was a URI.
+pub fn backend_for_path(path: &Path) -> Backend {
+    backend_for_uri(&path.to_string_lossy())
+}
+
+/// Open `media` with the appropriate backend.
+///
+/// `name` is the URI. It supplies the extension the backend is chosen by, the
+/// container hint, and the text of every error message -- which is why no
+/// decoder below this line needs to know whether the bytes were local.
+pub fn open(media: Media, name: &str) -> Result<Box<dyn Decoder>> {
+    match backend_for_uri(name) {
+        Backend::Symphonia => Ok(Box::new(symphonia::SymphoniaDecoder::open(media, name)?)),
+        Backend::Libav => Ok(Box::new(libav::LibavDecoder::open(media, name)?)),
     }
+}
+
+/// Open a local path directly. The CLI's entry point, and the tests'.
+pub fn open_path(path: &Path) -> Result<Box<dyn Decoder>> {
+    let name = path.to_string_lossy().into_owned();
+    open(Media::Local(path.to_path_buf()), &name)
 }
 
 #[cfg(test)]
@@ -185,7 +209,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn b(s: &str) -> Backend {
-        backend_for_path(&PathBuf::from(s))
+        backend_for_uri(s)
     }
 
     #[test]
@@ -240,5 +264,168 @@ mod tests {
     fn unknown_and_missing_extensions_fall_to_libav() {
         assert_eq!(b("a.zzz"), Backend::Libav);
         assert_eq!(b("noextension"), Backend::Libav);
+    }
+
+    /// Only the last path component decides, so a directory with a dot in it
+    /// cannot pull a file to the wrong backend.
+    #[test]
+    fn only_the_file_name_is_considered() {
+        assert_eq!(b("My Albums v1.0/track"), Backend::Libav);
+        assert_eq!(b("My Albums v1.0/track.flac"), Backend::Symphonia);
+    }
+
+    /// The URI form and the path form must never disagree -- `cmd_probe`
+    /// dispatches on the path while playback dispatches on the URI, and a
+    /// divergence would report one backend and use another.
+    #[test]
+    fn the_uri_and_path_forms_agree() {
+        for p in [
+            "a.flac",
+            "a.wv",
+            "dir/a.m4a",
+            "noextension",
+            // A leading dot is a hidden file, not an extension.
+            ".flac",
+            "a.",
+        ] {
+            assert_eq!(
+                backend_for_uri(p),
+                backend_for_path(&PathBuf::from(p)),
+                "{p}"
+            );
+        }
+    }
+}
+
+/// Decoding a file that is not on this machine.
+///
+/// The point of these is not the transport, which has its own tests. It is
+/// that the *same bytes* decode to the *same audio* whether they arrived from
+/// a disk or a pipe -- through both backends, since symphonia and libav reach
+/// their input by completely different routes.
+#[cfg(test)]
+mod remote_decode {
+    use super::*;
+    use crate::remote::sftp::session::{fake, Session};
+    use crate::remote::stream::{RemoteFile, MIN_WINDOW};
+    use crate::vfs::Media;
+    use std::sync::Arc;
+
+    /// Serve `bytes` as `/f` and open it as a decoder input.
+    fn served(bytes: Vec<u8>) -> Media {
+        let server = fake::Server::new(&[("/f", bytes)]);
+        let (sr, sw) = std::io::pipe().unwrap();
+        let (cr, cw) = std::io::pipe().unwrap();
+        std::thread::spawn(move || server.serve(sr, cw));
+        let session = Session::over(Box::new(sw), Box::new(cr)).unwrap();
+        let file = RemoteFile::open(Arc::clone(&session), "/f", MIN_WINDOW).unwrap();
+        let len = crate::vfs::RemoteRead::len(&file);
+        Media::Stream {
+            reader: Box::new(file),
+            len,
+        }
+    }
+
+    fn drain(mut d: Box<dyn Decoder>) -> Vec<f32> {
+        let mut all = Vec::new();
+        let mut buf = vec![0f32; 4096];
+        loop {
+            match d.read(&mut buf) {
+                Ok(0) => break,
+                Ok(frames) => all.extend_from_slice(&buf[..frames * d.spec().samples_per_frame()]),
+                Err(e) => panic!("decoding: {e}"),
+            }
+        }
+        all
+    }
+
+    /// A 16-bit PCM WAV, which is the shortest route to exercising symphonia.
+    fn wav(frames: usize) -> Vec<u8> {
+        let data: Vec<u8> = (0..frames)
+            .flat_map(|i| {
+                let v = ((i as f64 * 0.05).sin() * 12000.0) as i16;
+                v.to_le_bytes()
+            })
+            .collect();
+        let mut w = Vec::new();
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes());
+        w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        w.extend_from_slice(&1u16.to_le_bytes()); // mono
+        w.extend_from_slice(&44100u32.to_le_bytes());
+        w.extend_from_slice(&88200u32.to_le_bytes());
+        w.extend_from_slice(&2u16.to_le_bytes());
+        w.extend_from_slice(&16u16.to_le_bytes());
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        w.extend_from_slice(&data);
+        w
+    }
+
+    #[test]
+    fn symphonia_decodes_a_stream_exactly_as_it_decodes_a_file() {
+        let bytes = wav(120_000);
+        let dir = std::env::temp_dir().join(format!("staramp-rd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tone.wav");
+        std::fs::write(&path, &bytes).unwrap();
+
+        let local = drain(open(Media::Local(path.clone()), "tone.wav").unwrap());
+        let remote = drain(open(served(bytes), "tone.wav").unwrap());
+
+        assert!(!local.is_empty(), "the local decode produced nothing");
+        assert_eq!(local.len(), remote.len(), "same number of samples");
+        assert_eq!(local, remote, "sample for sample");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// WavPack goes through libav's custom AVIO, which is an entirely
+    /// different path into the decoder from symphonia's `MediaSource` -- and
+    /// it is the format the project exists to play properly.
+    #[test]
+    fn libav_decodes_a_stream_exactly_as_it_decodes_a_file() {
+        let path = std::path::Path::new("testdata/tone.wv");
+        if !path.is_file() {
+            eprintln!("testdata/tone.wv missing, skipping");
+            return;
+        }
+        let bytes = std::fs::read(path).unwrap();
+
+        let local = drain(open(Media::Local(path.to_path_buf()), "tone.wv").unwrap());
+        let remote = drain(open(served(bytes), "tone.wv").unwrap());
+
+        assert!(!local.is_empty(), "the local decode produced nothing");
+        assert_eq!(local.len(), remote.len(), "same number of samples");
+        assert_eq!(local, remote, "sample for sample");
+    }
+
+    /// Seeking is what a cue slice does on its very first read, so a stream
+    /// that cannot seek would break 27% of the reference library's playlists
+    /// while looking fine on everything else.
+    #[test]
+    fn a_streamed_decoder_seeks_to_the_same_place_a_local_one_does() {
+        let path = std::path::Path::new("testdata/tone.wv");
+        if !path.is_file() {
+            return;
+        }
+        let bytes = std::fs::read(path).unwrap();
+
+        let mut local = open(Media::Local(path.to_path_buf()), "tone.wv").unwrap();
+        let mut remote = open(served(bytes), "tone.wv").unwrap();
+
+        for frame in [0u64, 11_025, 44_100, 66_150] {
+            let a = local.seek(frame).unwrap();
+            let b = remote.seek(frame).unwrap();
+            assert_eq!(a, b, "landed on a different frame seeking to {frame}");
+
+            let mut la = vec![0f32; 2048];
+            let mut rb = vec![0f32; 2048];
+            let na = local.read(&mut la).unwrap();
+            let nr = remote.read(&mut rb).unwrap();
+            assert_eq!(na, nr, "frames read after seeking to {frame}");
+            assert_eq!(la[..na], rb[..nr], "audio after seeking to {frame}");
+        }
     }
 }

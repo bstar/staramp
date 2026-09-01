@@ -76,6 +76,49 @@ pub fn log_dir() -> Result<PathBuf> {
     cache_dir()
 }
 
+/// Volatile per-user state: sockets, and nothing that should survive a reboot.
+///
+/// `$XDG_RUNTIME_DIR` where there is one, which on Linux is a tmpfs the
+/// session owns. macOS has no such variable, so the cache directory stands in;
+/// it is on disk rather than in memory, which for a socket that is recreated
+/// every run costs nothing.
+pub fn runtime_dir() -> Result<PathBuf> {
+    let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
+        Some(d) => PathBuf::from(d).join("staramp"),
+        None => cache_dir()?.join("run"),
+    };
+    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    Ok(dir)
+}
+
+/// The longest an `ssh` ControlPath may be.
+///
+/// `sun_path` holds 108 bytes, but OpenSSH binds the control socket at
+/// `"<path>.<16 random chars>"` and only then renames it into place, so the
+/// name that actually has to fit is seventeen bytes longer than the one we
+/// choose. Getting this wrong makes `ssh` abort with a truncation error that
+/// says nothing about which path was too long.
+const CONTROL_PATH_MAX: usize = 108 - 18;
+
+/// Where the multiplexed `ssh` connection to `alias` is reached.
+///
+/// Hashed rather than spelled out, for the reason above: a host alias can be
+/// any length, and a runtime directory can be long before we add anything. Per
+/// host by construction, and never the user's own `ControlPath` -- an `ssh`
+/// master they are running is theirs, and we neither use nor disturb it.
+pub fn control_socket(alias: &str) -> Result<PathBuf> {
+    let h = blake3::hash(alias.as_bytes());
+    let path = runtime_dir()?.join(format!("ssh-{}.sock", &h.to_hex()[..16]));
+    let len = path.as_os_str().len();
+    anyhow::ensure!(
+        len <= CONTROL_PATH_MAX,
+        "the ssh control socket path is {len} bytes, over the {CONTROL_PATH_MAX}-byte \
+         limit: {}. Set STARAMP_DIR or XDG_RUNTIME_DIR to something shorter.",
+        path.display()
+    );
+    Ok(path)
+}
+
 /// Legacy XDG locations, checked once so an existing install is not orphaned.
 fn legacy_locations() -> Vec<(PathBuf, PathBuf)> {
     let Some(home) = home_dir() else {

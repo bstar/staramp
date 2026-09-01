@@ -84,8 +84,6 @@
                   cfg.nerdFont
                 else
                   pkgs.nerd-fonts.jetbrains-mono);
-              fonts.fontconfig.enable =
-                lib.mkIf (cfg.glyphs == "nerd") (lib.mkDefault true);
               # staramp keeps everything under one directory rather than
               # spreading it across the XDG roots, so this is not xdg.configFile.
               home.file.".local/staramp/config.toml".source =
@@ -98,6 +96,12 @@
                   } // cfg.settings
                 );
             }
+            # `fonts.fontconfig` is a Linux-only home-manager option, so this
+            # has to disappear rather than merely evaluate to false on darwin.
+            (lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+              fonts.fontconfig.enable =
+                lib.mkIf (cfg.glyphs == "nerd") (lib.mkDefault true);
+            })
             (lib.mkIf cfg.stylix.enable {
               home.file.".local/staramp/themes/stylix.toml".text =
                 let c = config.lib.stylix.colors;
@@ -125,10 +129,19 @@
         staramp = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
     }
-    # Linux only, and deliberately explicit. staramp needs ALSA for output and
-    # D-Bus for MPRIS, and eachDefaultSystem would drag in darwin systems that
-    # nixpkgs no longer supports, breaking `nix flake check` for everyone.
-    // flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
+    # Explicit rather than eachDefaultSystem, which would also claim systems
+    # nobody has built this on. ALSA and D-Bus are Linux-only and conditioned
+    # out below; on darwin cpal reaches CoreAudio and there is no MPRIS.
+    #
+    # aarch64-darwin only. nixpkgs 26.11 dropped x86_64-darwin outright --
+    # naming it here fails evaluation with a release note rather than a build
+    # error, so an Intel Mac needs a 26.05 nixpkgs or the plain cargo build
+    # documented in the README.
+    // flake-utils.lib.eachSystem [
+      "x86_64-linux"
+      "aarch64-linux"
+      "aarch64-darwin"
+    ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
@@ -136,12 +149,28 @@
         # asserts the copies that cannot be derived (Cargo.lock, PKGBUILD).
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 
-        #   alsa-lib : cpal's Linux backend (reaches PipeWire via pipewire-alsa)
         #   ffmpeg   : libavformat/libavcodec, linked in-process by ffmpeg-next
+        #   alsa-lib : cpal's Linux backend (reaches PipeWire via pipewire-alsa)
         #   dbus     : MPRIS via zbus
-        runtimeLibs = with pkgs; [ alsa-lib ffmpeg dbus ];
+        #
+        # Neither of the last two exists on darwin: cpal goes to CoreAudio
+        # through the SDK that stdenv already provides, and MPRIS is compiled
+        # out entirely. `alsa-lib` is `platforms = linux`, so referring to it
+        # unconditionally breaks *evaluation* there, not merely the build.
+        linuxLibs = pkgsFor:
+          pkgsFor.lib.optionals pkgsFor.stdenv.hostPlatform.isLinux [
+            pkgsFor.alsa-lib
+            pkgsFor.dbus
+          ];
+        runtimeLibs = [ pkgs.ffmpeg ] ++ linuxLibs pkgs;
         buildTools = with pkgs; [ pkg-config clang ];
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+        # ffmpeg-next runs bindgen, which needs the headers of what it binds.
+        bindgenArgs = pkgsFor:
+          "-I${pkgsFor.ffmpeg.dev}/include"
+          + pkgsFor.lib.optionalString pkgsFor.stdenv.hostPlatform.isLinux
+            " -I${pkgsFor.alsa-lib.dev}/include";
 
         mkStaramp = { pkgsFor ? pkgs }:
           pkgsFor.rustPlatform.buildRustPackage {
@@ -151,15 +180,13 @@
             cargoLock.lockFile = ./Cargo.lock;
 
             nativeBuildInputs = with pkgsFor; [ pkg-config clang ];
-            buildInputs = with pkgsFor; [ alsa-lib ffmpeg dbus ];
+            buildInputs = [ pkgsFor.ffmpeg ] ++ linuxLibs pkgsFor;
 
-            # ffmpeg-next runs bindgen, which needs libclang and the headers of
-            # the libraries it is binding.
-            LIBCLANG_PATH = libclangPath;
-            BINDGEN_EXTRA_CLANG_ARGS =
-              "-I${pkgsFor.ffmpeg.dev}/include -I${pkgsFor.alsa-lib.dev}/include";
+            LIBCLANG_PATH = "${pkgsFor.llvmPackages.libclang.lib}/lib";
+            BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgsFor;
 
-            postInstall = ''
+            # freedesktop assets, which mean nothing on macOS.
+            postInstall = pkgsFor.lib.optionalString pkgsFor.stdenv.hostPlatform.isLinux ''
               install -Dm644 packaging/staramp.desktop \
                 $out/share/applications/staramp.desktop
               install -Dm644 packaging/staramp.png \
@@ -173,7 +200,7 @@
               homepage = "https://github.com/bstar/staramp";
               license = licenses.mit;
               mainProgram = "staramp";
-              platforms = platforms.linux;
+              platforms = platforms.linux ++ platforms.darwin;
             };
           };
       in
@@ -218,16 +245,17 @@
         };
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
+          packages = (with pkgs; [
             rustc cargo rustfmt clippy rust-analyzer
-            cargo-deb
             # scripts/check-version.sh reads `cargo metadata`.
             jq
-          ] ++ buildTools ++ runtimeLibs;
+          ])
+          # Only ever used to build a .deb, which only happens on Linux.
+          ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.cargo-deb
+          ++ buildTools ++ runtimeLibs;
 
           LIBCLANG_PATH = libclangPath;
-          BINDGEN_EXTRA_CLANG_ARGS =
-            "-I${pkgs.ffmpeg.dev}/include -I${pkgs.alsa-lib.dev}/include";
+          BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgs;
 
           shellHook = ''
             echo "staramp devshell · rustc $(rustc --version | cut -d' ' -f2) · ffmpeg $(ffmpeg -version | head -1 | cut -d' ' -f3)"

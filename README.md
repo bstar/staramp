@@ -23,6 +23,8 @@ Built packages for the current release are on the
 | **`.deb`**               | Debian and Ubuntu                                      |
 | **Arch**                 | `packaging/PKGBUILD`                                   |
 | **Nix**                  | `nix run github:bstar/staramp`                  |
+| **macOS**                | Apple Silicon, via Nix or Homebrew                     |
+| **Remote**               | `staramp remote <host>` — a library over SSH            |
 | **Source**               | a Rust toolchain and a few development packages        |
 
 Every one of them is set out in [Installing](#installing) below, along with
@@ -200,8 +202,37 @@ later. There is no fully static musl build: ffmpeg's dependency graph does not
 cross-compile cleanly under `pkgsStatic`, and the AppImage covers the same
 ground properly.
 
+**macOS** on Apple Silicon, either way round. With Nix:
+
+```sh
+nix run github:bstar/staramp
+```
+
+Or from source with Homebrew, which needs no Nix on the Mac:
+
+```sh
+brew install ffmpeg pkg-config
+cargo build --release
+```
+
+If the build stops in `ffmpeg-sys-next`, it is bindgen looking for libclang.
+The Command Line Tools always carry one:
+
+```sh
+export LIBCLANG_PATH="$(xcode-select -p)/usr/lib"
+```
+
+No ALSA and no D-Bus: output goes through CoreAudio, and MPRIS is compiled out
+entirely rather than shipped as two megabytes that cannot run. Everything else
+is the same program, and a Mac can be either end of a remote library -- the
+machine playing, or the machine holding the files.
+
+Intel Macs need the plain `cargo` build above. There is no Nix package for
+them, because nixpkgs 26.11 dropped `x86_64-darwin`; a 26.05 nixpkgs still has
+it if you would rather stay declarative.
+
 **From source** needs a Rust toolchain (1.90 or newer), `libclang` for
-bindgen, and development packages for `alsa-lib` and four ffmpeg libraries:
+bindgen, and development packages for `alsa-lib` (Linux only) and four ffmpeg libraries:
 libavformat, libavcodec, libavutil and libswresample. Not libavfilter,
 libavdevice or libswscale. Those are video plumbing, and `ffmpeg-next` is
 pinned to the decode and resample features so they are never linked.
@@ -397,6 +428,74 @@ the only way to tell "no tags" apart from "no effect" by ear.
 
 Nothing here computes gain. An EBU R128 scanner is not built yet, so files
 without tags stay as they are.
+
+## A library on another machine
+
+The music is on the machine under the desk; you are on the laptop. star/amp
+opens one SSH connection and plays the files through it.
+
+```sh
+staramp remote music-server
+```
+
+That is the whole setup. There is **nothing to install or leave running** on
+the far machine beyond star/amp itself: no daemon, no listening port, no
+streaming server. `sshd` and its `sftp` subsystem do all of the work, and your
+own `~/.ssh/config`, keys and agent do all of the deciding — star/amp runs
+`ssh`, it does not reimplement it.
+
+What it needs is that `ssh music-server` already works without asking you
+anything, and that star/amp has been scanned there:
+
+```sh
+# on the machine with the music, once
+staramp scan ~/Music
+```
+
+Write it down and `staramp remote` takes no arguments:
+
+```toml
+[remote]
+host = "music-server"
+root = "~/Music"
+```
+
+### What actually crosses the link
+
+Two things, treated completely differently.
+
+The **index** is copied, once. It is small — 31 MB describes the 1.1 TB
+reference library — so copying it costs a few seconds, and afterwards every
+browse, every search and every smart playlist runs against local SQLite at
+full speed rather than at the speed of the link. It is re-fetched when the far
+machine's copy changes, which is a `stat` to find out.
+
+The **audio** is never copied. A track is read as it plays, a window at a time,
+so pressing play does not mean waiting for a file. Roughly forty-five seconds
+of the compressed file is kept ahead of the decoder, which is what a link that
+hiccups is ridden out on: a blip shorter than the buffer is inaudible. Seeking
+inside what is already buffered — which is most scrubbing — costs no network
+traffic at all.
+
+Nothing but the index and album art thumbnails is written to the laptop's disk.
+
+### It works in both directions
+
+A Mac can be either end: the machine playing, or the machine holding the files.
+The index records paths exactly as the filesystem gave them, byte for byte and
+never normalised, which is what lets an index built on APFS — where filenames
+are commonly NFD — resolve correctly when it is served to Linux, and the
+reverse.
+
+### What it does not do
+
+It does not transcode, and it never will. The bytes on the far disk are the
+bytes the decoder sees, so a WavPack cue album played over SSH is the same
+bit-perfect read it would be locally.
+
+It cannot ask you for a password: there is a full-screen UI on the terminal and
+nowhere to put a prompt. Use a key or an agent. If the host key is unknown,
+star/amp says so and tells you to run `ssh <host>` once by hand.
 
 ## Several terminals, one session
 

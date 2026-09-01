@@ -869,10 +869,15 @@ impl App {
     /// convention to remember: every mutation goes through `owns`, which sends
     /// rather than applies while this window is following.
     pub fn mirroring(library_root: PathBuf, cfg: &crate::config::Config) -> Result<Self> {
-        let player = Arc::new(Player::new(library_root.clone())?);
+        Self::mirroring_on(Arc::new(crate::vfs::Vfs::local(library_root)), cfg)
+    }
+
+    /// As `mirroring`, over a library that may not be on this machine.
+    pub fn mirroring_on(vfs: Arc<crate::vfs::Vfs>, cfg: &crate::config::Config) -> Result<Self> {
+        let player = Arc::new(Player::new(Arc::clone(&vfs))?);
         let mut app = Self::with_player(player, Vec::new(), cfg)?;
         app.source_playlist = None;
-        app.spawn_art(library_root);
+        app.spawn_art(vfs);
         Ok(app)
     }
 
@@ -881,9 +886,18 @@ impl App {
         items: Vec<QueueItem>,
         cfg: &crate::config::Config,
     ) -> Result<Self> {
-        let player = Arc::new(Player::new(library_root.clone())?);
+        Self::on(Arc::new(crate::vfs::Vfs::local(library_root)), items, cfg)
+    }
+
+    /// As `new`, over a library that may not be on this machine.
+    pub fn on(
+        vfs: Arc<crate::vfs::Vfs>,
+        items: Vec<QueueItem>,
+        cfg: &crate::config::Config,
+    ) -> Result<Self> {
+        let player = Arc::new(Player::new(Arc::clone(&vfs))?);
         let mut app = Self::with_player(player, items, cfg)?;
-        app.spawn_art(library_root);
+        app.spawn_art(vfs);
         Ok(app)
     }
 
@@ -901,7 +915,7 @@ impl App {
             self.library = Some(crate::ui::panels::library::Library::new(model));
             return;
         }
-        let Ok(index) = crate::paths::index_file() else {
+        let Ok(index) = self.player.vfs().index_path() else {
             return self.note("no index to browse -- run `staramp scan`".into());
         };
         let built = crate::library::db::Db::open_readonly(&index)
@@ -1262,12 +1276,18 @@ impl App {
     ///
     /// Best-effort throughout: without an index the panel simply says the
     /// track is not in the library, which is the truth.
-    fn spawn_art(&mut self, library_root: PathBuf) {
-        let Ok(index) = crate::paths::index_file() else {
+    fn spawn_art(&mut self, vfs: Arc<crate::vfs::Vfs>) {
+        // A remote library is browsed through a copy of its index, so that is
+        // the one the art worker must read too -- the local one describes a
+        // different library entirely.
+        let index = match vfs.as_ref() {
+            crate::vfs::Vfs::Remote(l) => crate::remote::index::local_copy(l.host()),
+            crate::vfs::Vfs::Local { .. } => crate::paths::index_file(),
+        };
+        let Ok(index) = index else {
             return;
         };
-        self.art =
-            crate::library::art::Watcher::spawn(index, library_root, Arc::clone(&self.art_fetch));
+        self.art = crate::library::art::Watcher::spawn(index, vfs, Arc::clone(&self.art_fetch));
     }
 
     fn with_player(

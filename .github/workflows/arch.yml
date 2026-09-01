@@ -39,7 +39,7 @@ jobs:
           su build -c 'cd /home/build/pkg && makepkg --nodeps --noconfirm'
           pacman -U --noconfirm /home/build/pkg/staramp-*-x86_64.pkg.tar.zst
           staramp --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: staramp-arch
           path: /home/build/pkg/*.pkg.tar.zst

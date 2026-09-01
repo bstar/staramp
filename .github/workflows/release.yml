@@ -49,7 +49,7 @@ jobs:
       # What the PKGBUILD downloads and checksums, built reproducibly from the
       # tag rather than taken from GitHub's unstable /archive/ endpoint.
       - run: ./scripts/dist/source.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: staramp-source
           path: dist/*.tar.gz
@@ -65,7 +65,7 @@ jobs:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git
       - uses: actions/checkout@v4
       - run: ./scripts/dist/portable.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: staramp-tarball
           path: dist/*.tar.gz
@@ -78,7 +78,7 @@ jobs:
       - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git file
       - uses: actions/checkout@v4
       - run: ./scripts/dist/appimage.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: staramp-appimage
           path: dist/*.AppImage

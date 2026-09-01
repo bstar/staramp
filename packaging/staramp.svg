@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- star/amp. A star over an analyzer, in the green a Winamp window was lit in. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" rx="48" fill="#121216"/>
+  <path fill="#2fd35f"
+        d="M128 30 L145.6 75.7 L194.6 78.4 L156.5 109.3 L169.1 156.6
+           L128 130 L86.9 156.6 L99.5 109.3 L61.4 78.4 L110.4 75.7 Z"/>
+  <g fill="#1a9c45">
+    <rect x="44"  y="206" width="24" height="20" rx="4"/>
+    <rect x="74"  y="192" width="24" height="34" rx="4"/>
+    <rect x="104" y="178" width="24" height="48" rx="4"/>
+    <rect x="134" y="186" width="24" height="40" rx="4"/>
+    <rect x="164" y="198" width="24" height="28" rx="4"/>
+    <rect x="194" y="210" width="24" height="16" rx="4"/>
+  </g>
+</svg>

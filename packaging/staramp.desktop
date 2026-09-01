@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=staramp
+GenericName=Terminal Music Player
+Comment=Play your local music library
+Exec=staramp
+Icon=staramp
+Terminal=true
+Categories=AudioVideo;Audio;Player;
+Keywords=music;audio;player;winamp;flac;

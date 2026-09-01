@@ -1,0 +1,177 @@
+[package]
+name = "staramp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+description = "A Winamp-feel terminal music player for local libraries"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/bstar/staramp"
+keywords = ["music", "player", "tui", "winamp", "audio"]
+categories = ["multimedia::audio", "command-line-utilities"]
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Errors
+anyhow = "1"
+thiserror = "2"
+
+# Logging — file only; stdout would corrupt the alternate screen.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# XDG paths
+etcetera = "0.10"
+
+# Universal decode path: libavformat/libavcodec linked in-process. Not a
+# subprocess -- real seeking, no respawn, no spawn latency per track, and no
+# runtime dependency on an `ffmpeg` binary being on PATH.
+# Only what a music player uses. The default feature set also pulls avfilter,
+# avdevice and swscale -- video plumbing this never touches, which made the
+# build need three more -dev packages than the documented dependency list, and
+# fail on a clean Debian.
+ffmpeg-next = { version = "9", default-features = false, features = [
+    "codec",
+    "format",
+    "software-resampling",
+] }
+
+# Output. cpal rather than rodio: rodio owns mixing, resampling and queueing,
+# which are exactly the three things this design has to control for gaplessness,
+# bit-perfect passthrough and the PCM tap.
+cpal = "0.16"
+
+# Lock-free SPSC ring. The output callback must never allocate, never lock and
+# never touch I/O -- that single rule removes most of the complexity that a
+# mutex-guarded output thread forces on you.
+rtrb = "0.3"
+
+# Command bus between the UI/CLI and the decode thread.
+crossbeam-channel = "0.5"
+
+# Lock-free publication of EQ coefficients and volume into the audio callback.
+# No mutex is ever taken on the audio path.
+arc-swap = "1"
+
+# CUE sheets are not reliably UTF-8. 37 of the 1,123 sheets in the reference
+# library are CP1251 or CP1252, and String::from_utf8 hard-fails every one.
+encoding_rs = "0.8"
+chardetng = "0.1"
+
+# Cue FILE references sometimes differ from the file on disk only by Unicode
+# normalisation form (Hattin vs Hattin with diaeresis).
+unicode-normalization = "0.1"
+
+# Parallel directory walk. ripgrep's, already proven on trees far larger than
+# this one.
+ignore = "0.4"
+rayon = "1"
+
+# Index. `bundled` vendors SQLite so there is no system dependency and FTS5 is
+# guaranteed present -- important for a self-contained binary.
+rusqlite = { version = "0.37", features = ["bundled", "functions", "backup"] }
+
+# Tags. Over symphonia's metadata because symphonia cannot read APE tags on
+# .ape/.wv/.mpc at all -- 148 files in the reference library would have none --
+# and because lofty parses ReplayGain uniformly across ID3v2 TXXX, Vorbis
+# comments and APEv2 instead of per-format special casing.
+lofty = "0.22"
+
+# Content-addressed cache keys for album art.
+blake3 = "1"
+
+# Winamp .wsz skins are plain ZIP archives of BMPs plus two text files.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
+
+# Config and themes. A real parser -- the reference implementation hand-rolls a
+# line scanner for both and silently ignores anything it does not recognise.
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"
+
+# TUI. crossterm as a direct dependency, not only via ratatui's re-export,
+# because we need raw mode, the alternate screen and a panic hook that restores
+# the terminal when something goes wrong.
+ratatui = "0.30"
+crossterm = "0.29"
+
+# Marquee scrolling and column truncation break badly on CJK and emoji titles
+# without real width measurement.
+unicode-width = "0.2"
+
+# Real-input FFT for the analyzer: about twice the throughput of a complex FFT
+# of the same size, and it removes a whole class of mirrored-spectrum bugs.
+realfft = "3"
+
+# MPRIS. mpris-server handles the fiddly parts -- the Seeked signal, batching
+# PropertiesChanged -- that hand-rolling on raw zbus would mean reimplementing.
+mpris-server = "0.10"
+# Only for zbus's async runtime. The audio path never touches it.
+tokio = { version = "1", features = ["rt-multi-thread", "time", "sync"] }
+ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
+ureq = "3"
+serde_json = "1.0.151"
+
+# Native decode path. Non-default features are deliberate: mp3, isomp4, aac and
+# alac are all gated off by default upstream.
+[dependencies.symphonia]
+version = "0.5"
+default-features = false
+features = [
+    "flac", "wav", "aiff", "pcm", "adpcm",
+    "ogg", "vorbis",
+    "mp3",
+    "isomp4", "aac", "alac",
+]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+# The audio path must not be slow in debug builds, or the whole thing is
+# untestable without a release compile.
+[profile.dev.package."*"]
+opt-level = 2
+
+# ---------------------------------------------------------------------------
+# .deb packaging (cargo deb)
+# ---------------------------------------------------------------------------
+[package.metadata.deb]
+maintainer = "bstar <bob@dinicolas.com>"
+copyright = "2026, bstar; portions (c) Bjarne Overli (cliamp, MIT); portions (c) 2015 Karl Stavestrand (cava, MIT)"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+A terminal music player for local libraries, built to feel like Winamp.
+Decodes FLAC, MP3, Vorbis, AAC and ALAC natively, and links libavcodec
+in-process for APE, WavPack, Musepack, DSD, Opus and WMA. Understands CUE
+sheets as first-class virtual tracks, including MPD's playlist URI form."""
+section = "sound"
+priority = "optional"
+assets = [
+    ["target/release/staramp", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/staramp/README.md", "644"],
+    ["NOTICE", "usr/share/doc/staramp/NOTICE", "644"],
+    ["packaging/staramp.desktop", "usr/share/applications/staramp.desktop", "644"],
+    ["packaging/staramp.png", "usr/share/icons/hicolor/256x256/apps/staramp.png", "644"],
+    ["packaging/staramp.svg", "usr/share/icons/hicolor/scalable/apps/staramp.svg", "644"],
+]
+# libavcodec and libavformat carry a version in their package name that differs
+# per Debian release, so pinning them here would break on every other release.
+# $auto resolves the real sonames from the built binary -- which means the .deb
+# has to be built on a Debian-like host. CI does exactly that; building it on
+# NixOS produces a package with no dependency information at all.
+depends = "$auto"
+# The default `unicode` glyph set uses the media control pictographs (U+23EE
+# and neighbours). DejaVu, Debian's usual terminal font, does not carry them;
+# Noto's symbol coverage does. A Recommends rather than a Depends: a player
+# should not refuse to install over a missing glyph, and `[ui] glyphs = "ascii"`
+# needs nothing at all.
+recommends = "fonts-noto-core"
+# `[ui] glyphs = "nerd"` wants a patched font. Debian ships one, but only the
+# user's terminal can actually select it, so this stays a suggestion.
+suggests = "fonts-hack-ttf"

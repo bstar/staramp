@@ -1,0 +1,63 @@
+name: ci
+
+# Documentation-only changes do not rebuild anything. The packages carry
+# README.md, so a docs edit does technically change their contents, but not in
+# a way worth twenty minutes of containers and an uncached nix build.
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'LICENSES/**'
+      - '.editorconfig'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang libclang-dev \
+            libasound2-dev libdbus-1-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/check-version.sh
+      - run: cargo fmt --check
+      # dead_code is allowed rather than denied: a few modules are complete and
+      # tested ahead of the UI that will reach them. Every other lint is an
+      # error, so real problems still fail the build.
+      - run: cargo clippy --all-targets -- -D warnings -A dead_code
+      # The audio-path tests need no sound device; anything that would is
+      # gated behind STARAMP_TEST_LIBRARY.
+      - run: cargo test --all
+
+  msrv:
+    # rust-version in Cargo.toml is a promise; this is what makes it true.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config clang libclang-dev \
+            libasound2-dev libdbus-1-dev \
+            libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.90"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets

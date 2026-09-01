@@ -2,7 +2,7 @@
 
 A terminal player for a more civilized age.
 
-No streaming. No radio stations. No accounts. It plays the files on your disk,
+No streaming. No radio stations. No accounts. WinAmp inspired. It plays the files on your disk,
 and it plays _all_ of them.
 
 [![nix](https://github.com/bstar/staramp/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/nix.yml)

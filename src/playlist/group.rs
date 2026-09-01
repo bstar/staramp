@@ -1,0 +1,524 @@
+//! Putting a queue in album order.
+//!
+//! Pure: a list of items in, a permutation of `0..n` out. It knows nothing
+//! about the queue that will install it or the panel that will draw dividers
+//! along it, and both of those come through [`keys`] so they cannot disagree
+//! about where one record ends and the next begins.
+//!
+//! The permutation is the contract. `Queue` installs the result as its whole
+//! playback order, so an ordering that dropped an index would not merely hide
+//! a track — it would make it unreachable.
+
+use super::queue::QueueItem;
+
+/// What decides whether two items belong to the same record.
+///
+/// The album title carries it, and the artist only breaks ties. Keying on
+/// `(album_artist, album)` outright looks more careful and is worse in
+/// practice: a compilation whose `album_artist` is tagged on some tracks and
+/// not others splits into pieces, and that is far commoner in a real library
+/// than two different records sharing a title.
+///
+/// The tie-break falls back to the track artist, because the case that
+/// actually turns up is one record ripped twice -- an mp3 folder with no
+/// `album_artist` and a cue rip with one -- sitting alongside a different
+/// record of the same name. The fallback puts the two rips together and still
+/// keeps the two records apart. It cannot scatter a patchy compilation,
+/// because a compilation only reaches this branch if its title is claimed by
+/// two different album artists, and its own is one value on every row that
+/// has it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Key {
+    title: String,
+    /// Empty unless this title genuinely belongs to more than one artist.
+    artist: String,
+}
+
+impl Key {
+    /// The album title, normalised.
+    ///
+    /// How a record is named on its own, without the artist that only exists
+    /// to separate it from a namesake in the same queue. That makes it the
+    /// right handle for anything that has to survive the queue changing --
+    /// folding a record away, say, which is remembered across playlists and
+    /// across launches, where the namesake may not be there at all.
+    pub fn title(&self) -> &str {
+        &self.title
+    }
+
+    /// The artist, empty unless this title is claimed by more than one.
+    ///
+    /// Only meaningful beside [`Key::title`]: on its own it says nothing,
+    /// because most records leave it blank on purpose.
+    pub fn artist(&self) -> &str {
+        &self.artist
+    }
+}
+
+/// The same normalisation the keys use, for a title from somewhere else --
+/// a config file, say.
+pub fn normalise_title(s: &str) -> String {
+    normalise(s)
+}
+
+fn normalise(s: &str) -> String {
+    s.trim().to_lowercase()
+}
+
+fn tag(s: Option<&str>) -> Option<String> {
+    let t = normalise(s?);
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
+}
+
+/// The three tags album identity is decided from.
+///
+/// A trait rather than the concrete queue item, because the library browser
+/// holds a different row and the two must not end up with different rules for
+/// where one record ends and the next begins.
+pub trait Tagged {
+    fn album(&self) -> Option<&str>;
+    fn album_artist(&self) -> Option<&str>;
+    fn artist(&self) -> Option<&str>;
+}
+
+impl Tagged for QueueItem {
+    fn album(&self) -> Option<&str> {
+        self.album.as_deref()
+    }
+    fn album_artist(&self) -> Option<&str> {
+        self.album_artist.as_deref()
+    }
+    fn artist(&self) -> Option<&str> {
+        self.artist.as_deref()
+    }
+}
+
+/// The album each item belongs to, one entry per item, `None` for untagged.
+///
+/// Resolved over the whole list rather than item by item, because whether the
+/// album artist matters depends on what else is in the list.
+pub fn keys<T: Tagged>(items: &[T]) -> Vec<Option<Key>> {
+    use std::collections::{HashMap, HashSet};
+
+    // Which artists claim each title. One or none means the title is enough.
+    let mut claims: HashMap<String, HashSet<String>> = HashMap::new();
+    for item in items {
+        if let Some(title) = tag(item.album()) {
+            let e = claims.entry(title).or_default();
+            if let Some(a) = tag(item.album_artist()) {
+                e.insert(a);
+            }
+        }
+    }
+
+    items
+        .iter()
+        .map(|item| {
+            let title = tag(item.album())?;
+            let shared = claims.get(&title).is_some_and(|a| a.len() > 1);
+            let artist = if shared {
+                tag(item.album_artist())
+                    .or_else(|| tag(item.artist()))
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            Some(Key { title, artist })
+        })
+        .collect()
+}
+
+/// Where a group sits before its own key is considered.
+///
+/// Undated records go after dated ones and untagged tracks after everything,
+/// in *both* directions. Reversing those along with the years would answer
+/// "newest first" by opening on the tracks whose age is unknown.
+const DATED: u8 = 0;
+const UNDATED: u8 = 1;
+const UNTAGGED: u8 = 2;
+
+/// The album titles in the order the records appear, one entry per record.
+///
+/// What a hand-made order is written down as: a list of records rather than a
+/// list of positions, so it still means something after the playlist has been
+/// edited or the arrangement carried to another one.
+pub fn titles_in_order(items: &[QueueItem]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut last: Option<Option<Key>> = None;
+    for key in keys(items) {
+        if last.as_ref() == Some(&key) {
+            continue;
+        }
+        out.push(key.as_ref().map(|k| k.title.clone()).unwrap_or_default());
+        last = Some(key);
+    }
+    out
+}
+
+/// A permutation of `0..items.len()`, albums in year order — or in `manual`
+/// order, for the records it names.
+///
+/// A record the hand-made order does not mention keeps its place in the year
+/// order, after everything that is named: loading a playlist full of records
+/// nobody has arranged should not scatter them.
+///
+/// Within a record: disc, then track number, then the order it arrived in — so
+/// a rip with no track numbers keeps the order the playlist gave it instead of
+/// being scrambled by a sort that had nothing to sort on.
+pub fn album_order(items: &[QueueItem], descending: bool, manual: &[String]) -> Vec<usize> {
+    let keys = keys(items);
+
+    // First appearance decides the grouping, so an order is stable against
+    // anything the sort below cannot distinguish.
+    let mut groups: Vec<Group> = Vec::new();
+    let mut seen: std::collections::HashMap<Option<Key>, usize> = std::collections::HashMap::new();
+    for (i, key) in keys.iter().enumerate() {
+        let at = *seen.entry(key.clone()).or_insert_with(|| {
+            groups.push(Group {
+                key: key.clone(),
+                year: None,
+                members: Vec::new(),
+            });
+            groups.len() - 1
+        });
+        let g = &mut groups[at];
+        // The earliest year any of its tracks claims. Rips disagree with
+        // themselves often enough that picking one arbitrarily is not stable.
+        g.year = match (g.year, items[i].year) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        g.members.push(i);
+    }
+
+    for g in &mut groups {
+        g.members.sort_by_key(|&i| {
+            let it = &items[i];
+            (it.disc_no.unwrap_or(0), it.track_no.unwrap_or(0), i)
+        });
+    }
+
+    // Where the hand-made order puts a record, if it names it at all.
+    let placed = |g: &Group| {
+        manual
+            .iter()
+            .position(|t| t == g.title())
+            .unwrap_or(usize::MAX)
+    };
+
+    groups.sort_by(|a, b| {
+        // Anything arranged by hand comes first, in that arrangement.
+        let (pa, pb) = (placed(a), placed(b));
+        if pa != usize::MAX || pb != usize::MAX {
+            return pa.cmp(&pb);
+        }
+        a.bucket().cmp(&b.bucket()).then_with(|| {
+            if a.bucket() != DATED {
+                // Alphabetical is alphabetical; only years have a direction.
+                return a.title().cmp(b.title());
+            }
+            let ord = a.year.cmp(&b.year).then_with(|| a.title().cmp(b.title()));
+            if descending {
+                ord.reverse()
+            } else {
+                ord
+            }
+        })
+    });
+
+    let order: Vec<usize> = groups.into_iter().flat_map(|g| g.members).collect();
+    debug_assert!(
+        is_permutation(&order, items.len()),
+        "album_order lost a track"
+    );
+    order
+}
+
+struct Group {
+    key: Option<Key>,
+    year: Option<i64>,
+    members: Vec<usize>,
+}
+
+impl Group {
+    fn bucket(&self) -> u8 {
+        match (&self.key, self.year) {
+            (None, _) => UNTAGGED,
+            (Some(_), None) => UNDATED,
+            (Some(_), Some(_)) => DATED,
+        }
+    }
+
+    fn title(&self) -> &str {
+        self.key.as_ref().map(|k| k.title.as_str()).unwrap_or("")
+    }
+}
+
+/// Every index of `0..n`, exactly once.
+pub fn is_permutation(order: &[usize], n: usize) -> bool {
+    if order.len() != n {
+        return false;
+    }
+    let mut seen = vec![false; n];
+    for &i in order {
+        match seen.get_mut(i) {
+            Some(s) if !*s => *s = true,
+            _ => return false,
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::playlist::uri::TrackUri;
+
+    /// `album, album_artist, year, disc, track`
+    fn item(album: &str, artist: &str, year: Option<i64>, disc: u32, track: u32) -> QueueItem {
+        let mut q = QueueItem::new(TrackUri::File {
+            rel_path: format!("{album}-{disc}-{track}.flac"),
+        });
+        q.album = (!album.is_empty()).then(|| album.to_string());
+        q.album_artist = (!artist.is_empty()).then(|| artist.to_string());
+        q.year = year;
+        q.disc_no = Some(disc);
+        q.track_no = Some(track);
+        q
+    }
+
+    /// The album title of each item, in the order `album_order` gives them.
+    fn titles(items: &[QueueItem], descending: bool) -> Vec<String> {
+        album_order(items, descending, &[])
+            .into_iter()
+            .map(|i| items[i].album.clone().unwrap_or_else(|| "-".into()))
+            .collect()
+    }
+
+    fn dedup(v: Vec<String>) -> Vec<String> {
+        let mut v = v;
+        v.dedup();
+        v
+    }
+
+    #[test]
+    fn albums_come_out_in_year_order_both_ways() {
+        let items = vec![
+            item("Chained", "At Vance", Some(2005), 1, 1),
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("Fireworks", "Angra", Some(1998), 1, 1),
+        ];
+        assert_eq!(
+            dedup(titles(&items, false)),
+            ["Holy Land", "Fireworks", "Chained"]
+        );
+        assert_eq!(
+            dedup(titles(&items, true)),
+            ["Chained", "Fireworks", "Holy Land"]
+        );
+    }
+
+    #[test]
+    fn a_hand_made_order_beats_the_years() {
+        let items = vec![
+            item("Chained", "At Vance", Some(2005), 1, 1),
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("Fireworks", "Angra", Some(1998), 1, 1),
+        ];
+        assert_eq!(
+            titles_in_order(&items),
+            ["chained", "holy land", "fireworks"],
+            "the order as it stands, which is what an arrangement starts from"
+        );
+
+        let by_hand = vec![
+            "fireworks".to_string(),
+            "chained".into(),
+            "holy land".into(),
+        ];
+        let out: Vec<String> = album_order(&items, false, &by_hand)
+            .into_iter()
+            .map(|i| items[i].album.clone().unwrap())
+            .collect();
+        assert_eq!(out, ["Fireworks", "Chained", "Holy Land"]);
+        // And the direction no longer applies to what was arranged.
+        let flipped: Vec<String> = album_order(&items, true, &by_hand)
+            .into_iter()
+            .map(|i| items[i].album.clone().unwrap())
+            .collect();
+        assert_eq!(flipped, out);
+    }
+
+    #[test]
+    fn a_record_the_arrangement_does_not_name_keeps_its_place_after_it() {
+        // Loading a playlist full of records nobody has arranged should not
+        // scatter them.
+        let items = vec![
+            item("Chained", "At Vance", Some(2005), 1, 1),
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("Fireworks", "Angra", Some(1998), 1, 1),
+        ];
+        let by_hand = vec!["chained".to_string()];
+        let out: Vec<String> = album_order(&items, false, &by_hand)
+            .into_iter()
+            .map(|i| items[i].album.clone().unwrap())
+            .collect();
+        assert_eq!(out, ["Chained", "Holy Land", "Fireworks"]);
+    }
+
+    #[test]
+    fn an_arrangement_naming_records_that_are_not_here_changes_nothing() {
+        let items = vec![
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("Fireworks", "Angra", Some(1998), 1, 1),
+        ];
+        let by_hand = vec!["something else".to_string()];
+        assert_eq!(
+            album_order(&items, false, &by_hand),
+            album_order(&items, false, &[])
+        );
+    }
+
+    #[test]
+    fn the_untagged_group_is_last_in_both_directions() {
+        let items = vec![
+            item("", "", None, 1, 1),
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("", "", None, 1, 2),
+            item("Chained", "At Vance", Some(2005), 1, 1),
+        ];
+        for descending in [false, true] {
+            let out = dedup(titles(&items, descending));
+            assert_eq!(out.last().unwrap(), "-", "{descending}: {out:?}");
+            assert_eq!(out.len(), 3, "the untagged tracks should be one group");
+        }
+    }
+
+    #[test]
+    fn undated_albums_sit_after_the_dated_ones_whichever_way_round() {
+        let items = vec![
+            item("Bootlegs", "Angra", None, 1, 1),
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("Chained", "At Vance", Some(2005), 1, 1),
+            item("", "", None, 1, 1),
+        ];
+        for descending in [false, true] {
+            let out = dedup(titles(&items, descending));
+            assert_eq!(out[2], "Bootlegs", "{descending}: {out:?}");
+            assert_eq!(out[3], "-", "{descending}: {out:?}");
+        }
+    }
+
+    #[test]
+    fn an_album_takes_the_earliest_year_its_tracks_claim() {
+        // A reissue tagged on one track only must not float the whole record
+        // to the wrong end of the list.
+        let items = vec![
+            item("Reissued", "A", Some(2011), 1, 2),
+            item("Reissued", "A", Some(1984), 1, 1),
+            item("Later", "B", Some(1990), 1, 1),
+        ];
+        assert_eq!(dedup(titles(&items, false)), ["Reissued", "Later"]);
+    }
+
+    #[test]
+    fn tracks_within_an_album_go_by_disc_then_number() {
+        let items = vec![
+            item("A", "X", Some(2000), 2, 1),
+            item("A", "X", Some(2000), 1, 2),
+            item("A", "X", Some(2000), 1, 1),
+        ];
+        assert_eq!(album_order(&items, false, &[]), [2, 1, 0]);
+    }
+
+    #[test]
+    fn an_album_with_no_track_numbers_keeps_the_order_it_arrived_in() {
+        let mut items = vec![
+            item("A", "X", Some(2000), 1, 1),
+            item("A", "X", Some(2000), 1, 1),
+            item("A", "X", Some(2000), 1, 1),
+        ];
+        for it in &mut items {
+            it.track_no = None;
+            it.disc_no = None;
+        }
+        assert_eq!(album_order(&items, false, &[]), [0, 1, 2]);
+    }
+
+    #[test]
+    fn a_title_two_artists_share_is_split_but_a_patchy_compilation_is_not() {
+        // Two different records called the same thing: separate.
+        let two = vec![
+            item("Greatest Hits", "Queen", Some(1981), 1, 1),
+            item("Greatest Hits", "Abba", Some(1975), 1, 1),
+        ];
+        let k = keys(&two);
+        assert_ne!(k[0], k[1], "two artists, two records");
+
+        // One compilation, tagged on some rows and not others: together.
+        let patchy = vec![
+            item("Monster Ballads", "Various Artists", Some(1996), 1, 1),
+            item("Monster Ballads", "", Some(1996), 1, 2),
+        ];
+        let k = keys(&patchy);
+        assert_eq!(k[0], k[1], "one record, patchily tagged");
+    }
+
+    #[test]
+    fn one_record_ripped_twice_stays_one_record() {
+        // Straight out of the reference library: `Chained` is an At Vance
+        // record and a Crystal Eyes record, and the Crystal Eyes one is there
+        // twice -- an mp3 folder with no `album_artist` and a cue rip with
+        // one. Three groups would be wrong; so would one.
+        let mut mp3 = item("Chained", "", Some(2008), 1, 1);
+        mp3.artist = Some("Crystal Eyes".into());
+        let mut cue = item("Chained", "Crystal Eyes", None, 1, 1);
+        cue.artist = Some("Crystal Eyes".into());
+        let mut other = item("Chained", "At Vance", Some(2005), 1, 1);
+        other.artist = Some("At Vance".into());
+
+        let k = keys(&[mp3, cue, other]);
+        assert_eq!(k[0], k[1], "the same record ripped twice");
+        assert_ne!(k[0], k[2], "a different record of the same name");
+    }
+
+    #[test]
+    fn the_album_title_is_matched_past_case_and_padding() {
+        let items = vec![
+            item("Holy Land", "Angra", Some(1996), 1, 1),
+            item("  holy land ", "Angra", Some(1996), 1, 2),
+        ];
+        let k = keys(&items);
+        assert_eq!(k[0], k[1], "{k:?}");
+    }
+
+    #[test]
+    fn nothing_is_ever_lost_however_little_there_is_to_sort_on() {
+        // The property the queue depends on: an order that dropped an index
+        // would make that track unreachable, not merely invisible.
+        let bare: Vec<QueueItem> = (0..7)
+            .map(|i| {
+                QueueItem::new(TrackUri::File {
+                    rel_path: format!("{i}.flac"),
+                })
+            })
+            .collect();
+        for descending in [false, true] {
+            let order = album_order(&bare, descending, &[]);
+            assert!(is_permutation(&order, bare.len()), "{order:?}");
+        }
+        assert!(is_permutation(&album_order(&[], false, &[]), 0));
+    }
+
+    #[test]
+    fn a_permutation_is_checked_honestly() {
+        assert!(is_permutation(&[2, 0, 1], 3));
+        assert!(!is_permutation(&[0, 0, 1], 3), "a repeat is not one");
+        assert!(!is_permutation(&[0, 1], 3), "nor is a short one");
+        assert!(!is_permutation(&[0, 1, 3], 3), "nor one out of range");
+    }
+}

@@ -1,0 +1,45 @@
+staramp
+Copyright (c) 2026 bstar
+
+This product includes software developed as part of cliamp
+(https://github.com/bjarneo/cliamp), Copyright (c) Bjarne Øverli,
+licensed under the MIT License.
+
+Portions of staramp derived from cliamp:
+
+  - The visualizer analysis pipeline (src/vis/analysis.rs) and the peak
+    ballistics (src/vis/ballistics.rs), ported from cliamp's
+    ui/visualizer.go and ui/vis_classic_peak.go.
+  - The 10-band equalizer centre frequencies (src/audio/dsp/eq.rs),
+    which follow Winamp's classic layout as used by cliamp.
+
+Each file listed above carries an attribution header naming its origin.
+The full cliamp licence text is reproduced in LICENSES/cliamp-MIT.txt.
+
+This product also includes software developed as part of cava
+(https://github.com/karlstav/cava), Copyright (c) 2015 Karl Stavestrand,
+licensed under the MIT License.
+
+Portions of staramp derived from cava:
+
+  - The cava analysis core (src/vis/cava.rs): the dual-window band
+    distribution, hard-coded EQ, autosens, and the gravity and integral
+    smoothing, ported from cava's cavacore.c; and the monstercat filter,
+    ported from cava's cava.c.
+
+The full cava licence text is reproduced in LICENSES/cava-MIT.txt.
+
+The terminal text effects follow the designs of TerminalTextEffects
+(https://github.com/ChrisBuilds/terminaltexteffects) and its Rust port ttfx
+(https://github.com/omacom/ttfx). They are reimplemented here rather than
+depended on -- those render ANSI to stdout, while staramp needs per-character
+state it can draw into a ratatui buffer -- so no ttfx code is included.
+
+Colour schemes under themes/ are transcriptions of published palettes:
+Catppuccin, Dracula, Nord, Rose Pine, Tokyo Night, Gruvbox, Everforest,
+Kanagawa, Ayu, One Dark and Solarized, each MIT-licensed or public. Each theme
+file names its author.
+
+themes/winamp-classic.toml transcribes the Winamp 2.91 base skin's own
+PLEDIT.TXT and VISCOLOR.TXT values. staramp is not affiliated with, endorsed
+by, or connected to Winamp, Nullsoft or the Llama Group.

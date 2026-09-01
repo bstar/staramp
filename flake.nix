@@ -1,0 +1,240 @@
+{
+  description = "staramp — a Winamp-feel terminal music player";
+
+  inputs = {
+    nixpkgs.url = "nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    let
+      # Home-manager module, so staramp can be installed and configured
+      # declaratively the way the rest of a NixOS setup is.
+      hmModule = { config, lib, pkgs, ... }:
+        let cfg = config.programs.staramp;
+        in {
+          options.programs.staramp = {
+            enable = lib.mkEnableOption "staramp terminal music player";
+            package = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+              description = "The staramp package to use.";
+            };
+            libraryRoot = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "/mnt/music";
+              description = "Where the music library lives.";
+            };
+            playlistDir = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = ''
+                Directory of .m3u playlists, read and written in place.
+                Pointing this at MPD's own playlist directory is supported and
+                intended: staramp writes the same URI form MPD does.
+              '';
+            };
+            theme = lib.mkOption {
+              type = lib.types.str;
+              default = "winamp-classic";
+            };
+            stylix.enable = lib.mkEnableOption ''
+              deriving a staramp theme from the active Stylix base16 scheme, so
+              the player matches the rest of the desktop automatically
+            '';
+            glyphs = lib.mkOption {
+              type = lib.types.enum [ "unicode" "nerd" "ascii" ];
+              default = "unicode";
+              description = ''
+                Transport button faces. `nerd` uses the private-use icons a
+                patched font provides; setting it also installs `nerdFont` so
+                the codepoints resolve.
+
+                A terminal program cannot choose its own typeface, so this
+                only decides which codepoints staramp emits -- the font your
+                terminal is configured with still has to be the patched one.
+              '';
+            };
+            nerdFont = lib.mkOption {
+              type = lib.types.nullOr lib.types.package;
+              default = null;
+              example = "pkgs.nerd-fonts.jetbrains-mono";
+              description = ''
+                A patched font to install. Defaults to JetBrainsMono when
+                `glyphs = "nerd"`, and to nothing otherwise.
+              '';
+            };
+            settings = lib.mkOption {
+              type = lib.types.attrs;
+              default = { };
+              description = "Extra config.toml settings, merged last.";
+            };
+          };
+
+          config = lib.mkIf cfg.enable (lib.mkMerge [
+            {
+              home.packages = [ cfg.package ]
+                # The glyphs are useless without a font that carries them.
+                # Installing one does not select it in the terminal -- that is
+                # the terminal's own setting -- but it does mean the codepoints
+                # exist to fall back to.
+                ++ lib.optional (cfg.glyphs == "nerd")
+                (if cfg.nerdFont != null then
+                  cfg.nerdFont
+                else
+                  pkgs.nerd-fonts.jetbrains-mono);
+              fonts.fontconfig.enable =
+                lib.mkIf (cfg.glyphs == "nerd") (lib.mkDefault true);
+              # staramp keeps everything under one directory rather than
+              # spreading it across the XDG roots, so this is not xdg.configFile.
+              home.file.".local/staramp/config.toml".source =
+                (pkgs.formats.toml { }).generate "staramp-config.toml" (
+                  lib.filterAttrs (_: v: v != null) {
+                    library_root = cfg.libraryRoot;
+                    playlist_dir = cfg.playlistDir;
+                    theme = if cfg.stylix.enable then "stylix" else cfg.theme;
+                    ui = { glyphs = cfg.glyphs; };
+                  } // cfg.settings
+                );
+            }
+            (lib.mkIf cfg.stylix.enable {
+              home.file.".local/staramp/themes/stylix.toml".text =
+                let c = config.lib.stylix.colors;
+                in ''
+                  # Generated from the active Stylix scheme.
+                  [meta]
+                  name = "Stylix"
+                  id = "stylix"
+                  variant = "${config.stylix.polarity}"
+
+                  [base16]
+                '' + lib.concatMapStringsSep "\n"
+                  (n: ''base${n} = "#${c."base${n}"}"'')
+                  [ "00" "01" "02" "03" "04" "05" "06" "07"
+                    "08" "09" "0A" "0B" "0C" "0D" "0E" "0F" ]
+                  + "\n";
+            })
+          ]);
+        };
+    in
+    {
+      homeManagerModules.staramp = hmModule;
+      homeManagerModules.default = hmModule;
+      overlays.default = final: prev: {
+        staramp = self.packages.${final.stdenv.hostPlatform.system}.default;
+      };
+    }
+    # Linux only, and deliberately explicit. staramp needs ALSA for output and
+    # D-Bus for MPRIS, and eachDefaultSystem would drag in darwin systems that
+    # nixpkgs no longer supports, breaking `nix flake check` for everyone.
+    // flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" ] (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+
+        # One version, read rather than repeated. scripts/check-version.sh
+        # asserts the copies that cannot be derived (Cargo.lock, PKGBUILD).
+        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+
+        #   alsa-lib : cpal's Linux backend (reaches PipeWire via pipewire-alsa)
+        #   ffmpeg   : libavformat/libavcodec, linked in-process by ffmpeg-next
+        #   dbus     : MPRIS via zbus
+        runtimeLibs = with pkgs; [ alsa-lib ffmpeg dbus ];
+        buildTools = with pkgs; [ pkg-config clang ];
+        libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
+
+        mkStaramp = { pkgsFor ? pkgs, headless ? false }:
+          let
+            # Headless ffmpeg for release artifacts: a decode-only music player
+            # has no use for the GUI and sound-server pieces. Measured at 300.7
+            # MiB against 303.8 MiB on current nixpkgs, so the saving is about
+            # 1% rather than the large one this used to claim -- it is kept for
+            # the smaller attack surface, not the size.
+            ffmpegFor =
+              if headless then pkgsFor.ffmpeg-headless else pkgsFor.ffmpeg;
+          in
+          pkgsFor.rustPlatform.buildRustPackage {
+            pname = "staramp";
+            version = cargoToml.package.version;
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+
+            nativeBuildInputs = with pkgsFor; [ pkg-config clang ];
+            buildInputs = [ pkgsFor.alsa-lib ffmpegFor pkgsFor.dbus ];
+
+            # ffmpeg-next runs bindgen, which needs libclang and the headers of
+            # the libraries it is binding.
+            LIBCLANG_PATH = libclangPath;
+            BINDGEN_EXTRA_CLANG_ARGS =
+              "-I${ffmpegFor.dev}/include -I${pkgsFor.alsa-lib.dev}/include";
+
+            postInstall = ''
+              install -Dm644 packaging/staramp.desktop \
+                $out/share/applications/staramp.desktop
+              install -Dm644 packaging/staramp.png \
+                $out/share/icons/hicolor/256x256/apps/staramp.png
+              install -Dm644 packaging/staramp.svg \
+                $out/share/icons/hicolor/scalable/apps/staramp.svg
+            '';
+
+            meta = with pkgsFor.lib; {
+              description = "A Winamp-feel terminal music player for local libraries";
+              homepage = "https://github.com/bstar/staramp";
+              license = licenses.mit;
+              mainProgram = "staramp";
+              platforms = platforms.linux;
+            };
+          };
+      in
+      {
+        packages.default = mkStaramp { };
+        packages.staramp = mkStaramp { };
+
+        # Smaller closure for release tarballs. A fully static musl build was
+        # attempted and abandoned: pkgsStatic cannot evaluate ffmpeg's
+        # transitive dependencies (libpulseaudio via libopenmpt/mpg123, then
+        # elfutils), and chasing that down is a project of its own for an
+        # artifact nobody asked for. Distro packages and the portable tarball
+        # cover the same ground.
+        packages.headless = mkStaramp { headless = true; };
+
+        # `nix flake check` used to check nothing of its own. The packages are
+        # here because buildRustPackage runs `cargo test` as part of building
+        # them, so listing them makes one command cover the test suite too.
+        checks = {
+          inherit (self.packages.${system}) default headless;
+
+          fmt = pkgs.runCommand "cargo-fmt"
+            { nativeBuildInputs = [ pkgs.rustfmt ]; }
+            ''
+              cd ${./.}
+              find src -name '*.rs' -print0 \
+                | xargs -0 rustfmt --check --edition 2021
+              touch $out
+            '';
+        };
+
+        formatter = pkgs.nixpkgs-fmt;
+
+        apps.default = flake-utils.lib.mkApp {
+          drv = self.packages.${system}.default;
+        };
+
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs; [
+            rustc cargo rustfmt clippy rust-analyzer
+            cargo-deb
+            # scripts/check-version.sh reads `cargo metadata`.
+            jq
+          ] ++ buildTools ++ runtimeLibs;
+
+          LIBCLANG_PATH = libclangPath;
+          BINDGEN_EXTRA_CLANG_ARGS =
+            "-I${pkgs.ffmpeg.dev}/include -I${pkgs.alsa-lib.dev}/include";
+
+          shellHook = ''
+            echo "staramp devshell · rustc $(rustc --version | cut -d' ' -f2) · ffmpeg $(ffmpeg -version | head -1 | cut -d' ' -f3)"
+          '';
+        };
+      });
+}

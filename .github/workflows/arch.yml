@@ -1,0 +1,45 @@
+name: arch
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  arch:
+    # Arch is packaged from a PKGBUILD nothing else exercises, and makepkg's
+    # own flags are what broke it last time: LTO is on by default there, which
+    # leaves the C that rusqlite and blake3 compile as bitcode that rustc's
+    # linker cannot resolve. Building it here is the only way that stays fixed.
+    #
+    # The result is uploaded for inspection and is deliberately not released:
+    # depends=('ffmpeg') is unversioned, so a frozen package dies without
+    # warning the next time Arch bumps a soname. The AUR is where this belongs.
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm base-devel git jq rust clang pkgconf alsa-lib ffmpeg dbus
+      - uses: actions/checkout@v4
+      - name: Resolve the version
+        id: v
+        run: echo "version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')" >> "$GITHUB_OUTPUT"
+      - name: Build and install the package
+        env:
+          VER: ${{ steps.v.outputs.version }}
+        run: |
+          useradd -m build
+          cp -r packaging /home/build/pkg
+          # Build this checkout rather than a released tarball.
+          tar -czf "/home/build/pkg/staramp-$VER.tar.gz" \
+            --transform "s,^\.,staramp-$VER," --exclude=./.git .
+          sed -i "s|^source=.*|source=(\"staramp-$VER.tar.gz\")|" /home/build/pkg/PKGBUILD
+          chown -R build:build /home/build/pkg
+          su build -c 'cd /home/build/pkg && makepkg --nodeps --noconfirm'
+          pacman -U --noconfirm /home/build/pkg/staramp-*-x86_64.pkg.tar.zst
+          staramp --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staramp-arch
+          path: /home/build/pkg/*.pkg.tar.zst

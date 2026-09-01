@@ -1,0 +1,47 @@
+name: debian
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  deb:
+    # One package per Debian generation, built and then installed in the image
+    # it was built in. cargo-deb's $auto resolution writes the build host's
+    # libavcodec soname into Depends, so a single .deb cannot serve them all,
+    # and testing one in a different release is the bug this replaced.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:bookworm-slim
+            suffix: bookworm
+          - image: debian:trixie-slim
+            suffix: trixie
+          - image: ubuntu:24.04
+            suffix: ubuntu24.04
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl git
+      - uses: actions/checkout@v4
+      - name: Build and install it
+        run: |
+          . scripts/dist/deps-debian.sh
+          . "$HOME/.cargo/env"
+          cargo install cargo-deb --locked
+          cargo deb --deb-revision "1~${{ matrix.suffix }}" --output dist/
+          # Building it is not the same as it working: this is where a wrong
+          # dependency list shows up.
+          apt-get install -y -qq ./dist/*.deb
+          staramp --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staramp-deb-${{ matrix.suffix }}
+          path: dist/*.deb

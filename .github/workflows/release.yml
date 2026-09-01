@@ -1,0 +1,175 @@
+name: release
+
+# The trigger the old single-file workflow was missing: `on.push` listed
+# branches only, so pushing a tag started nothing and the release job's
+# `refs/tags/v*` guard was unreachable. One trigger, no guard.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # First and cheap on purpose. A mistagged release is the one mistake that
+  # cannot be taken back, and this says so in twenty seconds rather than at the
+  # end of a half-hour build.
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y jq
+      - run: ./scripts/check-version.sh
+
+  ci:
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+  nix:
+    needs: guard
+    uses: ./.github/workflows/nix.yml
+  debian:
+    needs: guard
+    uses: ./.github/workflows/debian.yml
+  arch:
+    needs: guard
+    uses: ./.github/workflows/arch.yml
+
+  source:
+    needs: guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # What the PKGBUILD downloads and checksums, built reproducibly from the
+      # tag rather than taken from GitHub's unstable /archive/ endpoint.
+      - run: ./scripts/dist/source.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staramp-source
+          path: dist/*.tar.gz
+
+  # Both of these build in bullseye for its glibc 2.31, which is the floor the
+  # README promises. A current runner's 2.39 would exclude Ubuntu 22.04 and
+  # RHEL 9, which is a smaller audience than the .deb already serves.
+  tarball:
+    needs: guard
+    runs-on: ubuntu-latest
+    container: debian:bullseye-slim
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git
+      - uses: actions/checkout@v4
+      - run: ./scripts/dist/portable.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staramp-tarball
+          path: dist/*.tar.gz
+
+  appimage:
+    needs: guard
+    runs-on: ubuntu-latest
+    container: debian:bullseye-slim
+    steps:
+      - run: apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates curl git file
+      - uses: actions/checkout@v4
+      - run: ./scripts/dist/appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staramp-appimage
+          path: dist/*.AppImage
+
+  # --version only proves the loader found the libraries. `decode` proves the
+  # bundled ffmpeg actually decodes, on a distribution the build machine is
+  # not, and compares the samples against a committed reference.
+  verify-appimage:
+    needs: appimage
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:20.04
+          - ubuntu:22.04
+          - ubuntu:24.04
+          - debian:11
+          - debian:12
+          - fedora:41
+          - rockylinux:9
+          - archlinux:latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: staramp-appimage
+      - name: Install nothing but ALSA
+        run: |
+          if command -v apt-get; then apt-get update -qq && apt-get install -y -qq libasound2 || apt-get install -y -qq libasound2t64
+          elif command -v dnf;     then dnf install -y alsa-lib
+          elif command -v pacman;  then pacman -Sy --noconfirm alsa-lib
+          fi
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+      - name: Run it, and make it decode something
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          chmod +x staramp-*.AppImage
+          app=$(ls staramp-*.AppImage)
+          ./"$app" --version
+          # tone.wv goes through libavcodec rather than symphonia, so this is
+          # the step that proves the bundled ffmpeg works on someone else's
+          # distribution. --version only proves the loader found the files.
+          ./"$app" probe  repo/testdata/tone.wv
+          ./"$app" decode repo/testdata/tone.wv -o /tmp/out.wav
+
+  # Separately, once, with real FUSE: extract-and-run masks the exact failure
+  # most users hit on a distribution that no longer ships libfuse2.
+  verify-appimage-fuse:
+    needs: appimage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: staramp-appimage
+      - run: sudo apt-get update && sudo apt-get install -y libfuse2 libasound2t64
+      - run: chmod +x staramp-*.AppImage && ./staramp-*.AppImage --version
+
+  publish:
+    needs: [ci, nix, debian, arch, source, tarball, verify-appimage, verify-appimage-fuse]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+      # The Arch package is built and tested but not released: see arch.yml.
+      - name: Collect what actually ships
+        run: |
+          mkdir -p dist
+          find staging -name '*.deb' -o -name '*.AppImage' -o -name '*.tar.gz' \
+            | grep -v staramp-arch | xargs -I{} cp {} dist/
+          # Hashes taken here, over the bytes that are about to be uploaded,
+          # rather than trusting what each job thought it produced.
+          cd dist && sha256sum -- * | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      # Keyless provenance instead of a GPG key: it proves the file came from
+      # this workflow at this commit, which is a stronger claim than a
+      # signature, and there is no key to lose.
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist/*

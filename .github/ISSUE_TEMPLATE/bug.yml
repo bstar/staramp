@@ -1,0 +1,55 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it
+      description: >
+        This decides which ffmpeg you have, which is the first thing to check
+        for anything to do with decoding.
+      options: [Nix, .deb, Arch, AppImage, portable tarball, from source]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`staramp --version`"
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and $TERM
+      description: >
+        Only needed for anything visual: glyphs, colours, album art, the mouse.
+  - type: dropdown
+    id: audio
+    attributes:
+      label: Audio output
+      options: [PipeWire, PulseAudio, bare ALSA, not sure]
+  - type: textarea
+    id: probe
+    attributes:
+      label: For a problem with one file
+      description: >
+        Paste the output of `staramp probe "<the file>"`. If it plays wrong
+        rather than not at all, `staramp decode "<the file>" -o out.wav` writes
+        the samples without involving the audio device, which separates a
+        decoder problem from an output one.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: "`staramp -v`, or the newest file under ~/.local/staramp/cache/"
+      render: shell

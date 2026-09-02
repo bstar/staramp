@@ -250,13 +250,16 @@ fn bar_fraction(bar: Rect, x: u16) -> f64 {
 /// clicking the first has to mean one step rather than zero.
 /// What the mouse moves the volume by.
 ///
-/// Five percent: the slider is ten cells and draws in eighths, so this is
-/// exactly half a cell, and every position the mouse can ask for is one the
-/// bar can actually draw.
-const VOLUME_STEP: f32 = 0.05;
+/// One cell of the ten-cell slider. The pointer and the bar step together, so
+/// every position the mouse can ask for is one the bar can draw and every
+/// drag position draws something new.
+const VOLUME_STEP: f32 = 0.10;
 
-/// What the keyboard moves it by. Finer, because a key can be held and asked
-/// for a level the mouse would have to be pixel-accurate to reach.
+/// What the keyboard moves it by.
+///
+/// A tenth of the mouse's step, for the levels between the ones the bar can
+/// draw. Those move the readout and not the rectangles, which is the right
+/// way round: the number is exact and the bar is a gauge.
 const KEY_VOLUME_STEP: f32 = 0.01;
 
 /// Round `v` to the nearest multiple of `step`.
@@ -581,10 +584,10 @@ mod tests {
     }
 
     #[test]
-    fn the_mouse_moves_the_volume_in_twentieths() {
-        // Five percent a step, so a drag across the ten-cell slider offers
-        // exactly the twenty-one levels it can draw and no others.
-        for step in 0..=20 {
+    fn the_mouse_moves_the_volume_in_tenths() {
+        // One cell a step, so a drag across the ten-cell slider offers
+        // exactly the eleven levels it can draw and no others.
+        for step in 0..=10 {
             let want = step as f32 * VOLUME_STEP;
             assert!(
                 (snap(want, VOLUME_STEP) - want).abs() < 1e-6,
@@ -592,35 +595,45 @@ mod tests {
             );
         }
         // Anything between two steps goes to the nearer one.
-        assert!((snap(0.37, VOLUME_STEP) - 0.35).abs() < 1e-6);
-        assert!((snap(0.38, VOLUME_STEP) - 0.40).abs() < 1e-6);
+        assert!((snap(0.34, VOLUME_STEP) - 0.30).abs() < 1e-6);
+        assert!((snap(0.36, VOLUME_STEP) - 0.40).abs() < 1e-6);
+    }
+
+    /// The pointer and the bar step together, by construction.
+    #[test]
+    fn a_mouse_step_is_exactly_one_cell() {
+        use crate::ui::panels::player::VOLUME_SLIDER;
+        assert!(
+            (VOLUME_STEP * VOLUME_SLIDER as f32 - 1.0).abs() < 1e-6,
+            "the pointer and the slider disagree about how many steps there are"
+        );
     }
 
     #[test]
-    fn the_keyboard_is_five_times_finer_than_the_mouse() {
-        // The point of having two: a key reaches levels the pointer would
-        // have to be sub-cell accurate to ask for.
+    fn the_keyboard_is_ten_times_finer_than_the_mouse() {
+        // The point of having two: a key reaches the levels between the ones
+        // the bar can draw, and the readout shows them.
         const { assert!(KEY_VOLUME_STEP < VOLUME_STEP) };
-        assert!((VOLUME_STEP / KEY_VOLUME_STEP - 5.0).abs() < 1e-6);
+        assert!((VOLUME_STEP / KEY_VOLUME_STEP - 10.0).abs() < 1e-6);
         assert!((snap(0.37, KEY_VOLUME_STEP) - 0.37).abs() < 1e-6);
     }
 
     #[test]
     fn a_coarse_step_lands_on_its_own_grid() {
         // A volume left at 37% by the keyboard and then nudged by the wheel
-        // goes to the next multiple of five, either way. `snap(v + delta)`
-        // would send it down to 30% instead -- a seven point drop for one
-        // press, because 32% rounds down.
+        // goes to the next multiple of ten, either way. `snap(v + delta)`
+        // would send it up to 50% instead, skipping a whole cell, because
+        // 47% rounds up.
         assert!((step_toward(0.37, VOLUME_STEP) - 0.40).abs() < 1e-6);
-        assert!((step_toward(0.37, -VOLUME_STEP) - 0.35).abs() < 1e-6);
+        assert!((step_toward(0.37, -VOLUME_STEP) - 0.30).abs() < 1e-6);
     }
 
     #[test]
     fn a_step_from_the_grid_moves_a_whole_step() {
         // The failure mode of rounding toward the nearest: at 40% exactly, a
         // press would round back to 40% and the control would appear stuck.
-        assert!((step_toward(0.40, VOLUME_STEP) - 0.45).abs() < 1e-6);
-        assert!((step_toward(0.40, -VOLUME_STEP) - 0.35).abs() < 1e-6);
+        assert!((step_toward(0.40, VOLUME_STEP) - 0.50).abs() < 1e-6);
+        assert!((step_toward(0.40, -VOLUME_STEP) - 0.30).abs() < 1e-6);
         assert!((step_toward(0.37, KEY_VOLUME_STEP) - 0.38).abs() < 1e-6);
     }
 

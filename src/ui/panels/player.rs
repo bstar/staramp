@@ -408,23 +408,24 @@ const VOLUME_LABEL: u16 = 4;
 
 /// The slider itself.
 ///
-/// Ten cells, so that a mouse step of 5% is exactly half a cell and lands on
-/// a block the eighths can draw. Any other width puts the mouse between two
-/// drawable positions and the bar stutters as it is dragged.
-const VOLUME_SLIDER: u16 = 10;
+/// Ten cells, one per ten percent, which is also what the mouse steps in: a
+/// pointer position that draws nothing new is a control that feels broken,
+/// so the two are the same number by construction rather than by luck.
+pub const VOLUME_SLIDER: u16 = 10;
 
 /// A space and three digits: ` 100`.
 const VOLUME_READOUT: u16 = 4;
 
-/// The slider's three characters: a heavy rule for a filled cell, its left
-/// half for the odd five percent, and a light rule for the track.
+/// The slider's two characters: a filled rectangle for a reached cell and a
+/// hollow one for the rest.
 ///
-/// Box drawing rather than block elements, so the control weighs about what
-/// the seek bar's own rule does. All three are in every font that draws a
-/// table.
-const VOLUME_FULL: char = '\u{2501}';
-const VOLUME_HALF: char = '\u{2578}';
-const VOLUME_TRACK: char = '\u{2500}';
+/// One shape throughout, which is what makes the fill read against the track
+/// rather than as two different widgets -- a rule for the empty part and a
+/// bar for the full part is a change of *kind* where the eye wants a change
+/// of state. Both are centred in the cell, so the control sits on the row's
+/// centre line rather than on its baseline.
+const VOLUME_FULL: char = '\u{25ac}';
+const VOLUME_TRACK: char = '\u{25ad}';
 
 /// Total cells the volume control occupies, label and readout included.
 const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT;
@@ -962,27 +963,20 @@ fn render_controls(
             Style::default().fg(rgb(t.dim)),
         );
 
-        // A line, not a bar. Full-height blocks made the volume the heaviest
-        // thing on the row -- heavier than the transport it sits beside, for
-        // a control that is adjusted once a session -- so it is drawn at the
-        // weight of a rule instead, and reads as a level without shouting.
-        //
-        // Half-cell resolution from the left-half stub, which is exactly the
-        // 5% the mouse steps in: every position the pointer can ask for is
-        // one of the twenty-one this can draw, and none of them is between
-        // two characters.
-        let halves = (volume.clamp(0.0, 1.0) * v.width as f32 * 2.0).round() as u32;
+        // Ten cells, ten steps, one shape. Nothing sub-cell: a bar that
+        // resolves finer than the pointer moves shows changes nobody asked
+        // for, and one that resolves coarser hides changes they did.
+        let cells = (volume.clamp(0.0, 1.0) * v.width as f32).round() as u16;
         let filled = if volume <= 0.0 {
             t.volume_mute_fg
         } else {
             t.volume_filled_fg
         };
         for i in 0..v.width {
-            let step = halves.saturating_sub(i as u32 * 2).min(2);
-            let (ch, colour) = match step {
-                0 => (VOLUME_TRACK, t.volume_track_fg),
-                1 => (VOLUME_HALF, filled),
-                _ => (VOLUME_FULL, filled),
+            let (ch, colour) = if i < cells {
+                (VOLUME_FULL, filled)
+            } else {
+                (VOLUME_TRACK, t.volume_track_fg)
             };
             buf[(v.x + i, v.y)]
                 .set_char(ch)
@@ -1279,15 +1273,21 @@ mod tests {
         );
     }
 
-    /// The reason for the half-width stub.
+    /// One cell per mouse step, and nothing between.
     #[test]
-    fn the_odd_five_percent_is_half_a_cell() {
-        // Ten cells is ten percent each, so every other mouse step lands
-        // mid-cell. Without a character for it the bar could only show tens,
-        // and half the pointer's positions would draw nothing new.
-        assert_eq!(volume_cells(0.35).chars().nth(3), Some(VOLUME_HALF));
-        assert_eq!(volume_cells(0.40).chars().nth(3), Some(VOLUME_FULL));
+    fn the_bar_resolves_in_tens_and_no_finer() {
+        // Ten cells, ten steps. A bar that resolved finer than the pointer
+        // moves would show changes nobody asked for.
+        assert_eq!(volume_cells(0.30).chars().nth(2), Some(VOLUME_FULL));
         assert_eq!(volume_cells(0.30).chars().nth(3), Some(VOLUME_TRACK));
+        // Every drawn cell is one of the two shapes -- there is no half.
+        for step in 0..=10 {
+            let cells = volume_cells(step as f32 / 10.0);
+            assert!(
+                cells.chars().all(|c| c == VOLUME_FULL || c == VOLUME_TRACK),
+                "{cells:?} holds something other than the two rectangles"
+            );
+        }
     }
 
     /// A rule, not a bar.
@@ -1304,29 +1304,28 @@ mod tests {
 
     /// The reason the slider is ten cells wide.
     #[test]
-    fn every_mouse_step_lands_on_a_drawable_block() {
-        // Five percent of ten cells is half a cell, which the eighths draw
-        // exactly. At any other width a mouse step falls between two blocks
-        // and the bar stutters as it is dragged.
+    fn every_mouse_step_draws_a_different_bar() {
+        // One cell per step, so a drag never passes through a position that
+        // looks the same as the one before it. That is the whole argument for
+        // the pointer and the slider sharing a number.
         let mut seen = std::collections::HashSet::new();
-        for step in 0..=20 {
-            let cells = volume_cells(step as f32 * 0.05);
+        for step in 0..=VOLUME_SLIDER {
+            let cells = volume_cells(step as f32 / VOLUME_SLIDER as f32);
             assert!(
                 seen.insert(cells.clone()),
                 "two mouse steps draw the same bar: {cells:?}"
             );
         }
+        assert_eq!(seen.len(), VOLUME_SLIDER as usize + 1);
     }
 
     #[test]
-    fn the_volume_resolves_below_a_whole_cell() {
-        // Eight steps per cell, so a keyboard nudge of one percent is visible
-        // well before the cell it is in fills.
-        assert_ne!(
-            volume_cells(0.50),
-            volume_cells(0.53),
-            "a sub-cell change drew nothing new"
-        );
+    fn a_keyboard_nudge_moves_the_readout_rather_than_the_bar() {
+        // The consequence of ten parts, stated so it is a decision rather
+        // than a surprise: 1% steps are read from the number, and the bar
+        // only moves when a whole tenth is crossed.
+        assert_eq!(volume_cells(0.50), volume_cells(0.53));
+        assert_ne!(volume_cells(0.50), volume_cells(0.56));
     }
 
     #[test]
@@ -1833,7 +1832,7 @@ mod tests {
             assert!(
                 at(vol)
                     .chars()
-                    .all(|ch| [VOLUME_FULL, VOLUME_HALF, VOLUME_TRACK].contains(&ch)),
+                    .all(|ch| [VOLUME_FULL, VOLUME_TRACK].contains(&ch)),
                 "volume rect is not the slider at width {width}: {:?}",
                 at(vol)
             );

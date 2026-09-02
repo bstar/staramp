@@ -261,7 +261,6 @@ program does.
 | `s`            | shuffle on or off                            |
 | `S`            | reshuffle now                                |
 | `r`            | repeat off / all / one                       |
-| `o`            | button style                                 |
 
 | Progress bar    |                            |
 | --------------- | -------------------------- |
@@ -392,7 +391,6 @@ knobs:
 | `playlist_dir`                 | `.m3u` directory, read and written in place                                                      |
 | `theme`                        | `"system"` to follow the desktop, or a name                                                      |
 | `volume`                       | 0.0 to 1.0                                                                                       |
-| `[ui] glyphs`                  | transport button faces: `block`, `unicode`, `nerd`, `ascii`, `pixel`, `image`. See [Fonts](#fonts) |
 | `[ui] seek_style`              | how the seek bar is drawn: `ansi` (default), `bar`, `thin`, `blocks`                             |
 | `[ui] graphics`                | how covers are drawn: `auto`, `kitty`, `blocks`, `off`. See [Album art](#album-art)              |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the window                                                         |
@@ -640,29 +638,20 @@ finished.
 ## Fonts
 
 star/amp cannot choose the font it is drawn in. That is your terminal's
-setting, and no terminal program can override it. What `[ui] glyphs` decides is
-which codepoints to emit, so the job is making sure your terminal font covers
-them.
+setting, and no terminal program can override it. So the transport buttons do
+not go through the font. Each is rasterised at the terminal's real cell size,
+in the theme's colours, and put on the screen the way cover art is: over the
+kitty, sixel or iTerm2 graphics protocol. They are the Material Design
+transport shapes, and they are identical on every terminal that can show them.
+Whether to draw them is decided separately from `[ui] graphics`: turning covers
+off leaves the buttons alone.
 
-| Setting             | Needs                                               | If it is missing                                  |
-| ------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| `block` (default)   | nothing beyond ASCII and block elements             | nothing to miss                                   |
-| `unicode`           | U+00AB, U+00BB, U+25B6, U+23F8, U+25A0 in the terminal font | drawn from a fallback font, smaller than the text |
-| `nerd`              | any Nerd Font, selected in the terminal             | boxes                                             |
-| `ascii`             | nothing                                             | nothing to miss                                   |
-| `pixel`             | quadrant block elements, which every terminal has   | nothing to miss                                   |
-| `image`             | a graphics protocol: kitty, sixel or iTerm2         | drawn as `block`                                  |
+Where the terminal has no graphics protocol the buttons are drawn as text, in
+ASCII -- `<<`, `|>`, `||`, `[]`, `>>` -- which every font there has ever been
+can draw. A font with ligatures draws `|>` as one triangle; one without draws
+the two characters. Both are two cells, so nothing moves.
 
-The last two take the font out of it. Both draw the Material Design transport
-shapes -- the ones the Nerd Font set uses -- from the shapes themselves rather
-than from a glyph. `pixel` builds them from quadrant block elements, two pixels
-to a cell each way, on a wider plate; it is chunky, and it is the same chunky
-everywhere. `image` rasterises them at the terminal's real cell size and puts
-them there the way cover art is put there, so they are exact, and identical on
-every terminal that can show them. `o` cycles through all six, and the choice
-is remembered.
-
-`[ui] seek_style` chooses the seek bar's characters the same way. `ansi`, the
+`[ui] seek_style` chooses the seek bar's characters. `ansi`, the
 default, draws `[====----]` from plain characters, which any terminal can
 manage but which moves a whole cell at a time; its highlight goes bold as well
 as bright, so the sweep shows on a terminal that renders the two colours alike.
@@ -673,22 +662,11 @@ Both shade their leading cell between the groove and the fill, so the bar moves
 smoothly without taking a full row of height. `blocks` fills the cell, by
 eighths.
 
-If the transport buttons look smaller than the `SHUF` and `REP` labels next to
-them, that is font fallback: your terminal font does not carry those shapes, so
-another font supplies them and draws them to its own metrics. No codepoint
-fixes that. `block`, the default, avoids it by using only characters every
-monospace font draws itself, so the controls come out the size of the letters
-beside them on every machine, whatever font each terminal is set to. That is
-why it is the default: two installs look alike without either being
-configured. `unicode` is the larger-looking set where the font carries it.
-
 Everything else star/amp draws (box drawing, block elements, braille) is
-covered by any font shipped as a terminal font, so `ascii` is a complete
-fallback rather than a degraded mode.
+covered by any font shipped as a terminal font.
 
 The packages install a suitable font where the distribution has one
-(`fonts-noto-core` on Debian, `noto-fonts` on Arch, `nerd-fonts.jetbrains-mono`
-from the home-manager module when `glyphs = "nerd"`). Installing it is all a
+(`fonts-noto-core` on Debian, `noto-fonts` on Arch). Installing it is all a
 package can do; selecting it in your terminal is still up to you.
 
 ### Why the visualizer's gap is a whole column
@@ -786,10 +764,9 @@ opened at the file's own sample rate for bit-perfect output. If something else
 holds the device exclusively, that fails. `[output] mode = "fixed"` pins one
 rate instead.
 
-**The transport buttons are the wrong size, or show boxes.** That is font
-fallback, not a bug, and it means `[ui] glyphs` has been set away from the
-default. `block` uses only characters every monospace font draws itself. See
-[Fonts](#fonts).
+**The transport buttons are text rather than pictures.** The terminal has no
+graphics protocol, or the detection cannot see through ssh or a multiplexer.
+Try `[ui] graphics = "kitty"` to force it. See [Fonts](#fonts).
 
 **The album art is a blocky mess.** The terminal does not speak the kitty
 graphics protocol, or the detection cannot see through ssh or a multiplexer.

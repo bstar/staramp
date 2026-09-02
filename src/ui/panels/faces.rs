@@ -1,21 +1,14 @@
-//! Transport button faces that do not depend on the terminal's font.
+//! Transport buttons that do not go through the terminal's font.
 //!
-//! A terminal program cannot ship a font. Every text face -- the block set,
-//! the Nerd Font icons, the geometric shapes -- is drawn by whatever typeface
-//! the terminal was configured with, at that face's size and to that font's
-//! metrics, and two machines set to different fonts draw two different rows
-//! of buttons from the same bytes. The two faces here take the font out of
-//! it:
-//!
-//! - [`Kind::Pixel`] draws the shapes from quadrant block elements, two
-//!   pixels to a cell each way. Every monospace font carries those, and the
-//!   modern terminals draw them themselves without consulting the font at
-//!   all, so the result is the same everywhere. It is chunky, because a
-//!   three-row plate is six pixels tall.
-//! - [`Kind::Image`] rasterises the same shapes at the terminal's real cell
-//!   size and puts them there over the graphics protocol the cover art
-//!   already uses. It is exact, and it needs a terminal that speaks kitty,
-//!   sixel or iTerm2 -- elsewhere it falls back to the block text set.
+//! A terminal program cannot ship a font. A text face -- a Nerd Font icon, a
+//! geometric shape, a letter -- is drawn by whatever typeface the terminal
+//! was configured with, at that face's size and to that font's metrics, and
+//! two machines set to different fonts draw two different rows of buttons
+//! from the same bytes. So the buttons are not text. Each is rasterised here
+//! at the terminal's real cell size and put on the screen over the graphics
+//! protocol the cover art already uses: exact, and identical on every
+//! terminal that speaks kitty, sixel or iTerm2. Where none does, the player
+//! draws the ASCII faces in `player::Glyphs`, which every font can manage.
 //!
 //! The shapes are the Material Design transport icons, the ones the Nerd
 //! Font set names by codepoint: `skip-previous`, `play`, `pause`, `stop`,
@@ -23,22 +16,7 @@
 //! are carried here as the polygons on their 24-unit grid rather than as
 //! glyphs, which is what makes drawing them at any size possible.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Style};
-
 use crate::theme::color::Rgb;
-
-/// How a set's faces reach the screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Kind {
-    /// Characters, drawn by the terminal's font.
-    Text,
-    /// Quadrant block elements, two pixels to a cell each way.
-    Pixel,
-    /// A rasterised image per button, over the graphics protocol.
-    Image,
-}
 
 /// One of the five transport buttons.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -109,142 +87,8 @@ fn inside(poly: Poly, x: f32, y: f32) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Pixel faces.
+// Rasterising.
 // ---------------------------------------------------------------------------
-
-/// The plate, in cells. Six by three: at a cell of about 8 by 17 pixels that
-/// is 48 by 51, square to within 6%, and it gives the sprite a 12-by-6 grid
-/// to be drawn on -- the coarsest at which a triangle still has a slope.
-pub const PIXEL_W: u16 = 6;
-pub const PIXEL_H: u16 = 3;
-
-const SPRITE_W: usize = PIXEL_W as usize * 2;
-const SPRITE_H: usize = PIXEL_H as usize * 2;
-
-/// The faces at pixel resolution, drawn by hand rather than sampled from the
-/// polygons: at twelve by six a sampled triangle comes out ragged, and a hand
-/// can keep the slope even and the pair of skips exact mirrors.
-///
-/// A pixel is about 4 by 8.5 screen pixels -- half a cell wide, half a cell
-/// tall -- so shapes are drawn twice as wide in pixels as they are tall to
-/// come out square. `.` is plate, `#` is ink.
-type Sprite = [&'static str; SPRITE_H];
-
-const SPRITE_PLAY: Sprite = [
-    "..##........",
-    "..#####.....",
-    "..########..",
-    "..########..",
-    "..#####.....",
-    "..##........",
-];
-const SPRITE_PAUSE: Sprite = [
-    "...##..##...",
-    "...##..##...",
-    "...##..##...",
-    "...##..##...",
-    "...##..##...",
-    "...##..##...",
-];
-const SPRITE_STOP: Sprite = [
-    "............",
-    "..########..",
-    "..########..",
-    "..########..",
-    "..########..",
-    "............",
-];
-const SPRITE_NEXT: Sprite = [
-    ".##......##.",
-    ".#####...##.",
-    ".#######.##.",
-    ".#######.##.",
-    ".#####...##.",
-    ".##......##.",
-];
-const SPRITE_PREV: Sprite = [
-    ".##......##.",
-    ".##...#####.",
-    ".##.#######.",
-    ".##.#######.",
-    ".##...#####.",
-    ".##......##.",
-];
-
-pub fn sprite(b: Button) -> &'static Sprite {
-    match b {
-        Button::Prev => &SPRITE_PREV,
-        Button::Play => &SPRITE_PLAY,
-        Button::Pause => &SPRITE_PAUSE,
-        Button::Stop => &SPRITE_STOP,
-        Button::Next => &SPRITE_NEXT,
-    }
-}
-
-/// The quadrant block for a 2-by-2 pattern, indexed by bits
-/// `TL << 3 | TR << 2 | BL << 1 | BR`.
-///
-/// Sixteen patterns, sixteen characters: the block elements carry every
-/// combination, which is what makes two colours to a cell enough.
-const QUADRANTS: [&str; 16] = [
-    " ",        // ....
-    "\u{2597}", // ...BR  ▗
-    "\u{2596}", // ..BL.  ▖
-    "\u{2584}", // ..BLBR ▄
-    "\u{259d}", // .TR..  ▝
-    "\u{2590}", // .TR.BR ▐
-    "\u{259e}", // .TRBL. ▞
-    "\u{259f}", // .TRBLBR ▟
-    "\u{2598}", // TL...  ▘
-    "\u{259a}", // TL..BR ▚
-    "\u{258c}", // TL.BL. ▌
-    "\u{2599}", // TL.BLBR ▙
-    "\u{2580}", // TLTR.. ▀
-    "\u{259c}", // TLTR.BR ▜
-    "\u{259b}", // TLTRBL. ▛
-    "\u{2588}", // TLTRBLBR █
-];
-
-fn ink(s: &Sprite, x: usize, y: usize) -> bool {
-    s.get(y)
-        .and_then(|row| row.as_bytes().get(x))
-        .is_some_and(|&b| b == b'#')
-}
-
-/// Draw a pixel button: the whole rect is plate, and the sprite is ink on it.
-///
-/// Two colours to a cell -- the ink in the foreground, the plate behind --
-/// and a quadrant character to say which of the cell's four pixels are which.
-/// The plate fills every cell, so no cell ever needs a third colour for the
-/// panel behind the plate, which is the constraint the design is built
-/// around.
-pub fn render_pixel(r: Rect, s: &Sprite, fg: Rgb, plate: Rgb, buf: &mut Buffer) {
-    let style = Style::default().fg(color(fg)).bg(color(plate));
-    for cy in 0..r.height {
-        for cx in 0..r.width {
-            let (x, y) = (cx as usize * 2, cy as usize * 2);
-            let bits = (ink(s, x, y) as usize) << 3
-                | (ink(s, x + 1, y) as usize) << 2
-                | (ink(s, x, y + 1) as usize) << 1
-                | (ink(s, x + 1, y + 1) as usize);
-            buf[(r.x + cx, r.y + cy)]
-                .set_symbol(QUADRANTS[bits])
-                .set_style(style);
-        }
-    }
-}
-
-fn color(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
-
-// ---------------------------------------------------------------------------
-// Image faces.
-// ---------------------------------------------------------------------------
-
-/// The plate, in cells, when the face is an image. Four by three, the same as
-/// the block text set, so switching between the two moves nothing.
-pub const IMAGE_W: u16 = 4;
 
 /// Supersamples per pixel edge. Sixteen samples a pixel is enough that a
 /// slanted edge shows no steps at cell sizes up to a few dozen pixels.
@@ -335,94 +179,6 @@ mod tests {
     const BG: Rgb = Rgb { r: 0, g: 0, b: 0 };
 
     #[test]
-    fn every_sprite_fills_its_grid_with_ink_or_plate() {
-        for b in Button::ALL {
-            let s = sprite(b);
-            assert_eq!(s.len(), SPRITE_H, "{b:?} rows");
-            for row in s.iter() {
-                assert_eq!(row.len(), SPRITE_W, "{b:?} row {row:?}");
-                assert!(
-                    row.bytes().all(|c| c == b'#' || c == b'.'),
-                    "{b:?} row {row:?} has something other than ink or plate"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_skips_are_mirror_images() {
-        for (n, p) in SPRITE_NEXT.iter().zip(SPRITE_PREV.iter()) {
-            let mirrored: String = n.chars().rev().collect();
-            assert_eq!(&mirrored, p);
-        }
-    }
-
-    #[test]
-    fn play_is_symmetric_top_to_bottom() {
-        for i in 0..SPRITE_H / 2 {
-            assert_eq!(SPRITE_PLAY[i], SPRITE_PLAY[SPRITE_H - 1 - i], "row {i}");
-        }
-    }
-
-    /// Ink centred on the plate, so a face never sits to one side of its
-    /// button -- the thing the text sets had to be redesigned for.
-    #[test]
-    fn every_sprite_is_centred_across_the_plate() {
-        for b in Button::ALL {
-            let s = sprite(b);
-            let mut first = SPRITE_W;
-            let mut last = 0;
-            for row in s.iter() {
-                if let Some(a) = row.find('#') {
-                    first = first.min(a);
-                }
-                if let Some(z) = row.rfind('#') {
-                    last = last.max(z);
-                }
-            }
-            assert_eq!(first, SPRITE_W - 1 - last, "{b:?} spans {first}..={last}");
-        }
-    }
-
-    #[test]
-    fn the_quadrant_table_is_a_bijection() {
-        let mut seen: Vec<&str> = QUADRANTS.to_vec();
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(seen.len(), 16);
-        // And the bits mean what the comments say they mean.
-        assert_eq!(QUADRANTS[0b1000], "\u{2598}", "top left");
-        assert_eq!(QUADRANTS[0b0100], "\u{259d}", "top right");
-        assert_eq!(QUADRANTS[0b0010], "\u{2596}", "bottom left");
-        assert_eq!(QUADRANTS[0b0001], "\u{2597}", "bottom right");
-        assert_eq!(QUADRANTS[0b1100], "\u{2580}", "upper half");
-        assert_eq!(QUADRANTS[0b1010], "\u{258c}", "left half");
-    }
-
-    #[test]
-    fn a_pixel_button_is_plate_everywhere_and_ink_where_the_sprite_says() {
-        let r = Rect::new(2, 1, PIXEL_W, PIXEL_H);
-        let mut buf = Buffer::empty(Rect::new(0, 0, 12, 6));
-        render_pixel(r, sprite(Button::Stop), INK, PLATE, &mut buf);
-        for cy in 0..PIXEL_H {
-            for cx in 0..PIXEL_W {
-                let cell = &buf[(r.x + cx, r.y + cy)];
-                assert_eq!(cell.bg, color(PLATE), "plate behind every cell");
-            }
-        }
-        // The stop square is rows 1..=4 of 0..=5, columns 2..=9 of 0..=11:
-        // the left column of cells is all plate, the cell at (1, 1) is all
-        // ink, and the cell at (1, 0) has ink in its lower half only.
-        assert_eq!(buf[(r.x, r.y)].symbol(), " ");
-        assert_eq!(buf[(r.x, r.y + 1)].symbol(), " ");
-        assert_eq!(buf[(r.x + 1, r.y + 1)].symbol(), "\u{2588}");
-        assert_eq!(buf[(r.x + 1, r.y)].symbol(), "\u{2584}");
-        // Nothing outside the rect was touched.
-        assert_eq!(buf[(0, 0)].symbol(), " ");
-        assert_eq!(buf[(0, 0)].bg, Color::Reset);
-    }
-
-    #[test]
     fn a_raster_is_the_size_it_was_asked_for_and_the_panel_at_its_corners() {
         let img = raster(Button::Play, 32, 51, INK, PLATE, BG);
         assert_eq!((img.width(), img.height()), (32, 51));
@@ -444,9 +200,21 @@ mod tests {
             let img = raster(b, 48, 48, INK, PLATE, BG);
             img.get_pixel((ux * 2.0) as u32, (uy * 2.0) as u32).0
         };
-        assert_eq!(at(Button::Stop, 12.0, 12.0), [255, 255, 255], "stop's middle");
-        assert_eq!(at(Button::Pause, 12.0, 12.0), [100, 100, 100], "pause's gap");
-        assert_eq!(at(Button::Pause, 8.0, 12.0), [255, 255, 255], "pause's left bar");
+        assert_eq!(
+            at(Button::Stop, 12.0, 12.0),
+            [255, 255, 255],
+            "stop's middle"
+        );
+        assert_eq!(
+            at(Button::Pause, 12.0, 12.0),
+            [100, 100, 100],
+            "pause's gap"
+        );
+        assert_eq!(
+            at(Button::Pause, 8.0, 12.0),
+            [255, 255, 255],
+            "pause's left bar"
+        );
         assert_eq!(at(Button::Play, 10.0, 12.0), [255, 255, 255], "inside play");
         assert_eq!(at(Button::Play, 18.0, 6.0), [100, 100, 100], "outside play");
         assert_eq!(at(Button::Next, 17.0, 12.0), [255, 255, 255], "next's bar");
@@ -458,9 +226,7 @@ mod tests {
         let img = raster(Button::Play, 48, 48, INK, PLATE, BG);
         // Somewhere along the triangle's hypotenuse a pixel is part ink and
         // part plate.
-        let partial = img
-            .pixels()
-            .any(|p| p.0[0] > 100 && p.0[0] < 255);
+        let partial = img.pixels().any(|p| p.0[0] > 100 && p.0[0] < 255);
         assert!(partial, "no anti-aliased pixel anywhere");
     }
 
@@ -477,8 +243,14 @@ mod tests {
     #[test]
     fn rounded_corners_are_cut_and_edges_are_kept() {
         assert!(!in_rounded_square(0.1, 0.1, 10.0, 2.0), "the corner");
-        assert!(in_rounded_square(5.0, 0.1, 10.0, 2.0), "the top edge's middle");
+        assert!(
+            in_rounded_square(5.0, 0.1, 10.0, 2.0),
+            "the top edge's middle"
+        );
         assert!(in_rounded_square(5.0, 5.0, 10.0, 2.0), "the centre");
-        assert!(!in_rounded_square(10.0, 5.0, 10.0, 2.0), "just past the right");
+        assert!(
+            !in_rounded_square(10.0, 5.0, 10.0, 2.0),
+            "just past the right"
+        );
     }
 }

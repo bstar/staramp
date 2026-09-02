@@ -6,8 +6,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
 
-pub use super::faces::{Button, Kind};
-
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
 use crate::theme::color::Rgb;
@@ -48,15 +46,19 @@ pub struct PlayerView<'a> {
 
 /// The transport button faces.
 ///
-/// Switchable because the good glyphs are not universally available. A face
-/// carries ink and nothing else -- no padding spaces -- and within a set every
-/// face is the same width, so the plate derived from that width centres all
-/// of them exactly. The plate is a fixed size within a set, so the buttons
-/// form an even row and are the same size to click whatever they hold.
+/// The buttons are pictures. Each is rasterised at the terminal's real cell
+/// size, in the theme's colours, and drawn over the graphics protocol the
+/// cover art uses -- see `faces` -- which is the one way two terminals set
+/// to different fonts show the same buttons. What is held here is the text
+/// drawn where there is no protocol to draw pictures with.
 ///
-/// They used to be padded to a common width with a trailing space, which is
-/// what made `play` and `stop` sit hard against the left of their plates: the
-/// centring saw a two-cell face where only one cell had ink in it.
+/// ASCII, because every font there has ever been can draw it. Two cells per
+/// face, because a face centres in its plate only when the two share parity,
+/// and uniform faces make the question go away. No padding spaces: a face
+/// carries ink and nothing else, and the centring measures the ink. Fonts
+/// with ligatures draw `|>` as a single triangle; the cell count is the same
+/// either way, so nothing moves. The skips are `<<` and `>>` rather than
+/// `|<` and `>|`, which beside `|>` read as three variations on one shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Glyphs {
     pub prev: &'static str,
@@ -64,98 +66,12 @@ pub struct Glyphs {
     pub pause: &'static str,
     pub stop: &'static str,
     pub next: &'static str,
-    /// The playing-row marker in the playlist: always one cell, so a set
-    /// whose `play` face is two cells wide still marks a row without
-    /// shifting the text beside it.
+    /// The playing-row marker in the playlist: always one cell, so the
+    /// two-cell `play` face marks a row without shifting the text beside it.
     pub mark: &'static str,
-    /// How the faces reach the screen. For [`Kind::Pixel`] and
-    /// [`Kind::Image`] the text fields above are the fallback: what the
-    /// playlist marker uses, and what an image set draws where there is no
-    /// graphics protocol to draw it with.
-    pub kind: Kind,
 }
 
 impl Glyphs {
-    /// One cell per face, so every one of them centres exactly.
-    ///
-    /// The width is the whole design. A face centres in its plate only when
-    /// the two have the same parity, so a set of mixed one- and two-cell faces
-    /// cannot centre all of them at any plate width: this set used to pair the
-    /// triangles -- `prev` and `next` were two cells, `play` and `stop` one --
-    /// and those two sat half a cell left of centre with nothing to be done
-    /// about it. Uniform faces make the question go away.
-    ///
-    /// U+00AB and U+00BB for the skips, which are Latin-1 and therefore in
-    /// every font that exists; U+25B6 and U+25A0 for play and stop, the
-    /// full-size triangle and square a monospace font draws at cap height.
-    ///
-    /// U+23F8 for pause is a deliberate exception, chosen on how it looks.
-    /// It carries **default emoji presentation**: `unicode-width` reports one
-    /// cell and a terminal is entitled to draw two, in colour, and a face a
-    /// cell wider than the layout believes shifts every button after it. It
-    /// renders as text in the terminals this was checked in, and `block` and
-    /// `ascii` are there for one where it does not. Nothing else in any set
-    /// may do this -- `no_face_risks_being_drawn_as_an_emoji` holds the line,
-    /// and names this one codepoint as the only exception.
-    pub const UNICODE: Self = Self {
-        prev: "\u{00ab}",
-        play: "\u{25b6}",
-        pause: "\u{23f8}",
-        stop: "\u{25a0}",
-        next: "\u{00bb}",
-        mark: "\u{25b6}",
-        kind: Kind::Text,
-    };
-
-    /// Nerd Font private-use icons, from the Material Design set.
-    ///
-    /// Useless without a patched font, which is why they are not the default.
-    /// Worth knowing before choosing them: patched fonts draw these inside the
-    /// cell rather than filling it, so they come out noticeably smaller than
-    /// the text beside them. `unicode` is the larger-looking set.
-    pub const NERD: Self = Self {
-        prev: "\u{f04ae}",
-        play: "\u{f040a}",
-        pause: "\u{f03e4}",
-        stop: "\u{f04db}",
-        next: "\u{f04ad}",
-        mark: "\u{f040a}",
-        kind: Kind::Text,
-    };
-
-    /// Characters a monospace font is certain to draw itself, at the size it
-    /// draws its letters. The default.
-    ///
-    /// This exists because the sets above are not reliably that size. A
-    /// terminal font that lacks U+25B6, U+25AE and their neighbours falls back
-    /// to another font for them, and the substitute is drawn to its own
-    /// metrics -- which is why the controls came out visibly smaller than the
-    /// `SHUF` label beside them however large a codepoint was chosen. ASCII
-    /// and the block elements are in every monospace font, so they are drawn
-    /// by the same font at the same scale as the text. That is also what makes
-    /// this the default: it is the one set that comes out the same size
-    /// relative to the text on every machine, whatever font each terminal is
-    /// set to, so two installs look alike without either being configured.
-    ///
-    /// Every face is two cells. `play` used to be a lone `>` and sat half a
-    /// cell left of centre in the four-cell plate the other faces need; `|>`
-    /// is the same width as the rest, and is the shape of U+23EF besides.
-    pub const BLOCK: Self = Self {
-        prev: "<<",
-        play: "|>",
-        pause: "\u{258c}\u{258c}",
-        stop: "\u{2588}\u{2588}",
-        next: ">>",
-        mark: ">",
-        kind: Kind::Text,
-    };
-
-    /// For terminals and fonts that can manage neither.
-    ///
-    /// `block` with the two block-element faces replaced, and nothing else
-    /// different, so switching between the two moves no button. The skips
-    /// were `|<` and `>|` once; beside a `|>` play face those read as three
-    /// variations on one shape, and `<<` `>>` do not.
     pub const ASCII: Self = Self {
         prev: "<<",
         play: "|>",
@@ -163,24 +79,6 @@ impl Glyphs {
         stop: "[]",
         next: ">>",
         mark: ">",
-        kind: Kind::Text,
-    };
-
-    /// The shapes drawn from quadrant block elements, on a wider plate.
-    ///
-    /// No font in it at all: the block elements are in every monospace font
-    /// and the modern terminals draw them without one. See `faces`.
-    pub const PIXEL: Self = Self {
-        kind: Kind::Pixel,
-        ..Self::BLOCK
-    };
-
-    /// The shapes rasterised at the terminal's cell size and drawn over the
-    /// graphics protocol, where there is one. Where there is not, the block
-    /// text faces, which is what the text fields of this set hold.
-    pub const IMAGE: Self = Self {
-        kind: Kind::Image,
-        ..Self::BLOCK
     };
 
     /// The playing-row marker, for a column a single cell wide.
@@ -188,67 +86,16 @@ impl Glyphs {
         self.mark
     }
 
-    pub fn parse(s: &str) -> Option<Self> {
-        Some(match s.to_ascii_lowercase().as_str() {
-            "unicode" => Self::UNICODE,
-            "nerd" | "nerdfont" | "nerd-font" => Self::NERD,
-            "block" | "big" | "auto" => Self::BLOCK,
-            "ascii" | "plain" => Self::ASCII,
-            "pixel" | "pixels" | "quadrant" => Self::PIXEL,
-            "image" | "images" | "icons" => Self::IMAGE,
-            _ => return None,
-        })
-    }
-
-    /// The name this set has in `config.toml`, which is also the one worth
-    /// showing: a setting should be listed by the word you would type.
-    pub fn name(&self) -> &'static str {
-        match *self {
-            Self::UNICODE => "unicode",
-            Self::NERD => "nerd",
-            Self::ASCII => "ascii",
-            Self::PIXEL => "pixel",
-            Self::IMAGE => "image",
-            _ => "block",
-        }
-    }
-
-    /// The next set in [`Self::ALL`], wrapping.
-    pub fn next(&self) -> Self {
-        let i = Self::ALL.iter().position(|s| s == self).unwrap_or(0);
-        Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-
-    /// Every set, in the order the key cycles them: the default first, then
-    /// the other text sets, then the two that need no font.
-    pub const ALL: [Self; 6] = [
-        Self::BLOCK,
-        Self::UNICODE,
-        Self::NERD,
-        Self::ASCII,
-        Self::PIXEL,
-        Self::IMAGE,
-    ];
-
-    /// The text sets alone, for what only applies to faces a font draws.
-    pub const TEXT: [Self; 4] = [Self::BLOCK, Self::UNICODE, Self::NERD, Self::ASCII];
-
     pub fn faces(&self) -> [&'static str; 5] {
         [self.prev, self.play, self.pause, self.stop, self.next]
     }
 
-    /// Cells each button occupies.
+    /// Cells each button occupies: the widest face plus the padding.
     ///
-    /// Derived from the set's own widest face, so the padding is the same in
-    /// every set and the plate's parity follows the face's: `nerd`, whose
-    /// faces are one cell, gets an odd plate and centres them exactly, where a
-    /// fixed even width would have left every one of them half a cell out.
+    /// The image faces are drawn into the same rect, so the plate is the
+    /// same size to click whether it holds a picture or the text.
     pub fn button_width(&self) -> u16 {
-        match self.kind {
-            Kind::Text => self.face_width_max() + BUTTON_PAD * 2,
-            Kind::Pixel => super::faces::PIXEL_W,
-            Kind::Image => super::faces::IMAGE_W,
-        }
+        self.face_width_max() + BUTTON_PAD * 2
     }
 
     /// Rows each button occupies.
@@ -267,7 +114,7 @@ impl Glyphs {
 
 impl Default for Glyphs {
     fn default() -> Self {
-        Self::BLOCK
+        Self::ASCII
     }
 }
 
@@ -1003,30 +850,11 @@ fn render_controls(
         if r.width == 0 {
             return;
         }
-        let plate_rgb = if lit {
-            t.transport_button_active_bg
+        let plate = if lit {
+            rgb(t.transport_button_active_bg)
         } else {
-            t.transport_button_bg
+            rgb(t.transport_button_bg)
         };
-        let plate = rgb(plate_rgb);
-        // A pixel face is its own plate: the sprite is drawn on a solid
-        // rect, two colours to a cell, and there is no text to centre.
-        if glyphs.kind == Kind::Pixel {
-            let which = match s {
-                _ if s == glyphs.prev => Button::Prev,
-                _ if s == glyphs.play => Button::Play,
-                _ if s == glyphs.pause => Button::Pause,
-                _ if s == glyphs.stop => Button::Stop,
-                _ => Button::Next,
-            };
-            let ink = if lit {
-                t.transport_button_active_fg
-            } else {
-                t.transport_button_fg
-            };
-            super::faces::render_pixel(r, super::faces::sprite(which), ink, plate_rgb, buf);
-            return;
-        }
         // The middle row is solid; the outer two are half blocks facing it,
         // so the plate stands two rows tall while the face still has a whole
         // row of its own to be centred on. Their *background* is the panel's,
@@ -1715,116 +1543,32 @@ mod tests {
     }
 
     #[test]
-    fn glyph_sets_resolve_by_name() {
-        assert_eq!(Glyphs::parse("unicode"), Some(Glyphs::UNICODE));
-        assert_eq!(Glyphs::parse("NERD"), Some(Glyphs::NERD));
-        assert_eq!(Glyphs::parse("nerd-font"), Some(Glyphs::NERD));
-        assert_eq!(Glyphs::parse("block"), Some(Glyphs::BLOCK));
-        assert_eq!(Glyphs::parse("ascii"), Some(Glyphs::ASCII));
-        assert_eq!(Glyphs::parse("nonsense"), None);
-        assert_eq!(Glyphs::default(), Glyphs::BLOCK);
-        assert_eq!(Glyphs::parse("auto"), Some(Glyphs::BLOCK));
-        assert_eq!(Glyphs::parse("pixel"), Some(Glyphs::PIXEL));
-        assert_eq!(Glyphs::parse("image"), Some(Glyphs::IMAGE));
-    }
-
-    #[test]
-    fn every_glyph_set_has_its_own_name_and_parses_back() {
-        let mut names: Vec<&str> = Glyphs::ALL.iter().map(|g| g.name()).collect();
-        names.sort_unstable();
-        names.dedup();
-        assert_eq!(names.len(), Glyphs::ALL.len(), "two sets share a name");
-        for set in Glyphs::ALL {
-            assert_eq!(Glyphs::parse(set.name()), Some(set), "{}", set.name());
+    fn the_text_faces_are_ascii_so_every_font_can_draw_them() {
+        for face in Glyphs::default().faces() {
+            assert!(face.is_ascii(), "{face:?}");
         }
+        assert!(Glyphs::default().play_mark().is_ascii());
     }
 
-    #[test]
-    fn cycling_glyph_sets_visits_every_one_and_returns() {
-        let mut seen = vec![Glyphs::default()];
-        loop {
-            let next = seen.last().unwrap().next();
-            if next == seen[0] {
-                break;
-            }
-            assert!(!seen.contains(&next), "cycle repeats {}", next.name());
-            seen.push(next);
-        }
-        assert_eq!(seen.len(), Glyphs::ALL.len());
-    }
-
-    /// The two font-free sets fall back to the block faces, so a playlist
-    /// marker, and an image set on a terminal with no protocol, look like
-    /// the default rather than like nothing.
-    #[test]
-    fn the_font_free_sets_carry_the_block_faces_as_text() {
-        for set in [Glyphs::PIXEL, Glyphs::IMAGE] {
-            assert_eq!(set.faces(), Glyphs::BLOCK.faces(), "{}", set.name());
-            assert_eq!(set.play_mark(), Glyphs::BLOCK.play_mark());
-            assert_ne!(set.kind, Kind::Text);
-        }
-        assert_eq!(Glyphs::PIXEL.button_width(), super::super::faces::PIXEL_W);
-        assert_eq!(Glyphs::IMAGE.button_width(), Glyphs::BLOCK.button_width());
-    }
-
-    /// A pixel set draws its own plates: every cell of the button carries
-    /// the plate colour, and nothing in it is a text face.
-    #[test]
-    fn a_pixel_set_draws_plates_of_quadrants_rather_than_faces() {
-        let theme = crate::theme::builtin::load("cosmic").unwrap();
-        let area = Rect::new(0, 0, 80, PANEL_ROWS);
-        let mut buf = Buffer::empty(area);
-        let g = geometry(area, 0.0, 0.0, RepeatMode::Off, Glyphs::PIXEL).unwrap();
-        render_controls(
-            &g.controls,
-            &mut buf,
-            &theme,
-            PlayState::Playing,
-            0.5,
-            false,
-            RepeatMode::Off,
-            0,
-            Glyphs::PIXEL,
-        );
-        let plate = rgb(theme.transport_button_bg);
-        let r = g.controls.prev;
-        assert_eq!(r.width, super::super::faces::PIXEL_W);
-        for dy in 0..r.height {
-            for dx in 0..r.width {
-                let cell = &buf[(r.x + dx, r.y + dy)];
-                assert_eq!(cell.bg, plate, "plate at {dx},{dy}");
-                assert!(
-                    cell.symbol().chars().all(|c| c == ' ' || ('\u{2580}'..='\u{259f}').contains(&c)),
-                    "not a block element: {:?}",
-                    cell.symbol()
-                );
-            }
-        }
-        // And the lit button wears the active plate.
-        let lit = rgb(theme.transport_button_active_bg);
-        assert_eq!(buf[(g.controls.play.x, g.controls.play.y)].bg, lit);
-    }
-
-    /// The plate is a fixed size within a set, so the buttons are the same
-    /// size to click whatever they hold.
+    /// The plate is a fixed size, so the buttons are the same size to click
+    /// whatever they hold.
     #[test]
     fn every_transport_button_is_the_same_size() {
-        for set in Glyphs::TEXT {
-            assert_eq!(set.button_height(), BUTTON_H, "plate height in {set:?}");
-            // Two clear cells either side of the widest face, in every set.
-            let slack = set.button_width() - set.face_width_max();
-            assert_eq!(slack, BUTTON_PAD * 2, "padding in {set:?}");
-            // And the widest face lands dead centre, because the plate's
-            // parity follows it.
-            assert_eq!(slack % 2, 0, "{set:?} cannot centre its widest face");
-        }
+        let set = Glyphs::default();
+        assert_eq!(set.button_height(), BUTTON_H, "plate height in {set:?}");
+        // Two clear cells either side of the widest face, in every set.
+        let slack = set.button_width() - set.face_width_max();
+        assert_eq!(slack, BUTTON_PAD * 2, "padding in {set:?}");
+        // And the widest face lands dead centre, because the plate's
+        // parity follows it.
+        assert_eq!(slack % 2, 0, "{set:?} cannot centre its widest face");
     }
 
     /// The plate's real dimensions.
     ///
     /// A cell is roughly twice as tall as it is wide -- 8 by 17 pixels where
-    /// this was measured -- so a one-cell set's three cells are 24 px across,
-    /// and a quarter-cell edge either side of the face's row makes it
+    /// this was measured -- so a three-cell plate is 24 px across, and a
+    /// quarter-cell edge either side of the face's row makes it
     /// 17 + 2 x 4.25 = 25.5 px tall. Square to within 6%.
     ///
     /// The height does not follow from the row count and cannot be read off
@@ -1845,7 +1589,7 @@ mod tests {
             (w, h)
         };
 
-        // The one-cell sets: three cells, a quarter each side.
+        // A three-cell plate: a quarter each side.
         assert_eq!(plate_edge(3), 2);
         let (w, h) = px(3);
         assert!(
@@ -1853,74 +1597,34 @@ mod tests {
             "{w}x{h}"
         );
 
-        // Every set is square, whatever width its faces need, because the
-        // edge is derived from that width.
-        for set in Glyphs::ALL {
-            let (w, h) = px(set.button_width());
-            let ratio = w / h;
-            assert!(
-                (0.9..=1.1).contains(&ratio),
-                "{set:?} stands {w}x{h} px, ratio {ratio:.2}"
-            );
-        }
-
-        assert_eq!(
-            Glyphs::UNICODE.button_width(),
-            3,
-            "three cells: one face plus padding"
+        // The plate is square at the width its faces need, because the edge
+        // is derived from that width.
+        let set = Glyphs::default();
+        let (w, h) = px(set.button_width());
+        let ratio = w / h;
+        assert!(
+            (0.9..=1.1).contains(&ratio),
+            "{set:?} stands {w}x{h} px, ratio {ratio:.2}"
         );
-        // The two-cell sets -- the default among them -- need a wider plate,
-        // and at this height it is still within tolerance, checked for every
-        // set in the loop above.
-        assert_eq!(Glyphs::BLOCK.button_width(), BUTTON_W);
-        assert_eq!(Glyphs::default().button_width(), BUTTON_W);
+        // Two-cell faces want a four-cell plate.
+        assert_eq!(set.button_width(), BUTTON_W);
     }
 
     /// What the uniform faces buy: every button, not merely the widest, sits
     /// dead centre. A face centres only when it and the plate share parity, so
-    /// this holds exactly when a set's faces are all the same width -- which
-    /// every set now has. `block` and `ascii` used to fail it on `play`.
+    /// this holds exactly when the faces are all the same width. `play` used
+    /// to be a lone `>` and failed it.
     #[test]
-    fn every_face_of_every_set_centres_exactly() {
-        for set in Glyphs::TEXT {
-            let w = set.button_width();
-            for face in set.faces() {
-                let slack = w - face_width(face);
-                assert_eq!(
-                    slack % 2,
-                    0,
-                    "{face:?} cannot centre in a {w}-cell plate in {set:?}"
-                );
-            }
-        }
-    }
-
-    /// A face must never carry default emoji presentation, bar one.
-    ///
-    /// `unicode-width` reports one cell for the media control pictographs and
-    /// a terminal is entitled to draw two, in colour. A face a cell wider than
-    /// the layout believes shifts every button after it, and nothing else in
-    /// the suite would see it -- the widths all agree, on this machine.
-    ///
-    /// U+23F8 is allowed because it was chosen knowing this, and is named
-    /// rather than excluded by a wider range so that reaching for any of its
-    /// neighbours is still a test failure and a fresh decision.
-    #[test]
-    fn no_face_risks_being_drawn_as_an_emoji() {
-        // The pictograph run that carries Emoji_Presentation=Yes.
-        let risky = '\u{23e9}'..='\u{23fa}';
-        const ALLOWED: char = '\u{23f8}';
-        for set in Glyphs::ALL {
-            for face in set.faces() {
-                for ch in face.chars() {
-                    assert!(
-                        !risky.contains(&ch) || ch == ALLOWED,
-                        "{face:?} in {set:?} uses U+{:04X}, which has default \
-                         emoji presentation and may be drawn double width",
-                        ch as u32
-                    );
-                }
-            }
+    fn every_face_centres_exactly() {
+        let set = Glyphs::default();
+        let w = set.button_width();
+        for face in set.faces() {
+            let slack = w - face_width(face);
+            assert_eq!(
+                slack % 2,
+                0,
+                "{face:?} cannot centre in a {w}-cell plate in {set:?}"
+            );
         }
     }
 
@@ -1934,12 +1638,11 @@ mod tests {
     #[test]
     fn the_transport_faces_are_all_different() {
         // Padding one to width must not turn it into another.
-        for set in Glyphs::ALL {
-            let faces = set.faces();
-            for (i, a) in faces.iter().enumerate() {
-                for b in &faces[i + 1..] {
-                    assert_ne!(a, b, "two buttons look the same in {set:?}");
-                }
+        let set = Glyphs::default();
+        let faces = set.faces();
+        for (i, a) in faces.iter().enumerate() {
+            for b in &faces[i + 1..] {
+                assert_ne!(a, b, "two buttons look the same in {set:?}");
             }
         }
     }
@@ -1951,9 +1654,7 @@ mod tests {
         // every button after it out of its own hit rect.
         use unicode_width::UnicodeWidthStr;
         let mut all: Vec<&str> = vec![SHUFFLE];
-        for set in Glyphs::ALL {
-            all.extend(set.faces());
-        }
+        all.extend(Glyphs::default().faces());
         for face in all {
             assert_eq!(
                 face.width(),

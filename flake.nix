@@ -43,28 +43,6 @@
               deriving a staramp theme from the active Stylix base16 scheme, so
               the player matches the rest of the desktop automatically
             '';
-            glyphs = lib.mkOption {
-              type = lib.types.enum [ "block" "unicode" "nerd" "ascii" "pixel" "image" ];
-              default = "block";
-              description = ''
-                Transport button faces. `nerd` uses the private-use icons a
-                patched font provides; setting it also installs `nerdFont` so
-                the codepoints resolve.
-
-                A terminal program cannot choose its own typeface, so this
-                only decides which codepoints staramp emits -- the font your
-                terminal is configured with still has to be the patched one.
-              '';
-            };
-            nerdFont = lib.mkOption {
-              type = lib.types.nullOr lib.types.package;
-              default = null;
-              example = "pkgs.nerd-fonts.jetbrains-mono";
-              description = ''
-                A patched font to install. Defaults to JetBrainsMono when
-                `glyphs = "nerd"`, and to nothing otherwise.
-              '';
-            };
             settings = lib.mkOption {
               type = lib.types.attrs;
               default = { };
@@ -74,16 +52,7 @@
 
           config = lib.mkIf cfg.enable (lib.mkMerge [
             {
-              home.packages = [ cfg.package ]
-                # The glyphs are useless without a font that carries them.
-                # Installing one does not select it in the terminal -- that is
-                # the terminal's own setting -- but it does mean the codepoints
-                # exist to fall back to.
-                ++ lib.optional (cfg.glyphs == "nerd")
-                (if cfg.nerdFont != null then
-                  cfg.nerdFont
-                else
-                  pkgs.nerd-fonts.jetbrains-mono);
+              home.packages = [ cfg.package ];
               # staramp keeps everything under one directory rather than
               # spreading it across the XDG roots, so this is not xdg.configFile.
               home.file.".local/staramp/config.toml".source =
@@ -92,16 +61,9 @@
                     library_root = cfg.libraryRoot;
                     playlist_dir = cfg.playlistDir;
                     theme = if cfg.stylix.enable then "stylix" else cfg.theme;
-                    ui = { glyphs = cfg.glyphs; };
                   } // cfg.settings
                 );
             }
-            # `fonts.fontconfig` is a Linux-only home-manager option, so this
-            # has to disappear rather than merely evaluate to false on darwin.
-            (lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-              fonts.fontconfig.enable =
-                lib.mkIf (cfg.glyphs == "nerd") (lib.mkDefault true);
-            })
             (lib.mkIf cfg.stylix.enable {
               home.file.".local/staramp/themes/stylix.toml".text =
                 let c = config.lib.stylix.colors;

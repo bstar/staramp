@@ -17,7 +17,7 @@ use ratatui::layout::{Rect, Size};
 use ratatui_image::picker::cap_parser::QueryStdioOptions;
 use ratatui_image::picker::{Picker, ProtocolType};
 use ratatui_image::protocol::Protocol;
-use ratatui_image::Resize;
+use ratatui_image::{FontSize, Resize};
 
 use crate::theme::color::Rgb;
 use crate::ui::panels::faces::Button;
@@ -107,8 +107,8 @@ pub struct Graphics {
     /// `None` when the terminal has no protocol, or the user asked for none.
     picker: Option<Picker>,
     cached: Option<Cached>,
-    /// The transport buttons, for the `image` face set. Built once each and
-    /// transmitted once each: the protocol sends the pixels the first time
+    /// The transport buttons. Built once each and transmitted once each: the
+    /// protocol sends the pixels the first time
     /// and a placement every frame after, so holding the five (ten, with the
     /// lit variants) is what makes drawing them every frame free.
     buttons: HashMap<ButtonKey, Protocol>,
@@ -124,9 +124,10 @@ impl Graphics {
     /// Never fails. A terminal that does not answer, or answers badly, simply
     /// gets half blocks.
     pub fn probe(mode: Mode) -> Self {
+        // Asked whatever the cover setting says, because covers are not the
+        // only thing drawn this way: the transport buttons are, by default,
+        // and turning covers off is not a statement about them.
         let probed = match mode {
-            // Never asked, so there is nothing to go back to later.
-            Mode::Off | Mode::Blocks => None,
             // Only ask something that will answer.
             //
             // Not squeamishness about the cost: a terminal that answers the
@@ -142,7 +143,7 @@ impl Graphics {
             //
             // So the question is not "can this terminal draw pixels" but "is
             // anyone listening", and the environment is read for that.
-            Mode::Auto if !looks_capable() => {
+            Mode::Auto | Mode::Off | Mode::Blocks if !looks_capable() => {
                 tracing::debug!("graphics: nothing in the environment suggests a protocol");
                 None
             }
@@ -213,6 +214,39 @@ impl Graphics {
         };
     }
 
+    /// Take the cell size again, after the terminal changed shape.
+    ///
+    /// The probe measures a cell once, at startup, and a font zoom changes
+    /// it. That matters more for the buttons than for the cover: the cover is
+    /// fitted to its area and merely goes soft, but a button image is built
+    /// at the cell size in pixels, and kitty places it by its pixel size --
+    /// the library sends no cell count with the placement -- so after a zoom
+    /// the old image covers fewer cells than the button and the rest of the
+    /// button shows through. Measured from the window's pixel size, which
+    /// the terminals with a graphics protocol all report; where it is not
+    /// reported nothing changes.
+    pub fn remeasure(&mut self) {
+        let Ok(ws) = crossterm::terminal::window_size() else {
+            return;
+        };
+        let Some(cell) = cell_size(ws.columns, ws.rows, ws.width, ws.height) else {
+            return;
+        };
+        let mut changed = false;
+        for p in [&mut self.probed, &mut self.picker].into_iter().flatten() {
+            let had = p.font_size();
+            if had.width != cell.width || had.height != cell.height {
+                *p = with_cell(p, cell);
+                changed = true;
+            }
+        }
+        if changed {
+            tracing::debug!("graphics: cell is now {}x{} px", cell.width, cell.height);
+            self.cached = None;
+            self.buttons.clear();
+        }
+    }
+
     /// Half blocks with no probe at all, for tests and for `graphics = "off"`.
     pub fn disabled() -> Self {
         Self {
@@ -224,15 +258,26 @@ impl Graphics {
         }
     }
 
-    /// Is there a protocol to draw pixels with at all?
+    /// The picker for the transport buttons.
     ///
-    /// What the `image` face set needs to know: without one it is drawn as
-    /// the block text set, and the note that says which set is in use
-    /// should say so rather than name a thing that is not on the screen.
+    /// Not the cover's: `[ui] graphics` is about covers, and `off` or
+    /// `blocks` there leaves the buttons drawn as pictures wherever the
+    /// terminal can. Forcing `kitty` is honoured for both, since it exists
+    /// for the terminals the probe cannot see.
+    fn pixel_picker(&self) -> Option<&Picker> {
+        match self.mode {
+            Mode::Kitty => self.picker.as_ref(),
+            _ => self
+                .probed
+                .as_ref()
+                .filter(|p| p.protocol_type() != ProtocolType::Halfblocks),
+        }
+    }
+
+    /// Is there a protocol to draw the buttons with at all? Without one they
+    /// are drawn as text.
     pub fn draws_pixels(&self) -> bool {
-        self.picker
-            .as_ref()
-            .is_some_and(|p| p.protocol_type() != ProtocolType::Halfblocks)
+        self.pixel_picker().is_some()
     }
 
     /// A transport button as an image the size of its cells, in the colours
@@ -249,10 +294,10 @@ impl Graphics {
         plate: Rgb,
         bg: Rgb,
     ) -> Option<&Protocol> {
-        if !self.draws_pixels() || area.width == 0 || area.height == 0 {
+        if area.width == 0 || area.height == 0 {
             return None;
         }
-        let picker = self.picker.as_ref()?;
+        let picker = self.pixel_picker()?;
         let cell = picker.font_size();
         if cell.width == 0 || cell.height == 0 {
             return None;
@@ -264,17 +309,20 @@ impl Graphics {
         let tuple = |c: Rgb| (c.r, c.g, c.b);
         let key = (which, tuple(fg), tuple(plate), tuple(bg), w, h);
         if !self.buttons.contains_key(&key) {
-            // A theme change leaves the old colours' entries behind. Ten
-            // live entries is the working set; anything well beyond it is
-            // history, and cheap to rebuild.
-            if self.buttons.len() > 60 {
-                self.buttons.clear();
-            }
             let img = crate::ui::panels::faces::raster(which, w, h, fg, plate, bg);
             let dynamic = image::DynamicImage::ImageRgb8(img);
             let size = Size::new(area.width, area.height);
-            match picker.new_protocol(dynamic, size, Resize::Fit(None)) {
+            // Built before the map is touched: the picker is borrowed from
+            // `self`, and the borrow has to end before the insert.
+            let built = picker.new_protocol(dynamic, size, Resize::Fit(None));
+            match built {
                 Ok(p) => {
+                    // A theme change leaves the old colours' entries behind.
+                    // Ten live entries is the working set; anything well
+                    // beyond it is history, and cheap to rebuild.
+                    if self.buttons.len() > 60 {
+                        self.buttons.clear();
+                    }
                     self.buttons.insert(key, p);
                 }
                 Err(e) => {
@@ -355,6 +403,33 @@ impl Graphics {
     pub fn forget(&mut self) {
         self.cached = None;
     }
+}
+
+/// A cell's size in pixels, from the window's size in both cells and pixels.
+///
+/// `None` when either is unknown: a terminal that does not report pixels
+/// says zero, and dividing by it would say the same.
+fn cell_size(columns: u16, rows: u16, width_px: u16, height_px: u16) -> Option<FontSize> {
+    if columns == 0 || rows == 0 || width_px == 0 || height_px == 0 {
+        return None;
+    }
+    Some(FontSize {
+        width: width_px / columns,
+        height: height_px / rows,
+    })
+}
+
+/// The same picker at another cell size.
+///
+/// The library measures once and offers no way to say otherwise, so this is
+/// a new picker carrying the old one's protocol. What the constructor reads
+/// from the environment -- tmux, iTerm2 -- it reads the same way the probe
+/// did, and the capabilities it cannot know are informational only.
+fn with_cell(p: &Picker, cell: FontSize) -> Picker {
+    #[allow(deprecated)]
+    let mut n = Picker::from_fontsize(cell);
+    n.set_protocol_type(p.protocol_type());
+    n
 }
 
 /// Is there a terminal on the other end that will answer a question?
@@ -501,5 +576,13 @@ mod tests {
         // test is which one the panel was handed, not what is in it.
         let same_pixels = Arc::new(image::RgbImage::from_pixel(4, 4, image::Rgb([1, 2, 3])));
         assert!(!is_fresh(Some((&one, size)), &same_pixels, size));
+    }
+
+    #[test]
+    fn a_cell_is_the_window_in_pixels_over_the_window_in_cells() {
+        let c = cell_size(100, 50, 800, 850).unwrap();
+        assert_eq!((c.width, c.height), (8, 17));
+        assert!(cell_size(100, 50, 0, 0).is_none(), "no pixels reported");
+        assert!(cell_size(0, 0, 800, 850).is_none(), "no cells reported");
     }
 }

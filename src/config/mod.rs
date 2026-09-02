@@ -142,19 +142,6 @@ pub struct Ui {
     /// the top and bottom edges do not have the same problem.
     pub padding_x: u16,
     pub padding_y: u16,
-    /// Transport button faces: `block`, `unicode`, `nerd`, `ascii`, `pixel`,
-    /// or `image`.
-    ///
-    /// `block` is the default because it is drawn by the terminal's own font
-    /// at text size on every machine, so two installs look alike without
-    /// being configured; the other text sets depend on what font each
-    /// terminal has. `pixel` and `image` draw the shapes themselves, from
-    /// block elements and over the graphics protocol respectively, and so do
-    /// not depend on the font at all.
-    /// `nerd` needs a patched font installed *and selected in the terminal* --
-    /// a terminal program cannot choose its own typeface, so this only says
-    /// which codepoints to emit.
-    pub glyphs: String,
     /// How the seek bar is drawn: `ansi`, `bar`, `thin`, or `blocks`.
     ///
     /// `ansi` is plain characters, which every font has. The others draw box
@@ -287,7 +274,6 @@ impl Default for Ui {
         Self {
             padding_x: 1,
             padding_y: 0,
-            glyphs: "block".into(),
             seek_style: "ansi".into(),
             graphics: "auto".into(),
             // What a first run opens with, and what every run after it opens
@@ -427,12 +413,6 @@ volume = 1.0
 [ui]
 # How album covers are drawn: auto, kitty, blocks, or off.
 graphics = "auto"
-# Transport button faces: block, unicode, nerd, ascii, pixel, image.
-# `block` is drawn by your terminal's own font at text size, so it looks the
-# same on every machine. `pixel` and `image` draw the shapes themselves and
-# need no font: `pixel` from block elements, `image` over the kitty graphics
-# protocol. `nerd` needs a patched font selected in your terminal. `o` cycles.
-glyphs = "block"
 
 [art]
 # Look covers up on the Cover Art Archive when the disk has none. Off by
@@ -620,16 +600,16 @@ mod tests {
     fn writing_them_over_a_real_config_disturbs_nothing_else() {
         // The file people hand-edit, with its comments, written through the
         // same path the running player uses.
-        let src = "# mine\nlibrary_root = \"/music\"\n\n[ui]\n# faces\nglyphs = \"nerd\"\n";
+        let src = "# mine\nlibrary_root = \"/music\"\n\n[ui]\n# room\npadding_x = 3\n";
         let mut text = src.to_string();
         for (section, key, value) in every_written_setting() {
             text = edit::apply(&text, section, key, &value);
         }
         assert!(text.contains("# mine"), "{text}");
-        assert!(text.contains("# faces"), "{text}");
+        assert!(text.contains("# room"), "{text}");
         let c: Config = toml::from_str(&text).unwrap_or_else(|e| panic!("{e}\n{text}"));
         assert_eq!(c.library_root, Some(PathBuf::from("/music")));
-        assert_eq!(c.ui.glyphs, "nerd");
+        assert_eq!(c.ui.padding_x, 3);
         assert_eq!(c.theme, "nord");
     }
 

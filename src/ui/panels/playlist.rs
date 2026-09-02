@@ -654,7 +654,7 @@ mod render_tests {
             scroll,
             focused: true,
             tagged: &Default::default(),
-            glyphs: crate::ui::panels::player::Glyphs::UNICODE,
+            glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
         }
         .render(area, &mut buf);
@@ -710,7 +710,7 @@ mod render_tests {
             scroll,
             focused: true,
             tagged: &Default::default(),
-            glyphs: crate::ui::panels::player::Glyphs::UNICODE,
+            glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
         }
         .render(area, &mut buf);
@@ -755,7 +755,7 @@ mod render_tests {
             scroll,
             focused: true,
             tagged: &Default::default(),
-            glyphs: crate::ui::panels::player::Glyphs::UNICODE,
+            glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
         }
         .render(area, &mut buf);
@@ -1062,37 +1062,31 @@ mod render_tests {
         let area = Rect::new(0, 0, 40, 12);
         let list = list_of(12);
 
-        for glyphs in [
-            crate::ui::panels::player::Glyphs::UNICODE,
-            crate::ui::panels::player::Glyphs::ASCII,
-            crate::ui::panels::player::Glyphs::NERD,
-            crate::ui::panels::player::Glyphs::BLOCK,
-        ] {
-            let mut buf = Buffer::empty(area);
-            PlaylistView {
-                theme: &theme,
-                name: "test",
-                items: &items,
-                rows: &rows,
-                cursor: 2,
-                playing: Some(0),
-                scroll: 0,
-                focused: true,
-                tagged: &Default::default(),
-                glyphs,
-                header_items: crate::ui::panels::header::WITH_FILTER,
-            }
-            .render(area, &mut buf);
-
-            let at = |row: u16| buf[(list.x, list.y + row)].symbol().to_string();
-            assert_eq!(at(0), glyphs.play_mark(), "the playing row");
-            // One column wide however wide the button it came from is, so
-            // nothing in the row shifts.
-            assert_eq!(glyphs.play_mark().chars().count(), 1);
-            // The cursor is shown by its bar, not by a mark of its own.
-            assert_eq!(at(2), " ", "the cursor row");
-            assert_eq!(at(1), " ", "an ordinary row");
+        let glyphs = crate::ui::panels::player::Glyphs::default();
+        let mut buf = Buffer::empty(area);
+        PlaylistView {
+            theme: &theme,
+            name: "test",
+            items: &items,
+            rows: &rows,
+            cursor: 2,
+            playing: Some(0),
+            scroll: 0,
+            focused: true,
+            tagged: &Default::default(),
+            glyphs,
+            header_items: crate::ui::panels::header::WITH_FILTER,
         }
+        .render(area, &mut buf);
+
+        let at = |row: u16| buf[(list.x, list.y + row)].symbol().to_string();
+        assert_eq!(at(0), glyphs.play_mark(), "the playing row");
+        // One column wide however wide the button it came from is, so
+        // nothing in the row shifts.
+        assert_eq!(glyphs.play_mark().chars().count(), 1);
+        // The cursor is shown by its bar, not by a mark of its own.
+        assert_eq!(at(2), " ", "the cursor row");
+        assert_eq!(at(1), " ", "an ordinary row");
     }
 
     #[test]
@@ -1286,7 +1280,7 @@ mod tests {
                 scroll: 0,
                 focused: true,
                 tagged,
-                glyphs: crate::ui::panels::player::Glyphs::UNICODE,
+                glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
             }
             .render(area, &mut buf);
@@ -1345,7 +1339,7 @@ mod tests {
                 scroll: 0,
                 focused: true,
                 tagged: &tagged,
-                glyphs: crate::ui::panels::player::Glyphs::UNICODE,
+                glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
             }
             .render(area, &mut buf);
@@ -1369,7 +1363,7 @@ mod tests {
         fn a_tagged_playing_row_shows_the_play_face_and_the_tag() {
             let tagged: HashSet<usize> = [0].into_iter().collect();
             let (buf, list, _) = draw_tagged(&tagged, 3, Some(0));
-            let play = crate::ui::panels::player::Glyphs::UNICODE.play_mark();
+            let play = crate::ui::panels::player::Glyphs::default().play_mark();
             assert_eq!(buf[(list.x, list.y)].symbol(), play);
             assert_eq!(
                 buf[(list.x + 5, list.y)].symbol(),
@@ -1399,40 +1393,34 @@ mod tests {
         /// ASCII, so no font can lose it -- the lesson `render_section` records.
         #[test]
         fn the_tag_survives_every_glyph_set() {
-            for glyphs in [
-                crate::ui::panels::player::Glyphs::UNICODE,
-                crate::ui::panels::player::Glyphs::ASCII,
-                crate::ui::panels::player::Glyphs::NERD,
-                crate::ui::panels::player::Glyphs::BLOCK,
-            ] {
-                let theme = crate::theme::builtin::load("cosmic").unwrap();
-                let items: Vec<QueueItem> = (0..2)
-                    .map(|i| {
-                        QueueItem::new(TrackUri::File {
-                            rel_path: format!("t{i}.flac"),
-                        })
+            let glyphs = crate::ui::panels::player::Glyphs::default();
+            let theme = crate::theme::builtin::load("cosmic").unwrap();
+            let items: Vec<QueueItem> = (0..2)
+                .map(|i| {
+                    QueueItem::new(TrackUri::File {
+                        rel_path: format!("t{i}.flac"),
                     })
-                    .collect();
-                let area = Rect::new(0, 0, 44, 8);
-                let mut buf = Buffer::empty(area);
-                let tagged: HashSet<usize> = [0].into_iter().collect();
-                PlaylistView {
-                    theme: &theme,
-                    name: "test",
-                    items: &items,
-                    rows: &Rows::flat(items.len()),
-                    cursor: 1,
-                    playing: None,
-                    scroll: 0,
-                    focused: true,
-                    tagged: &tagged,
-                    glyphs,
-                    header_items: crate::ui::panels::header::WITH_FILTER,
-                }
-                .render(area, &mut buf);
-                let list = list_rect(area);
-                assert_eq!(buf[(list.x + 5, list.y)].symbol(), "+");
+                })
+                .collect();
+            let area = Rect::new(0, 0, 44, 8);
+            let mut buf = Buffer::empty(area);
+            let tagged: HashSet<usize> = [0].into_iter().collect();
+            PlaylistView {
+                theme: &theme,
+                name: "test",
+                items: &items,
+                rows: &Rows::flat(items.len()),
+                cursor: 1,
+                playing: None,
+                scroll: 0,
+                focused: true,
+                tagged: &tagged,
+                glyphs,
+                header_items: crate::ui::panels::header::WITH_FILTER,
             }
+            .render(area, &mut buf);
+            let list = list_rect(area);
+            assert_eq!(buf[(list.x + 5, list.y)].symbol(), "+");
         }
 
         #[test]

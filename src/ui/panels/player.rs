@@ -416,6 +416,18 @@ pub const VOLUME_SLIDER: u16 = 10;
 /// A space and three digits: ` 100`.
 const VOLUME_READOUT: u16 = 4;
 
+/// How far the quiet end of the fill is pulled toward the panel behind it.
+///
+/// Subtle on purpose. Enough that the bar is visibly brighter at full than at
+/// a tenth, not so much that the first cells look like a different control.
+const VOLUME_DIM: f64 = 0.55;
+
+/// The least contrast the quiet end may have against the panel.
+///
+/// Themes vary in how far their accent sits from their background, so a fixed
+/// mix is legible in some and nearly invisible in others. This is the floor.
+const VOLUME_MIN_CONTRAST: f64 = 1.8;
+
 /// The slider's two characters: a filled rectangle for a reached cell and a
 /// hollow one for the rest.
 ///
@@ -967,14 +979,34 @@ fn render_controls(
         // resolves finer than the pointer moves shows changes nobody asked
         // for, and one that resolves coarser hides changes they did.
         let cells = (volume.clamp(0.0, 1.0) * v.width as f32).round() as u16;
-        let filled = if volume <= 0.0 {
+
+        // The fill brightens toward full. One gradient, in one shape -- not
+        // the two at once this replaced, where the character changed as well
+        // and the pair read as noise. Brightness tracks position, so where
+        // the bar ends is also how bright it has got.
+        //
+        // Both ends come from the theme's own fill colour: the quiet end is
+        // that colour pulled toward the panel behind it, which recedes in a
+        // light theme and a dark one alike, where "darker" would only work
+        // in one of them.
+        let accent = if volume <= 0.0 {
             t.volume_mute_fg
         } else {
             t.volume_filled_fg
         };
+        let quiet = accent
+            .mix(t.bg, VOLUME_DIM)
+            // Still legible against the panel: a first cell that fades into
+            // the background is a bar that appears to start at 20%.
+            .ensure_contrast(t.bg, VOLUME_MIN_CONTRAST);
+
         for i in 0..v.width {
             let (ch, colour) = if i < cells {
-                (VOLUME_FULL, filled)
+                // Across the whole slider rather than the filled part, so a
+                // given level is always the same colour -- the gradient
+                // describes the scale, not how far along it we happen to be.
+                let along = i as f64 / (v.width - 1).max(1) as f64;
+                (VOLUME_FULL, quiet.mix(accent, along))
             } else {
                 (VOLUME_TRACK, t.volume_track_fg)
             };
@@ -1271,6 +1303,111 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    /// The colours of the slider's cells at a given level, left to right.
+    fn volume_colours(level: f32, theme_name: &str) -> Vec<Color> {
+        let theme = crate::theme::builtin::load(theme_name).unwrap();
+        let area = Rect::new(0, 0, 80, PANEL_ROWS);
+        let mut buf = Buffer::empty(area);
+        let g = geometry(area, 0.0, 300.0, RepeatMode::Off, Glyphs::default()).unwrap();
+        render_controls(
+            &g.controls,
+            &mut buf,
+            &theme,
+            PlayState::Playing,
+            level,
+            false,
+            RepeatMode::Off,
+            0,
+            Glyphs::default(),
+        );
+        let v = g.controls.volume.unwrap();
+        (0..v.width)
+            .map(|i| buf[(v.x + i, v.y)].style().fg.unwrap())
+            .collect()
+    }
+
+    fn as_rgb(c: Color) -> crate::theme::color::Rgb {
+        match c {
+            Color::Rgb(r, g, b) => crate::theme::color::Rgb::new(r, g, b),
+            other => panic!("expected an rgb colour, got {other:?}"),
+        }
+    }
+
+    /// Not an assertion -- run with `--nocapture` to see the ramp.
+    #[test]
+    fn preview_the_volume_gradient() {
+        for name in ["cosmic", "catppuccin-mocha", "nord", "gruvbox-dark"] {
+            let theme = crate::theme::builtin::load(name).unwrap();
+            let cols = volume_colours(1.0, name);
+            let hexes: Vec<String> = cols.iter().map(|c| as_rgb(*c).to_hex()).collect();
+            println!("{name:18} bg {}  {}", theme.bg.to_hex(), hexes.join(" "));
+        }
+    }
+
+    /// Brighter toward full, in every theme.
+    #[test]
+    fn the_volume_brightens_across_the_bar() {
+        for name in ["cosmic", "catppuccin-mocha", "nord", "gruvbox-dark"] {
+            let theme = crate::theme::builtin::load(name).unwrap();
+            let cols = volume_colours(1.0, name);
+            // Measured as distance from the panel, so this holds for a light
+            // theme as well as a dark one: "brighter" there means further
+            // from the background, not higher in luminance.
+            let away = |c: Color| as_rgb(c).contrast(theme.bg);
+            let (first, last) = (away(cols[0]), away(cols[cols.len() - 1]));
+            assert!(
+                last > first * 1.15,
+                "{name}: the fill does not build -- {first:.2} to {last:.2}"
+            );
+            // Monotonic, so no cell is dimmer than the one before it.
+            let mut prev = 0.0;
+            for c in &cols {
+                let d = away(*c);
+                assert!(d >= prev - 1e-6, "{name}: the gradient dips");
+                prev = d;
+            }
+        }
+    }
+
+    /// The quiet end still has to be visible.
+    #[test]
+    fn the_dim_end_stays_legible_against_the_panel() {
+        // A fixed mix toward the background is legible in a theme whose
+        // accent sits far from it and nearly invisible in one where it does
+        // not, so there is a floor.
+        for name in [
+            "cosmic",
+            "catppuccin-mocha",
+            "nord",
+            "gruvbox-dark",
+            "solarized-light",
+        ] {
+            let Some(theme) = crate::theme::builtin::load(name) else {
+                continue;
+            };
+            let cols = volume_colours(1.0, name);
+            let c = as_rgb(cols[0]).contrast(theme.bg);
+            assert!(
+                c >= VOLUME_MIN_CONTRAST - 0.01,
+                "{name}: the first cell is {c:.2} against the panel"
+            );
+        }
+    }
+
+    /// It is the theme's colour, not one of ours.
+    #[test]
+    fn the_gradient_ends_on_the_themes_own_fill_colour() {
+        for name in ["cosmic", "catppuccin-mocha", "nord"] {
+            let theme = crate::theme::builtin::load(name).unwrap();
+            let cols = volume_colours(1.0, name);
+            assert_eq!(
+                as_rgb(cols[cols.len() - 1]),
+                theme.volume_filled_fg,
+                "{name}: full volume is not the theme's fill colour"
+            );
+        }
     }
 
     /// One cell per mouse step, and nothing between.

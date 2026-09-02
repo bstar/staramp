@@ -1016,13 +1016,14 @@ fn build_queue(
         }
     }
 
-    // Otherwise: whatever the index knows, most recently added first.
+    // Otherwise: everything the index knows, in album order. The whole
+    // library, not a slice of it: a cap of five thousand quietly dropped the
+    // records past Q on a large collection, and nothing said so.
     let db = library::db::Db::open_readonly(index)?;
     let mut stmt = db.conn.prepare(&format!(
         "{META_SELECT}
          WHERE t.hidden = 0
-         ORDER BY t.album_artist, t.album, t.disc_no, t.track_no
-         LIMIT 5000"
+         ORDER BY t.album_artist, t.album, t.disc_no, t.track_no"
     ))?;
     let rows = stmt.query_map([], read_meta)?;
     let items = rows

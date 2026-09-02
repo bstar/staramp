@@ -75,6 +75,21 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings -A dead_code
       - run: cargo test --all
 
+  # What the dependency tree is carrying, which nobody notices by reading it.
+  # Two questions: is anything under a known advisory, and is anything under a
+  # licence this cannot ship. See `deny.toml` for what is allowed and why.
+  #
+  # No build dependencies and no compile: this reads `Cargo.lock` and the
+  # advisory database, so it is the cheapest job here by a wide margin and can
+  # fail fast while the others are still linking.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
+
   msrv:
     # rust-version in Cargo.toml is a promise; this is what makes it true.
     runs-on: ubuntu-latest

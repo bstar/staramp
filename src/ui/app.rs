@@ -736,6 +736,56 @@ struct Panels {
     padding_y: u16,
 }
 
+/// Everything the visualizer needs: the two analysers, the audio they read,
+/// and how the result is drawn.
+struct Visuals {
+    analyzer: Spectrum,
+    /// Newest audio, read from the player's tap once a frame.
+    tap_buf: Vec<f32>,
+    /// The same analysis with slower time constants, for the fluid mode.
+    /// Kept alongside the shared one rather than replacing it: only one of
+    /// them runs per frame, and each keeps its own envelope state.
+    fluid: Spectrum,
+    /// Bars the fluid mode should produce, set from the panel width as it is
+    /// drawn -- it puts one bar in every column.
+    fluid_bars: usize,
+    /// Newest samples, for the trace modes that draw the waveform itself.
+    wave: Vec<f32>,
+    /// How wide the visualizer's bars are, and the gap between them.
+    bars: crate::ui::panels::visualizer::BarLayout,
+    mode: VisMode,
+    meters: Meters,
+    onset: OnsetDetector,
+}
+
+impl Visuals {
+    fn from_config(cfg: &crate::config::Config) -> Self {
+        Self {
+            analyzer: {
+                let mut a = Spectrum::new(2048, 20, 44_100.0);
+                a.set_gain_db(cfg.vis.gain_db);
+                a
+            },
+            tap_buf: vec![0.0; 4096],
+            fluid: {
+                let mut a = Spectrum::with_motion(2048, 64, 44_100.0, Motion::Fluid);
+                a.set_gain_db(cfg.vis.gain_db);
+                a.set_smoothing(cfg.vis.smoothing as f32);
+                a
+            },
+            fluid_bars: 64,
+            wave: vec![0.0; 1024],
+            bars: crate::ui::panels::visualizer::BarLayout::sanitised(
+                cfg.vis.bar_width,
+                cfg.vis.bar_gap,
+            ),
+            mode: VisMode::parse(&cfg.vis.mode).unwrap_or_default(),
+            meters: Meters::new(),
+            onset: OnsetDetector::new(),
+        }
+    }
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -896,27 +946,12 @@ pub struct App {
     saved: Remembered,
 
     eq: EqState,
+    vis: Visuals,
 
-    analyzer: Spectrum,
-    tap_buf: Vec<f32>,
-    /// The same analysis with slower time constants, for the fluid mode.
-    /// Kept alongside the shared one rather than replacing it: only one of
-    /// them runs per frame, and each keeps its own envelope state.
-    fluid: Spectrum,
-    /// Bars the fluid mode should produce, set from the panel width as it is
-    /// drawn -- it puts one bar in every column.
-    fluid_bars: usize,
-    /// Newest samples, for the trace modes that draw the waveform itself.
-    wave: Vec<f32>,
-    /// How wide the visualizer's bars are, and the gap between them.
-    bar_layout: crate::ui::panels::visualizer::BarLayout,
-    vis_mode: VisMode,
-    meters: Meters,
     /// Analyzer output received from the instance being mirrored.
     mirror_bands: Vec<f32>,
 
     fx: Effects,
-    onset: OnsetDetector,
 
     last_frame: Instant,
     quit: bool,
@@ -1552,29 +1587,9 @@ impl App {
             group_desc: cfg.playlist.group_desc,
             mirror_group: false,
             eq: EqState::from_config(cfg),
-            analyzer: {
-                let mut a = Spectrum::new(2048, 20, 44_100.0);
-                a.set_gain_db(cfg.vis.gain_db);
-                a
-            },
-            tap_buf: vec![0.0; 4096],
-            fluid: {
-                let mut a = Spectrum::with_motion(2048, 64, 44_100.0, Motion::Fluid);
-                a.set_gain_db(cfg.vis.gain_db);
-                a.set_smoothing(cfg.vis.smoothing as f32);
-                a
-            },
-            fluid_bars: 64,
-            wave: vec![0.0; 1024],
-            vis_mode: VisMode::parse(&cfg.vis.mode).unwrap_or_default(),
-            meters: Meters::new(),
+            vis: Visuals::from_config(cfg),
             mirror_bands: Vec::new(),
             fx: Effects::from_config(cfg),
-            bar_layout: crate::ui::panels::visualizer::BarLayout::sanitised(
-                cfg.vis.bar_width,
-                cfg.vis.bar_gap,
-            ),
-            onset: OnsetDetector::new(),
 
             last_frame: Instant::now(),
             quit: false,
@@ -2215,23 +2230,24 @@ impl App {
             let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.25);
             self.last_frame = now;
 
-            if self.vis_mode != VisMode::Off {
-                if self.player.tap.read(&mut self.tap_buf) {
-                    if self.vis_mode.uses_fluid() {
+            if self.vis.mode != VisMode::Off {
+                if self.player.tap.read(&mut self.vis.tap_buf) {
+                    if self.vis.mode.uses_fluid() {
                         self.feed_fluid(dt);
-                        self.meters.update(self.fluid.bands(), dt);
-                        self.player.publish_bands(self.fluid.bands());
+                        self.vis.meters.update(self.vis.fluid.bands(), dt);
+                        self.player.publish_bands(self.vis.fluid.bands());
                     } else {
-                        self.analyzer.analyze(&self.tap_buf, dt);
-                        self.meters.update(self.analyzer.bands(), dt);
+                        self.vis.analyzer.analyze(&self.vis.tap_buf, dt);
+                        self.vis.meters.update(self.vis.analyzer.bands(), dt);
                         // Publish for any instance mirroring this one.
-                        self.player.publish_bands(self.analyzer.bands());
+                        self.player.publish_bands(self.vis.analyzer.bands());
                     }
-                    if self.vis_mode.needs_waveform() {
+                    if self.vis.mode.needs_waveform() {
                         // The trace modes want the newest samples, not a
                         // spectrum.
-                        let n = self.wave.len().min(self.tap_buf.len());
-                        self.wave[..n].copy_from_slice(&self.tap_buf[self.tap_buf.len() - n..]);
+                        let n = self.vis.wave.len().min(self.vis.tap_buf.len());
+                        self.vis.wave[..n]
+                            .copy_from_slice(&self.vis.tap_buf[self.vis.tap_buf.len() - n..]);
                     }
                 } else if !self.mirror_bands.is_empty() {
                     // A window following another has no audio of its own --
@@ -2243,12 +2259,12 @@ impl App {
                     // `Meters::update` resizes when it changes and the panel
                     // resamples to its own bar count, so two windows of
                     // different widths both draw a full spectrum.
-                    self.meters.update(&self.mirror_bands.clone(), dt);
+                    self.vis.meters.update(&self.mirror_bands.clone(), dt);
                 }
             }
             self.advance_seek_phase(dt);
             self.advance_retry_phase(dt);
-            self.onset.feed(self.analyzer.bands(), dt);
+            self.vis.onset.feed(self.vis.analyzer.bands(), dt);
             self.advance_effects(dt);
 
             if now.duration_since(self.look.last_marquee) >= MARQUEE_STEP {
@@ -2350,9 +2366,9 @@ impl App {
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
-            vis_mode: self.vis_mode.name().to_string(),
-            bar_width: self.bar_layout.width,
-            bar_gap: self.bar_layout.gap,
+            vis_mode: self.vis.mode.name().to_string(),
+            bar_width: self.vis.bars.width,
+            bar_gap: self.vis.bars.gap,
             animations: self.fx.active,
             fetch_art: self.art_fetch(),
             group_by: self.group_by_name(),
@@ -2498,7 +2514,7 @@ impl App {
             return;
         }
         let step = if self.fx.reactive {
-            reactive_dt(dt, self.onset.energy())
+            reactive_dt(dt, self.vis.onset.energy())
         } else {
             dt
         };
@@ -2543,9 +2559,9 @@ impl App {
     fn feed_fluid(&mut self, dt: f32) {
         use std::sync::atomic::Ordering::Relaxed;
         let rate = self.player.state.sample_rate.load(Relaxed).max(8_000) as f32;
-        self.fluid.set_bands(self.fluid_bars.max(1), rate);
-        self.fluid.set_rate(rate);
-        self.fluid.analyze(&self.tap_buf, dt);
+        self.vis.fluid.set_bands(self.vis.fluid_bars.max(1), rate);
+        self.vis.fluid.set_rate(rate);
+        self.vis.fluid.analyze(&self.vis.tap_buf, dt);
     }
 
     /// Notice a track change and kick off the title transition.
@@ -2578,7 +2594,7 @@ impl App {
             return;
         };
         let step = if self.fx.reactive {
-            reactive_dt(dt, self.onset.energy())
+            reactive_dt(dt, self.vis.onset.energy())
         } else {
             dt
         };
@@ -2883,12 +2899,12 @@ impl App {
                 }
             }
             ToggleVisualizer => {
-                self.vis_mode = self.vis_mode.next();
-                self.note(format!("visualizer: {}", self.vis_mode.name()));
+                self.vis.mode = self.vis.mode.next();
+                self.note(format!("visualizer: {}", self.vis.mode.name()));
             }
             PrevVisualizer => {
-                self.vis_mode = self.vis_mode.prev();
-                self.note(format!("visualizer: {}", self.vis_mode.name()));
+                self.vis.mode = self.vis.mode.prev();
+                self.note(format!("visualizer: {}", self.vis.mode.name()));
             }
             ToggleEqEnabled => {
                 self.eq.enabled = !self.eq.enabled;
@@ -2944,11 +2960,11 @@ impl App {
             }
             WidenBars | NarrowBars => {
                 let by = if action == WidenBars { 1 } else { -1 };
-                let next = self.bar_layout.resized(by);
-                if next == self.bar_layout {
+                let next = self.vis.bars.resized(by);
+                if next == self.vis.bars {
                     self.note("visualizer bars are as wide as they go".into());
                 } else {
-                    self.bar_layout = next;
+                    self.vis.bars = next;
                     self.note(format!("bar width {}", next.width));
                 }
             }
@@ -3772,7 +3788,7 @@ impl App {
         // The fluid mode draws one bar per column, so the analysis has to
         // know how wide the panel is. Taking it here means a resize costs one
         // frame of a stale count rather than a second layout pass.
-        if self.vis_mode.uses_fluid() {
+        if self.vis.mode.uses_fluid() {
             let repeat = self.player.queue.lock().unwrap().repeat();
             if let Some(g) = player::geometry(
                 r.player,
@@ -3781,7 +3797,7 @@ impl App {
                 repeat,
                 self.look.glyphs,
             ) {
-                self.fluid_bars =
+                self.vis.fluid_bars =
                     crate::ui::panels::visualizer::fluid_bar_count(g.visualizer.width);
             }
         }
@@ -4004,7 +4020,7 @@ impl App {
         };
 
         let empty: [f32; 0] = [];
-        let showing = self.vis_mode != VisMode::Off;
+        let showing = self.vis.mode != VisMode::Off;
         PlayerView {
             theme: &self.look.theme,
             title,
@@ -4020,17 +4036,25 @@ impl App {
             focused: self.panels.focus == Focus::Player,
             mirroring: self.mirror.is_some(),
             marquee_offset: self.look.marquee,
-            vis_mode: self.vis_mode,
-            bars: self.bar_layout,
+            vis_mode: self.vis.mode,
+            bars: self.vis.bars,
             glyphs: self.look.glyphs,
             seek_phase: self.look.seek_phase,
             seek_style: self.look.seek_style,
             // Ballistic positions rather than the raw analyzer output: the caps
             // and the bar bodies have their own physics.
-            bands: if showing { self.meters.bars() } else { &empty },
-            peaks: if showing { self.meters.peaks() } else { &empty },
-            wave: if showing && self.vis_mode.needs_waveform() {
-                &self.wave
+            bands: if showing {
+                self.vis.meters.bars()
+            } else {
+                &empty
+            },
+            peaks: if showing {
+                self.vis.meters.peaks()
+            } else {
+                &empty
+            },
+            wave: if showing && self.vis.mode.needs_waveform() {
+                &self.vis.wave
             } else {
                 &empty
             },
@@ -5076,7 +5100,7 @@ impl App {
             let q = self.player.queue.lock().unwrap();
             (q.shuffled(), q.repeat())
         };
-        let segments = status_indicators(self.vis_mode, shuffled, repeat);
+        let segments = status_indicators(self.vis.mode, shuffled, repeat);
         let ind_w = indicator_width(&segments);
 
         let recent = self

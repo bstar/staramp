@@ -831,6 +831,48 @@ struct Editing {
     last_click: Option<(u16, u16, Instant)>,
 }
 
+/// One session spread across several windows, and this window's place in it.
+///
+/// Two halves of the same subject. `link`, and the `uri`/`revision`/`group`/
+/// `bands` that come with it, are what a *follower* receives from whichever
+/// instance owns the audio. `shared`, `seen` and `last` are the view every
+/// window reconciles against, whether it leads or follows.
+struct Sharing {
+    /// Set when this instance is mirroring another rather than owning audio.
+    link: Option<Mirror>,
+    /// The leader's current track URI. A mirror's own queue items carry no
+    /// path -- the leader sends tags, not URIs -- so this is the only way the
+    /// album panel can look anything up while mirroring.
+    uri: String,
+    revision: u64,
+    /// Whether the leader has its queue in album order. A mirror draws the
+    /// dividers from this rather than working them out: its items arrive with
+    /// no years, so ordering them itself would scramble the leader's order.
+    group: bool,
+    /// Analyzer output received from the instance being mirrored.
+    bands: Vec<f32>,
+    /// The owner's view revision, from its status line, so a follower knows
+    /// when it is worth asking for the view itself.
+    their_view: u64,
+    /// The view every window of this session agrees about.
+    ///
+    /// Authoritative, and owned by whichever instance holds the socket. A
+    /// window reconciles against it every frame: publishing what it changed,
+    /// adopting what another window changed.
+    shared: crate::view::Shared,
+    /// How much of the view is shared, from `[session] share`.
+    share: crate::view::Share,
+    /// The revision this window has already taken account of.
+    seen: u64,
+    /// The view as of the last reconciliation, to notice our own changes
+    /// against. Comparing with the shared copy instead would make another
+    /// window's change look like ours and start an argument.
+    last: crate::view::View,
+    /// A playlist named on the command line while a session was already
+    /// running, until the question about it is answered.
+    joining: Option<std::path::PathBuf>,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -883,17 +925,6 @@ pub struct App {
     /// Held across opens: building it costs ~290 ms and nothing invalidates it
     /// until the index is rescanned.
     browse_model: Option<Arc<crate::library::browse::Model>>,
-    /// Set when this instance is mirroring another rather than owning audio.
-    mirror: Option<Mirror>,
-    /// The leader's current track URI. A mirror's own queue items carry no
-    /// path -- the leader sends tags, not URIs -- so this is the only way the
-    /// album panel can look anything up while mirroring.
-    mirror_uri: String,
-    mirror_revision: u64,
-    /// Whether the leader has its queue in album order. A mirror draws the
-    /// dividers from this rather than working them out: its items arrive with
-    /// no years, so ordering them itself would scramble the leader's order.
-    mirror_group: bool,
     /// Album details and cover art, resolved on their own thread.
     ///
     /// `None` when there is no index yet, which is simply a panel that says so.
@@ -926,26 +957,6 @@ pub struct App {
     /// Which way round album order runs. Held here as well as in the queue so
     /// it survives the mode being switched off and on again.
     group_desc: bool,
-    /// The view every window of this session agrees about.
-    ///
-    /// Authoritative, and owned by whichever instance holds the socket. A
-    /// window reconciles against it every frame: publishing what it changed,
-    /// adopting what another window changed.
-    view: crate::view::Shared,
-    /// How much of the view is shared, from `[session] share`.
-    share: crate::view::Share,
-    /// The revision this window has already taken account of.
-    view_seen: u64,
-    /// A playlist named on the command line while a session was already
-    /// running, until the question about it is answered.
-    joining: Option<std::path::PathBuf>,
-    /// The view as of the last reconciliation, to notice our own changes
-    /// against. Comparing with the shared copy instead would make another
-    /// window's change look like ours and start an argument.
-    last_view: crate::view::View,
-    /// The owner's view revision, from its status line, so a follower knows
-    /// when it is worth asking for the view itself.
-    mirror_view: u64,
     /// The queue in play order, cloned when it changes rather than every frame.
     items: Vec<QueueItem>,
     /// The lines the playlist draws, built during the frame and kept because a
@@ -965,9 +976,7 @@ pub struct App {
     vis: Visuals,
     saving: Saving,
     edit: Editing,
-
-    /// Analyzer output received from the instance being mirrored.
-    mirror_bands: Vec<f32>,
+    session: Sharing,
 
     fx: Effects,
 
@@ -1385,7 +1394,7 @@ impl App {
     /// meaningful at one, and a delete aimed at a list that has moved cannot
     /// be taken back.
     fn ask_session(&self, verb: &str, body: serde_json::Value) -> Option<Result<usize, String>> {
-        let m = self.mirror.as_ref()?;
+        let m = self.session.link.as_ref()?;
         let mut body = body;
         let revision = self.player.queue.lock().unwrap().revision();
         body["revision"] = revision.into();
@@ -1569,9 +1578,6 @@ impl App {
             chooser: None,
             settings: None,
             pending_resume: None,
-            mirror: None,
-            mirror_uri: String::new(),
-            mirror_revision: u64::MAX,
             source_playlist: None,
             picker_cursor: 0,
             picker_scroll: 0,
@@ -1585,23 +1591,28 @@ impl App {
             rows_from: (0, false, 0, None, 0),
             folded: std::collections::HashSet::new(),
             fold_gen: 0,
-            view,
-            share: crate::view::Share::parse(&cfg.session.share),
-            view_seen: 0,
-            joining: None,
-            last_view: crate::view::View::default(),
-            mirror_view: 0,
             group_desc: cfg.playlist.group_desc,
-            mirror_group: false,
             eq: EqState::from_config(cfg),
             vis: Visuals::from_config(cfg),
             edit: Editing::default(),
+            session: Sharing {
+                link: None,
+                uri: String::new(),
+                revision: u64::MAX,
+                group: false,
+                bands: Vec::new(),
+                their_view: 0,
+                shared: view,
+                share: crate::view::Share::parse(&cfg.session.share),
+                seen: 0,
+                last: crate::view::View::default(),
+                joining: None,
+            },
             saving: Saving {
                 pending: std::collections::BTreeMap::new(),
                 saved: Remembered::from_config(cfg),
                 last_written: Instant::now(),
             },
-            mirror_bands: Vec::new(),
             fx: Effects::from_config(cfg),
 
             last_frame: Instant::now(),
@@ -1617,19 +1628,19 @@ impl App {
     /// when nothing else was asked for is the point of the whole feature.
     /// Follow another running instance instead of owning the audio device.
     pub fn set_mirror(&mut self, m: Mirror) {
-        self.mirror = Some(m);
+        self.session.link = Some(m);
         // A mirror has nothing of its own to resume or choose.
         self.pending_resume = None;
         self.panels.picker = false;
     }
 
     pub fn is_mirror(&self) -> bool {
-        self.mirror.is_some()
+        self.session.link.is_some()
     }
 
     /// Route a command to whichever side actually owns playback.
     fn command(&self, c: &Command, remote: &str) {
-        match &self.mirror {
+        match &self.session.link {
             Some(m) => m.send(remote),
             None => self.player.send(match c {
                 Command::PlayIndex(i) => Command::PlayIndex(*i),
@@ -1659,27 +1670,27 @@ impl App {
     fn take_over(&mut self) {
         let path = crate::ipc::spawn(
             Arc::clone(&self.player),
-            Arc::clone(&self.view),
+            Arc::clone(&self.session.shared),
             Arc::clone(&self.ipc_stop),
         );
         let Some(path) = path else {
             // Somebody else got there first. Follow them.
-            self.mirror = crate::mirror::Mirror::connect();
-            if self.mirror.is_none() {
+            self.session.link = crate::mirror::Mirror::connect();
+            if self.session.link.is_none() {
                 self.note("the session has gone".into());
             }
             return;
         };
 
         // Where the music had got to, as of the last frame.
-        let uri = self.mirror_uri.clone();
+        let uri = self.session.uri.clone();
         let at = self.player.state.position_secs();
         let was_playing = self.player.state.state() == PlayState::Playing;
 
         self.ipc_path = Some(path);
-        self.mirror = None;
+        self.session.link = None;
         // The view was the other instance's copy; from here it is ours.
-        self.view_seen = 0;
+        self.session.seen = 0;
 
         let track = {
             let q = self.player.queue.lock().unwrap();
@@ -1726,7 +1737,7 @@ impl App {
 
     /// A playlist named on the command line, waiting on the question above.
     pub fn ask_about(&mut self, path: std::path::PathBuf) {
-        self.joining = Some(path);
+        self.session.joining = Some(path);
         self.open_overlay(Focus::Playlist, Overlay::Joining);
     }
 
@@ -1802,7 +1813,7 @@ impl App {
     /// ever publishes a change it actually made, so a stale copy cannot argue
     /// its way back over a newer one.
     fn sync_view(&mut self) {
-        if self.share == crate::view::Share::Playback {
+        if self.session.share == crate::view::Share::Playback {
             return;
         }
         let mine = self.view_now();
@@ -1812,16 +1823,16 @@ impl App {
         // and without this it would publish all of that over whatever the
         // other windows were looking at -- opening a second window would yank
         // the first one back to the first track.
-        if self.view_seen == 0 {
-            let theirs = match &self.mirror {
-                None => Some(self.view.lock().unwrap().clone()),
+        if self.session.seen == 0 {
+            let theirs = match &self.session.link {
+                None => Some(self.session.shared.lock().unwrap().clone()),
                 Some(m) => m.view(),
             };
             match theirs {
                 Some(theirs) if theirs.revision > 0 => {
-                    self.view_seen = theirs.revision;
+                    self.session.seen = theirs.revision;
                     self.adopt_view(&theirs);
-                    self.last_view = self.view_now();
+                    self.session.last = self.view_now();
                     return;
                 }
                 // Nothing to join: this window is the first, and what it has
@@ -1831,9 +1842,9 @@ impl App {
         }
 
         // Something changed here.
-        if mine.differs(&self.last_view) {
-            self.view_seen = match &self.mirror {
-                None => crate::view::publish(&self.view, &mine),
+        if mine.differs(&self.session.last) {
+            self.session.seen = match &self.session.link {
+                None => crate::view::publish(&self.session.shared, &mine),
                 Some(m) => {
                     if let Ok(body) = serde_json::to_string(&mine) {
                         m.send(&format!("set-view {body}"));
@@ -1841,32 +1852,32 @@ impl App {
                     // The owner decides the revision; this is what we expect it
                     // to become, and a mismatch simply means another window got
                     // in first and we adopt on the next frame.
-                    self.view_seen + 1
+                    self.session.seen + 1
                 }
             };
-            self.last_view = mine;
+            self.session.last = mine;
             return;
         }
 
         // Nothing changed here. Has it elsewhere?
-        let elsewhere = match &self.mirror {
+        let elsewhere = match &self.session.link {
             None => {
                 // One guard, taken once. Locking again inside the `then` is a
                 // deadlock: the guard from the condition is a temporary that
                 // lives to the end of the statement, and this mutex is not
                 // reentrant. It wedged the whole instance -- the socket thread
                 // blocked on the same lock, so it stopped answering too.
-                let held = self.view.lock().unwrap();
-                (held.revision != self.view_seen).then(|| held.clone())
+                let held = self.session.shared.lock().unwrap();
+                (held.revision != self.session.seen).then(|| held.clone())
             }
-            Some(m) => (self.mirror_view != self.view_seen)
+            Some(m) => (self.session.their_view != self.session.seen)
                 .then(|| m.view())
                 .flatten(),
         };
         if let Some(theirs) = elsewhere {
-            self.view_seen = theirs.revision;
+            self.session.seen = theirs.revision;
             self.adopt_view(&theirs);
-            self.last_view = self.view_now();
+            self.session.last = self.view_now();
         }
     }
 
@@ -1877,8 +1888,8 @@ impl App {
     /// know about a hand-made arrangement, so its own sort could disagree with
     /// the list it is showing.
     fn session_grouped(&self) -> bool {
-        match &self.mirror {
-            Some(_) => self.mirror_group,
+        match &self.session.link {
+            Some(_) => self.session.group,
             None => self.player.queue.lock().unwrap().grouped_now(),
         }
     }
@@ -1891,7 +1902,7 @@ impl App {
     /// change came to resume a paused player.
     #[must_use]
     fn owns(&self, remote: &str) -> bool {
-        match &self.mirror {
+        match &self.session.link {
             Some(m) => {
                 m.send(remote);
                 false
@@ -1906,7 +1917,7 @@ impl App {
     /// first place -- volume is a mutex the decode thread reads per buffer --
     /// so there is no local command to pair with the remote one.
     fn remote(&self, req: &str) {
-        if let Some(m) = &self.mirror {
+        if let Some(m) = &self.session.link {
             m.send(req);
         }
     }
@@ -1917,7 +1928,7 @@ impl App {
     /// unchanged; nothing in the rendering path knows whether it is looking at
     /// local playback or somebody else's.
     fn poll_mirror(&mut self) {
-        let Some(m) = &self.mirror else { return };
+        let Some(m) = &self.session.link else { return };
         let Some(st) = m.poll() else {
             if !m.alive() {
                 self.take_over();
@@ -1946,22 +1957,22 @@ impl App {
             .store((st.duration * rate as f64) as u64, Relaxed);
         self.player.set_volume(st.volume);
 
-        self.mirror_uri = st.uri.clone();
-        self.mirror_group = st.group;
-        self.mirror_view = st.view_revision;
+        self.session.uri = st.uri.clone();
+        self.session.group = st.group;
+        self.session.their_view = st.view_revision;
 
         if !st.bands.is_empty() {
-            self.mirror_bands = st.bands.clone();
+            self.session.bands = st.bands.clone();
         }
 
         // Refetch the queue only when the leader says it changed.
-        if st.revision != self.mirror_revision {
+        if st.revision != self.session.revision {
             // Whole tracks, URIs and years included, so this window can name a
             // row to play it and can order the list by record itself.
             if let Some(items) = m.queue() {
                 self.player.set_queue_tracks(items);
             }
-            self.mirror_revision = st.revision;
+            self.session.revision = st.revision;
         }
 
         {
@@ -2262,7 +2273,7 @@ impl App {
                         self.vis.wave[..n]
                             .copy_from_slice(&self.vis.tap_buf[self.vis.tap_buf.len() - n..]);
                     }
-                } else if !self.mirror_bands.is_empty() {
+                } else if !self.session.bands.is_empty() {
                     // A window following another has no audio of its own --
                     // its player is detached and its tap never fills -- so the
                     // spectrum arrives over the socket instead. The leader has
@@ -2272,7 +2283,7 @@ impl App {
                     // `Meters::update` resizes when it changes and the panel
                     // resamples to its own bar count, so two windows of
                     // different widths both draw a full spectrum.
-                    self.vis.meters.update(&self.mirror_bands.clone(), dt);
+                    self.vis.meters.update(&self.session.bands.clone(), dt);
                 }
             }
             self.advance_seek_phase(dt);
@@ -4049,7 +4060,7 @@ impl App {
             repeat,
             bit_perfect: st.bit_perfect.load(Relaxed),
             focused: self.panels.focus == Focus::Player,
-            mirroring: self.mirror.is_some(),
+            mirroring: self.session.link.is_some(),
             marquee_offset: self.look.marquee,
             vis_mode: self.vis.mode,
             bars: self.vis.bars,
@@ -4295,8 +4306,8 @@ impl App {
     /// `None` when nothing is playing, or when mirroring a leader too old to
     /// send its URI.
     fn current_uri(&self) -> Option<String> {
-        if self.mirror.is_some() {
-            return Some(self.mirror_uri.clone()).filter(|u| !u.is_empty());
+        if self.session.link.is_some() {
+            return Some(self.session.uri.clone()).filter(|u| !u.is_empty());
         }
         self.player
             .current_item()
@@ -4445,6 +4456,7 @@ impl App {
     fn joining_for(&self) -> (String, Vec<(settings::Row, Setting)>) {
         use settings::Row;
         let name = self
+            .session
             .joining
             .as_ref()
             .and_then(|p| p.file_stem())
@@ -4614,7 +4626,7 @@ impl App {
 
         // Not `owns`, which forwards a request as a side effect -- there is a
         // real one to send below, and it needs its answer.
-        if self.mirror.is_none() {
+        if self.session.link.is_none() {
             let mut q = self.player.queue.lock().unwrap();
             if replace {
                 added = items.len();
@@ -4644,7 +4656,8 @@ impl App {
             // instance older than this one does not know the verb, and saying
             // "added 20" when nothing was added is the worst of both.
             let reply = self
-                .mirror
+                .session
+                .link
                 .as_ref()
                 .and_then(|m| m.ask(&format!("{verb} {json}")));
             match reply.as_deref().map(str::trim) {
@@ -4918,12 +4931,12 @@ impl App {
             Setting::Repeat => self.handle(Action::CycleRepeat),
             Setting::JoinSession => {
                 let name = self.loaded_name.clone();
-                self.joining = None;
+                self.session.joining = None;
                 self.settings = None;
                 return self.note(format!("joined \u{2014} {name} is still playing"));
             }
             Setting::ReplaceQueue => {
-                let Some(path) = self.joining.take() else {
+                let Some(path) = self.session.joining.take() else {
                     self.settings = None;
                     return;
                 };

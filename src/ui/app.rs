@@ -665,6 +665,34 @@ impl EqState {
     }
 }
 
+/// The title animation, and what governs it.
+///
+/// Grouped because the whole feature is optional: with `active` false none of
+/// the rest is read, and keeping them together says so.
+struct Effects {
+    /// The animation in flight, if there is one.
+    running: Option<TextEffect>,
+    /// The animating title, computed in the loop so drawing stays `&self`.
+    title: String,
+    kind: EffectKind,
+    duration: f32,
+    active: bool,
+    reactive: bool,
+}
+
+impl Effects {
+    fn from_config(cfg: &crate::config::Config) -> Self {
+        Self {
+            running: None,
+            title: String::new(),
+            kind: EffectKind::parse(&cfg.fx.track_change).unwrap_or(EffectKind::Decrypt),
+            duration: cfg.fx.duration_ms as f32 / 1000.0,
+            active: cfg.fx.active(),
+            reactive: cfg.fx.reactive,
+        }
+    }
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -869,13 +897,7 @@ pub struct App {
     /// Analyzer output received from the instance being mirrored.
     mirror_bands: Vec<f32>,
 
-    title_effect: Option<TextEffect>,
-    /// The animating title, computed in the loop so drawing stays `&self`.
-    effect_title: String,
-    fx_kind: EffectKind,
-    fx_duration: f32,
-    fx_active: bool,
-    fx_reactive: bool,
+    fx: Effects,
     onset: OnsetDetector,
 
     padding_x: u16,
@@ -1523,12 +1545,7 @@ impl App {
             vis_mode: VisMode::parse(&cfg.vis.mode).unwrap_or_default(),
             meters: Meters::new(),
             mirror_bands: Vec::new(),
-            title_effect: None,
-            effect_title: String::new(),
-            fx_kind: EffectKind::parse(&cfg.fx.track_change).unwrap_or(EffectKind::Decrypt),
-            fx_duration: cfg.fx.duration_ms as f32 / 1000.0,
-            fx_active: cfg.fx.active(),
-            fx_reactive: cfg.fx.reactive,
+            fx: Effects::from_config(cfg),
             bar_layout: crate::ui::panels::visualizer::BarLayout::sanitised(
                 cfg.vis.bar_width,
                 cfg.vis.bar_gap,
@@ -2235,7 +2252,7 @@ impl App {
             if event::poll(FRAME)? {
                 match event::read()? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => {
-                        if let Some(e) = self.title_effect.as_mut() {
+                        if let Some(e) = self.fx.running.as_mut() {
                             e.finish();
                         }
                         // The resume prompt answers raw keys rather than
@@ -2268,7 +2285,7 @@ impl App {
                         }
                     }
                     Event::Mouse(m) => {
-                        if let Some(e) = self.title_effect.as_mut() {
+                        if let Some(e) = self.fx.running.as_mut() {
                             e.finish();
                         }
                         let size = term.size()?;
@@ -2320,7 +2337,7 @@ impl App {
             vis_mode: self.vis_mode.name().to_string(),
             bar_width: self.bar_layout.width,
             bar_gap: self.bar_layout.gap,
-            animations: self.fx_active,
+            animations: self.fx.active,
             fetch_art: self.art_fetch(),
             group_by: self.group_by_name(),
             group_desc: self.group_desc,
@@ -2460,11 +2477,11 @@ impl App {
     /// the title transition, so the bar breathes with the track rather than
     /// sweeping to its own clock.
     fn advance_seek_phase(&mut self, dt: f32) {
-        if !self.fx_active || self.player.state.state() != PlayState::Playing {
+        if !self.fx.active || self.player.state.state() != PlayState::Playing {
             self.seek_phase = 0.0;
             return;
         }
-        let step = if self.fx_reactive {
+        let step = if self.fx.reactive {
             reactive_dt(dt, self.onset.energy())
         } else {
             dt
@@ -2485,7 +2502,7 @@ impl App {
             self.retry_phase = 0.0;
             return;
         }
-        if !self.fx_active {
+        if !self.fx.active {
             return;
         }
         self.retry_phase = (self.retry_phase + dt / album::SWEEP_PERIOD).fract();
@@ -2493,7 +2510,7 @@ impl App {
 
     /// How the retry word should be drawn this frame.
     fn retry_look(&self) -> album::Retry {
-        match (self.retrying.is_some(), self.fx_active) {
+        match (self.retrying.is_some(), self.fx.active) {
             (false, _) => album::Retry::Idle,
             (true, false) => album::Retry::Waiting,
             (true, true) => album::Retry::Working(self.retry_phase),
@@ -2541,35 +2558,35 @@ impl App {
 
     /// Step the title transition, letting the music set its pace.
     fn advance_effects(&mut self, dt: f32) {
-        let Some(e) = self.title_effect.as_mut() else {
+        let Some(e) = self.fx.running.as_mut() else {
             return;
         };
-        let step = if self.fx_reactive {
+        let step = if self.fx.reactive {
             reactive_dt(dt, self.onset.energy())
         } else {
             dt
         };
         e.advance(step);
-        self.effect_title = e.render();
+        self.fx.title = e.render();
         if e.finished() {
-            self.title_effect = None;
+            self.fx.running = None;
         }
     }
 
     /// Start a title transition for a newly playing track.
     fn begin_title_effect(&mut self, title: &str) {
-        if !self.fx_active || self.fx_kind == EffectKind::None {
-            self.title_effect = None;
+        if !self.fx.active || self.fx.kind == EffectKind::None {
+            self.fx.running = None;
             return;
         }
         let mut e = TextEffect::new(
-            self.fx_kind,
+            self.fx.kind,
             title,
-            self.fx_duration,
+            self.fx.duration,
             self.last_track_revision.wrapping_mul(2654435761),
         );
-        self.effect_title = e.render();
-        self.title_effect = Some(e);
+        self.fx.title = e.render();
+        self.fx.running = Some(e);
     }
 
     /// Tell the desktop about anything that changed since the last frame.
@@ -2865,14 +2882,14 @@ impl App {
             NextEqPreset => self.step_preset(1),
             PrevEqPreset => self.step_preset(-1),
             ToggleAnimations => {
-                self.fx_active = !self.fx_active;
-                if !self.fx_active {
+                self.fx.active = !self.fx.active;
+                if !self.fx.active {
                     // Drop what is mid-flight rather than leaving a half-drawn
                     // title on screen until the next track.
-                    self.title_effect = None;
+                    self.fx.running = None;
                     self.seek_phase = 0.0;
                 }
-                let on = self.fx_active;
+                let on = self.fx.active;
                 self.note(
                     if on {
                         "animations on"
@@ -3965,8 +3982,8 @@ impl App {
             (q.shuffled(), q.repeat())
         };
 
-        let title = match self.title_effect.as_ref() {
-            Some(_) => self.effect_title.clone(),
+        let title = match self.fx.running.as_ref() {
+            Some(_) => self.fx.title.clone(),
             None => title,
         };
 

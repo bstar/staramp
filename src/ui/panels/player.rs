@@ -498,7 +498,7 @@ impl<'a> Widget for PlayerView<'a> {
         block.render(area, buf);
         // Corners, but no close mark: closing the transport would leave
         // nothing to play with.
-        super::frame::render_corners(area, buf, t);
+        super::frame::render_corners(area, buf, t, self.focused);
         let Some(g) = geometry(area, self.position, self.duration, self.repeat, self.glyphs) else {
             return;
         };

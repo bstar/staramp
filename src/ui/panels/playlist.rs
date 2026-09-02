@@ -531,7 +531,7 @@ impl<'a> Widget for PlaylistView<'a> {
         block.render(area, buf);
         // Over the border the block just drew: the corners give the panel its
         // colour, and the mark is what closes it.
-        super::frame::render_corners(area, buf, t);
+        super::frame::render_corners(area, buf, t, self.focused);
         super::header::render(area, self.header_items, buf, t);
         if inner.height == 0 {
             return;

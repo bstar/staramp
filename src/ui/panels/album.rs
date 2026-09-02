@@ -323,7 +323,7 @@ impl<'a> Widget for AlbumView<'a> {
             .style(Style::default().bg(rgb(t.bg)));
 
         block.render(area, buf);
-        super::frame::render_corners(area, buf, t);
+        super::frame::render_corners(area, buf, t, self.focused);
         super::header::render(area, super::header::PLAIN, buf, t);
 
         let Some(g) = geometry(area, self.show_cover, self.cell_aspect) else {

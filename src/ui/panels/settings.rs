@@ -110,7 +110,7 @@ impl<'a> Widget for SettingsView<'a> {
             .style(Style::default().bg(rgb(t.panel_bg)));
         let inner = block.inner(r);
         block.render(r, buf);
-        super::frame::render_corners(r, buf, t);
+        super::frame::render_corners(r, buf, t, true);
 
         if inner.height == 0 || inner.width == 0 {
             return;

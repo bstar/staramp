@@ -111,7 +111,7 @@ impl<'a> Widget for EqView<'a> {
         block.render(area, buf);
         // Over the border the block just drew: the corners give the panel its
         // colour, and the header carries what it can be asked to do.
-        super::frame::render_corners(area, buf, t);
+        super::frame::render_corners(area, buf, t, self.focused);
         super::header::render(area, super::header::PLAIN, buf, t);
         if inner.height == 0 || inner.width < 40 {
             return;

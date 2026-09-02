@@ -262,6 +262,23 @@ const VOLUME_STEP: f32 = 0.10;
 /// way round: the number is exact and the bar is a gauge.
 const KEY_VOLUME_STEP: f32 = 0.01;
 
+/// How much one press moves an equalizer band, in dB.
+///
+/// One, with shift for ten, the same fine/coarse pair the rest of the
+/// keyboard uses. The range is +/-12 dB, so ten is "most of the way" and one
+/// is the smallest step the readout can show.
+const EQ_STEP_DB: f32 = 1.0;
+
+/// What a focused panel is called, for the status line.
+fn focus_name(f: Focus) -> &'static str {
+    match f {
+        Focus::Player => "player",
+        Focus::Album => "album",
+        Focus::Equalizer => "equalizer",
+        Focus::Playlist => "playlist",
+    }
+}
+
 /// Round `v` to the nearest multiple of `step`.
 ///
 /// For the pointer, which names an absolute position: the nearest level it
@@ -749,6 +766,17 @@ enum Focus {
     Album,
     Equalizer,
     Playlist,
+}
+
+impl From<Focus> for keymap::Module {
+    fn from(f: Focus) -> Self {
+        match f {
+            Focus::Player => keymap::Module::Player,
+            Focus::Album => keymap::Module::Album,
+            Focus::Equalizer => keymap::Module::Equalizer,
+            Focus::Playlist => keymap::Module::Playlist,
+        }
+    }
 }
 
 /// The equalizer's own state.
@@ -2473,10 +2501,17 @@ impl App {
                         if self.library_type(k) {
                             continue;
                         }
+                        // Three layers, narrowest first. The library is an
+                        // overlay and takes precedence over the panel behind
+                        // it; the focused panel gets first refusal after
+                        // that; and the global table has whatever neither
+                        // wanted, which is what keeps every existing binding
+                        // working from everywhere.
                         let action = if self.over.library.is_some() {
                             keymap::library(k).or_else(|| keymap::resolve(k))
                         } else {
-                            keymap::resolve(k)
+                            keymap::module(self.panels.focus.into(), k)
+                                .or_else(|| keymap::resolve(k))
                         };
                         if let Some(action) = action {
                             self.handle(action);
@@ -3132,18 +3167,27 @@ impl App {
                 self.note(format!("{} — {why}", t.name));
                 self.look.theme = t;
             }
-            FocusNext => {
-                self.panels.focus = match self.panels.focus {
-                    Focus::Player if self.panels.album => Focus::Album,
-                    Focus::Player | Focus::Album if self.panels.eq => Focus::Equalizer,
-                    Focus::Album => Focus::Playlist,
-                    Focus::Player => Focus::Playlist,
-                    Focus::Equalizer => Focus::Playlist,
-                    Focus::Playlist => Focus::Player,
-                };
-            }
+            FocusNext => self.move_focus(1),
             CursorUp => self.move_cursor(-1),
             CursorDown => self.move_cursor(1),
+            // The shifted arrows, which the playlist module claims. Ten rows
+            // rather than a screenful: `PageUp` is still there for that, and
+            // the point of the pair is a predictable multiple of the bare key.
+            CursorUpBig => self.move_cursor(-10),
+            CursorDownBig => self.move_cursor(10),
+
+            EqBandPrev => self.move_eq_band(-1),
+            EqBandNext => self.move_eq_band(1),
+            EqGainUp => self.nudge_eq_band(self.eq.band, EQ_STEP_DB),
+            EqGainDown => self.nudge_eq_band(self.eq.band, -EQ_STEP_DB),
+            EqGainUpBig => self.nudge_eq_band(self.eq.band, EQ_STEP_DB * 10.0),
+            EqGainDownBig => self.nudge_eq_band(self.eq.band, -EQ_STEP_DB * 10.0),
+
+            FocusPrev => self.move_focus(-1),
+            FocusPlayer => self.focus_module(Focus::Player),
+            FocusPlaylist => self.focus_module(Focus::Playlist),
+            FocusEqualizer => self.focus_module(Focus::Equalizer),
+            FocusAlbum => self.focus_module(Focus::Album),
             PageUp => self.move_cursor(-10),
             PageDown => self.move_cursor(10),
             Home => self.cursor_to_end(false),
@@ -3604,6 +3648,85 @@ impl App {
         self.eq.gains[band] = g.gain_at(y);
         self.eq.enabled = true;
         self.apply_eq();
+    }
+
+    /// The docked panels, in the order focus walks them.
+    ///
+    /// Screen order, top to bottom, so `Tab` moves down the window and
+    /// `shift+Tab` back up it rather than following the order the variants
+    /// happen to be declared in.
+    const FOCUS_ORDER: [Focus; 4] = [
+        Focus::Player,
+        Focus::Album,
+        Focus::Equalizer,
+        Focus::Playlist,
+    ];
+
+    /// Is this panel open, and therefore worth focusing?
+    ///
+    /// The player is always open -- it is the window.
+    fn panel_open(&self, f: Focus) -> bool {
+        match f {
+            Focus::Player => true,
+            Focus::Album => self.panels.album,
+            Focus::Equalizer => self.panels.eq,
+            Focus::Playlist => self.panels.playlist,
+        }
+    }
+
+    /// Walk focus `step` places through the open panels.
+    ///
+    /// Skips what is closed rather than landing on a panel nobody can see,
+    /// and gives up after a full lap so a window with everything but the
+    /// player closed does not spin.
+    fn move_focus(&mut self, step: i32) {
+        let n = Self::FOCUS_ORDER.len() as i32;
+        let at = Self::FOCUS_ORDER
+            .iter()
+            .position(|f| *f == self.panels.focus)
+            .unwrap_or(0) as i32;
+        for hop in 1..=n {
+            let next = Self::FOCUS_ORDER[(at + step * hop).rem_euclid(n) as usize];
+            if self.panel_open(next) {
+                self.panels.focus = next;
+                self.note(format!("focus: {}", focus_name(next)));
+                return;
+            }
+        }
+    }
+
+    /// Focus one panel by name, opening it if it is closed.
+    ///
+    /// Opening rather than refusing: the key names a destination, and a jump
+    /// that silently does nothing because the panel is shut is a key that
+    /// looks broken.
+    fn focus_module(&mut self, f: Focus) {
+        match f {
+            Focus::Player => {}
+            Focus::Album => self.panels.album = true,
+            Focus::Equalizer => self.panels.eq = true,
+            Focus::Playlist => self.panels.playlist = true,
+        }
+        self.panels.focus = f;
+        self.note(format!("focus: {}", focus_name(f)));
+    }
+
+    /// Move the equalizer's selected band, without wrapping.
+    ///
+    /// Stopping at the ends rather than wrapping: the bands are a frequency
+    /// axis, and running off 16 kHz back to 60 Hz is a jump across the whole
+    /// spectrum for one keypress.
+    fn move_eq_band(&mut self, step: i32) {
+        let last = eq::BAND_LABELS.len() as i32 - 1;
+        let next = (self.eq.band as i32 + step).clamp(0, last) as usize;
+        if next != self.eq.band {
+            self.eq.band = next;
+        }
+        self.note(format!(
+            "{} {:+.0} dB",
+            eq::BAND_LABELS[self.eq.band],
+            self.eq.gains[self.eq.band]
+        ));
     }
 
     fn nudge_eq_band(&mut self, band: usize, delta: f32) {

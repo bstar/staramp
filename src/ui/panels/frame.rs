@@ -78,10 +78,35 @@ const CORNER_RUN_DOWN: u16 = 2;
 
 /// The four corners, each a different weight of the frame's grey, fading back
 /// into the border along both edges that meet there.
-pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme) {
+/// How far a focused panel's corners are tinted toward the accent.
+///
+/// A tint applied *to* the corner's own colour rather than a different colour
+/// to mix toward, so the weight gradient below is untouched and only the hue
+/// moves. Small on purpose: enough to find at a glance, not enough to read as
+/// a different widget. The note above about focus being "noticeable, not
+/// shouted" is the bar.
+///
+/// The ceiling is set by the tightest theme rather than by taste. Nord's
+/// border, foreground and accent sit close together, so a tint that is barely
+/// visible in `cosmic` has the corner arriving at the accent there; 0.35
+/// fails `the_focus_lift_stays_subtle` on it and 0.28 clears it.
+const FOCUS_TINT: f64 = 0.28;
+
+pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme, focused: bool) {
     if area.width < 2 || area.height < 2 {
         return;
     }
+    // Focus lands on the corners rather than on the border, which is where
+    // this file's own note says it belongs. A border cannot carry it: two
+    // docked panels share an edge -- the player's floor is the playlist's
+    // ceiling -- so lighting one panel's frame lights half of its neighbour's
+    // and the seam reads as a step between two greys. A corner is
+    // unambiguously on one panel.
+    //
+    // The lift is toward the accent and small. The run out of each corner
+    // still ends on the border's own grey, so a focused panel is a slightly
+    // warmer set of corners rather than a different kind of frame.
+    let tint_toward_accent = if focused { FOCUS_TINT } else { 0.0 };
     let (x0, y0) = (area.x, area.y);
     let (x1, y1) = (area.x + area.width - 1, area.y + area.height - 1);
 
@@ -94,7 +119,13 @@ pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme) {
     ];
 
     for (((cx, cy), (dx, dy)), weight) in corners.into_iter().zip(CORNER_WEIGHTS) {
-        let lit = t.border.mix(t.fg, weight);
+        // The unfocused colour, then tinted toward the accent -- not mixed
+        // toward the accent instead of the foreground. Replacing the target
+        // changes the lightness as well as the hue, and in a theme whose
+        // accent is darker than its foreground (nord) that made the focused
+        // corner *dimmer* than the unfocused one. Tinting the result moves
+        // hue while leaving the gradient's weight alone.
+        let lit = t.border.mix(t.fg, weight).mix(t.accent, tint_toward_accent);
         tint(buf, area, cx, cy, lit, t);
 
         // Out along both edges, ending on the border's own grey so the run
@@ -143,6 +174,10 @@ mod tests {
     /// panels do it. The decoration only touches cells that already hold a
     /// border, so an empty buffer would come back untouched.
     fn framed(theme: &Theme, w: u16, h: u16) -> Buffer {
+        framed_focus(theme, w, h, false)
+    }
+
+    fn framed_focus(theme: &Theme, w: u16, h: u16, focused: bool) -> Buffer {
         use ratatui::widgets::{Block, Borders, Widget};
         let area = Rect::new(0, 0, w, h);
         let mut buf = Buffer::empty(area);
@@ -152,7 +187,7 @@ mod tests {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(rgb(theme.border)))
             .render(area, &mut buf);
-        render_corners(area, &mut buf, theme);
+        render_corners(area, &mut buf, theme, focused);
         buf
     }
 
@@ -160,6 +195,49 @@ mod tests {
         match buf[(x, y)].style().fg {
             Some(ratatui::style::Color::Rgb(r, g, b)) => Rgb::new(r, g, b),
             other => panic!("cell {x},{y} is not an rgb colour: {other:?}"),
+        }
+    }
+
+    /// Focus lands on the corners, and only on the corners.
+    ///
+    /// Not on the border: two docked panels share an edge, so lighting one
+    /// panel's frame lights half of its neighbour's.
+    /// Perceptual distance, not a contrast ratio.
+    ///
+    /// Contrast is a luminance ratio, so two colours of similar lightness and
+    /// wildly different hue read as identical to it -- which is exactly the
+    /// case for a corner and an accent in several themes.
+    fn oklab_distance(a: Rgb, b: Rgb) -> f64 {
+        let (a, b) = (a.to_oklab(), b.to_oklab());
+        ((a.l - b.l).powi(2) + (a.a - b.a).powi(2) + (a.b - b.b).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn a_focused_panel_lifts_its_corners_toward_the_accent() {
+        for name in ["cosmic", "catppuccin-mocha", "nord", "gruvbox-dark"] {
+            let theme = crate::theme::builtin::load(name).unwrap();
+            let dim = fg_at(&framed_focus(&theme, 40, 10, false), 0, 0);
+            let lit = fg_at(&framed_focus(&theme, 40, 10, true), 0, 0);
+            assert_ne!(dim, lit, "{name}: focus does not change the corner");
+            assert!(
+                oklab_distance(lit, theme.accent) < oklab_distance(dim, theme.accent),
+                "{name}: the focused corner is not nearer the accent"
+            );
+        }
+    }
+
+    /// Noticeable, not shouted.
+    #[test]
+    fn the_focus_lift_stays_subtle() {
+        for name in ["cosmic", "catppuccin-mocha", "nord"] {
+            let theme = crate::theme::builtin::load(name).unwrap();
+            let lit = fg_at(&framed_focus(&theme, 40, 10, true), 0, 0);
+            // Still a frame. A corner that has arrived at the accent has
+            // stopped decorating the panel and started competing with it.
+            assert!(
+                oklab_distance(lit, theme.accent) > 0.10,
+                "{name}: the focused corner has become the accent itself"
+            );
         }
     }
 
@@ -275,7 +353,7 @@ mod tests {
             .title("PLAYLIST")
             .render(area, &mut buf);
         let before: Vec<String> = (1..9).map(|x| format!("{:?}", buf[(x, 0)])).collect();
-        render_corners(area, &mut buf, &theme);
+        render_corners(area, &mut buf, &theme, false);
         let after: Vec<String> = (1..9).map(|x| format!("{:?}", buf[(x, 0)])).collect();
         assert_eq!(before, after, "the title was recoloured");
     }
@@ -284,7 +362,7 @@ mod tests {
     fn a_panel_too_small_to_have_corners_is_left_alone() {
         let theme = builtin::load("cosmic").unwrap();
         let mut buf = Buffer::empty(Rect::new(0, 0, 4, 4));
-        render_corners(Rect::new(0, 0, 1, 1), &mut buf, &theme);
-        render_corners(Rect::new(0, 0, 0, 0), &mut buf, &theme);
+        render_corners(Rect::new(0, 0, 1, 1), &mut buf, &theme, false);
+        render_corners(Rect::new(0, 0, 0, 0), &mut buf, &theme, false);
     }
 }

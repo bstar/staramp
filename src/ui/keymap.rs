@@ -34,6 +34,19 @@ pub enum Action {
     ToggleEqEnabled,
     NextEqPreset,
     PrevEqPreset,
+    EqBandPrev,
+    EqBandNext,
+    EqGainUp,
+    EqGainDown,
+    EqGainUpBig,
+    EqGainDownBig,
+    FocusPrev,
+    FocusPlayer,
+    FocusPlaylist,
+    FocusEqualizer,
+    FocusAlbum,
+    CursorUpBig,
+    CursorDownBig,
     CursorUp,
     CursorDown,
     PageUp,
@@ -296,6 +309,12 @@ pub const BINDINGS: &[Binding] = &[
         group: "playlist",
     },
     Binding {
+        action: Action::CursorDownBig,
+        keys: "shift+up/down",
+        label: "ten rows",
+        group: "playlist",
+    },
+    Binding {
         action: Action::CursorDown,
         keys: "down / j",
         label: "move down",
@@ -434,6 +453,18 @@ pub const BINDINGS: &[Binding] = &[
         group: "windows",
     },
     Binding {
+        action: Action::FocusPrev,
+        keys: "shift+tab",
+        label: "previous pane",
+        group: "windows",
+    },
+    Binding {
+        action: Action::FocusPlayer,
+        keys: "alt+1..4",
+        label: "focus a pane",
+        group: "windows",
+    },
+    Binding {
         action: Action::NextTheme,
         keys: "alt+t",
         label: "next theme",
@@ -455,6 +486,24 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::NextEqPreset,
         keys: "]",
         label: "next preset",
+        group: "equalizer",
+    },
+    Binding {
+        action: Action::EqBandNext,
+        keys: "left/right",
+        label: "choose a band",
+        group: "equalizer",
+    },
+    Binding {
+        action: Action::EqGainUp,
+        keys: "up/down",
+        label: "band gain, 1 dB",
+        group: "equalizer",
+    },
+    Binding {
+        action: Action::EqGainUpBig,
+        keys: "shift+up/down",
+        label: "band gain, 10 dB",
         group: "equalizer",
     },
     Binding {
@@ -548,6 +597,126 @@ pub fn library(k: KeyEvent) -> Option<Action> {
     })
 }
 
+/// Which docked panel a key is being offered to first.
+///
+/// Mirrors `ui::app::Focus`, and is its own type so `keymap` does not depend
+/// on `app` -- the table is the thing everything else is written against, and
+/// it should not need the application to compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Module {
+    Player,
+    Playlist,
+    Equalizer,
+    Album,
+}
+
+/// The focused panel's own bindings, tried before [`resolve`].
+///
+/// `None` means the module does not want this key and the global table should
+/// have it -- which is what keeps every existing binding working from
+/// everywhere. A module only ever *adds* meaning to keys it names.
+///
+/// Two rules hold across all four, and the tests enforce them:
+///
+/// **A bare arrow moves one unit and a shifted one moves ten.** Already true
+/// of seeking before this existed, so it is a convention being extended
+/// rather than imposed.
+///
+/// **`hjkl` navigates and never adjusts a value.** No module below binds
+/// them: `j`/`k` reach the playlist cursor through the global table, which is
+/// what they mean everywhere, and a module that wants a second axis takes the
+/// arrows. The equalizer is the case that proves it -- selecting a band *is*
+/// navigation and would be `h`/`l`, except `l` opens the library and taking
+/// that away from the panel you would reach for it from is a bad trade.
+pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
+    match m {
+        Module::Player => player(k),
+        Module::Playlist => playlist(k),
+        Module::Equalizer => equalizer(k),
+        Module::Album => album(k),
+    }
+}
+
+/// Seeking, at the two sizes.
+///
+/// Already in the global table and repeated here so the player's own bindings
+/// are in one place and cannot be silently claimed by a future module.
+fn player(k: KeyEvent) -> Option<Action> {
+    use KeyCode::*;
+    if k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+    Some(match (k.code, shift) {
+        (Left, false) => Action::SeekBack,
+        (Right, false) => Action::SeekForward,
+        (Left, true) => Action::SeekBackBig,
+        (Right, true) => Action::SeekForwardBig,
+        _ => return None,
+    })
+}
+
+/// The cursor, one row or ten.
+///
+/// `j`/`k` are deliberately absent: they are in the global table and reach
+/// here through it, so they keep working from every panel rather than only
+/// from this one.
+fn playlist(k: KeyEvent) -> Option<Action> {
+    use KeyCode::*;
+    if k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+    Some(match (k.code, shift) {
+        (Up, true) => Action::CursorUpBig,
+        (Down, true) => Action::CursorDownBig,
+        _ => return None,
+    })
+}
+
+/// Band selection and gain.
+///
+/// The band is on the arrows rather than on `h`/`l` because `l` opens the
+/// library; the gain is on the arrows because a gain is a value and `hjkl`
+/// does not touch values.
+fn equalizer(k: KeyEvent) -> Option<Action> {
+    use KeyCode::*;
+    if k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+    Some(match (k.code, shift) {
+        (Left, _) => Action::EqBandPrev,
+        (Right, _) => Action::EqBandNext,
+        (Up, false) => Action::EqGainUp,
+        (Down, false) => Action::EqGainDown,
+        (Up, true) => Action::EqGainUpBig,
+        (Down, true) => Action::EqGainDownBig,
+        _ => return None,
+    })
+}
+
+/// The cover: choose one, or open the panel's settings.
+fn album(k: KeyEvent) -> Option<Action> {
+    use KeyCode::*;
+    if k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        return None;
+    }
+    Some(match k.code {
+        Char('c') => Action::ChooseCover,
+        Char('r') => Action::RetryCover,
+        _ => return None,
+    })
+}
+
 /// Map a key event to an action.
 pub fn resolve(k: KeyEvent) -> Option<Action> {
     use KeyCode::*;
@@ -609,6 +778,14 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('p'), false, _, false) => Action::TogglePlaylistPanel,
         (Char('e'), _, _, true) => Action::OpenPlaylistPicker,
         (Tab, ..) => Action::FocusNext,
+        (BackTab, ..) => Action::FocusPrev,
+        // Straight to a panel, opening it if it is shut. Alt because the bare
+        // digits belong to whatever a panel wants them for, and ctrl+digit is
+        // eaten by a good many terminals before it reaches us.
+        (Char('1'), false, _, true) => Action::FocusPlayer,
+        (Char('2'), false, _, true) => Action::FocusPlaylist,
+        (Char('3'), false, _, true) => Action::FocusEqualizer,
+        (Char('4'), false, _, true) => Action::FocusAlbum,
 
         (Up, false, _, true) => Action::MoveAlbumUp,
         (Down, false, _, true) => Action::MoveAlbumDown,
@@ -731,6 +908,165 @@ mod tests {
     /// Eight of them did, which is most of why the overlay had grown to 67
     /// lines against an inner height of 36 and had silently stopped showing
     /// everything after `windows`.
+    fn ev(c: KeyCode, m: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(c, m)
+    }
+
+    const MODULES: [Module; 4] = [
+        Module::Player,
+        Module::Playlist,
+        Module::Equalizer,
+        Module::Album,
+    ];
+
+    /// The rule the whole scheme rests on.
+    ///
+    /// `hjkl` moves a cursor and never changes a value. Written as a test
+    /// rather than left as a convention because it is the one a future module
+    /// is most likely to break -- reaching for `j`/`k` as "down/up" on a gain
+    /// is the obvious thing to do and the wrong thing to do.
+    #[test]
+    fn no_module_binds_hjkl() {
+        for m in MODULES {
+            for c in ['h', 'j', 'k', 'l'] {
+                let got = module(m, ev(KeyCode::Char(c), KeyModifiers::NONE));
+                assert!(
+                    got.is_none(),
+                    "{m:?} claims {c:?} as {got:?}; hjkl navigates and the \
+                     global table is what carries it"
+                );
+            }
+        }
+    }
+
+    /// A module only ever adds meaning; it never swallows a key it has no use
+    /// for, or the global bindings would stop working panel by panel.
+    #[test]
+    fn a_module_declines_what_it_does_not_want() {
+        for m in MODULES {
+            for c in ['t', 'y', 'u', 'q', ' '] {
+                assert_eq!(
+                    module(m, ev(KeyCode::Char(c), KeyModifiers::NONE)),
+                    None,
+                    "{m:?} swallowed {c:?}"
+                );
+            }
+            // Nor anything with ctrl or alt on it: those are the global
+            // layer's, and volume is ctrl+up.
+            for m2 in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+                assert_eq!(module(m, ev(KeyCode::Up, m2)), None, "{m:?}");
+            }
+        }
+    }
+
+    /// Bare is one unit, shifted is ten, in every module that has both.
+    #[test]
+    fn shift_is_the_coarse_modifier_everywhere() {
+        let bare = |m, c| module(m, ev(c, KeyModifiers::NONE));
+        let shifted = |m, c| module(m, ev(c, KeyModifiers::SHIFT));
+
+        assert_eq!(bare(Module::Player, KeyCode::Left), Some(Action::SeekBack));
+        assert_eq!(
+            shifted(Module::Player, KeyCode::Left),
+            Some(Action::SeekBackBig)
+        );
+        assert_eq!(
+            shifted(Module::Playlist, KeyCode::Down),
+            Some(Action::CursorDownBig)
+        );
+        assert_eq!(bare(Module::Equalizer, KeyCode::Up), Some(Action::EqGainUp));
+        assert_eq!(
+            shifted(Module::Equalizer, KeyCode::Up),
+            Some(Action::EqGainUpBig)
+        );
+    }
+
+    /// The equalizer is the module where both rules bite at once.
+    #[test]
+    fn the_equalizer_puts_bands_on_the_arrows_not_on_hl() {
+        // Selecting a band is navigation, so it would be `h`/`l` -- except
+        // `l` opens the library, and taking that away from a panel you would
+        // reach for it from is the worse trade.
+        assert_eq!(
+            module(Module::Equalizer, ev(KeyCode::Left, KeyModifiers::NONE)),
+            Some(Action::EqBandPrev)
+        );
+        assert_eq!(
+            resolve(ev(KeyCode::Char('l'), KeyModifiers::NONE)),
+            Some(Action::OpenLibrary),
+            "the library key is what the band keys are avoiding"
+        );
+    }
+
+    /// The playlist keeps `j`/`k` through the global table rather than
+    /// claiming them, so they work from every panel and not just this one.
+    #[test]
+    fn the_cursor_keys_stay_global() {
+        assert_eq!(
+            resolve(ev(KeyCode::Char('j'), KeyModifiers::NONE)),
+            Some(Action::CursorDown)
+        );
+        assert_eq!(
+            module(
+                Module::Equalizer,
+                ev(KeyCode::Char('j'), KeyModifiers::NONE)
+            ),
+            None,
+            "the equalizer must not shadow the playlist cursor"
+        );
+    }
+
+    /// The promise the whole layering makes.
+    ///
+    /// A module gets first refusal, not exclusive rights. With the equalizer
+    /// focused, every global binding still resolves -- which is the reason
+    /// this was built as a fallback rather than as a replacement, and nothing
+    /// else checks it.
+    #[test]
+    fn global_keys_still_work_from_inside_a_module() {
+        for m in MODULES {
+            for (c, want) in [
+                (' ', Action::PlayPause),
+                ('t', Action::TagRow),
+                ('e', Action::ToggleEqEnabled),
+                ('l', Action::OpenLibrary),
+                ('j', Action::CursorDown),
+                ('k', Action::CursorUp),
+            ] {
+                let k = ev(KeyCode::Char(c), KeyModifiers::NONE);
+                let got = module(m, k).or_else(|| resolve(k));
+                assert_eq!(got, Some(want), "{m:?} broke {c:?}");
+            }
+            // And the transport, which has to work from anywhere at all.
+            let k = ev(KeyCode::Up, KeyModifiers::CONTROL);
+            assert_eq!(module(m, k).or_else(|| resolve(k)), Some(Action::VolumeUp));
+        }
+    }
+
+    #[test]
+    fn focus_moves_both_ways_and_lands_directly() {
+        assert_eq!(
+            resolve(ev(KeyCode::Tab, KeyModifiers::NONE)),
+            Some(Action::FocusNext)
+        );
+        assert_eq!(
+            resolve(ev(KeyCode::BackTab, KeyModifiers::SHIFT)),
+            Some(Action::FocusPrev)
+        );
+        for (c, want) in [
+            ('1', Action::FocusPlayer),
+            ('2', Action::FocusPlaylist),
+            ('3', Action::FocusEqualizer),
+            ('4', Action::FocusAlbum),
+        ] {
+            assert_eq!(
+                resolve(ev(KeyCode::Char(c), KeyModifiers::ALT)),
+                Some(want),
+                "alt+{c}"
+            );
+        }
+    }
+
     #[test]
     fn no_help_label_is_long_enough_to_wrap() {
         for b in BINDINGS {

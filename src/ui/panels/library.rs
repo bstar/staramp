@@ -291,7 +291,7 @@ impl<'a> Widget for LibraryView<'a> {
             )
             .style(Style::default().bg(rgb(t.panel_bg)));
         block.render(l.frame, buf);
-        super::frame::render_corners(l.frame, buf, t);
+        super::frame::render_corners(l.frame, buf, t, true);
 
         if l.search.height > 0 {
             let caret = if self.typing { "\u{2582}" } else { "" };

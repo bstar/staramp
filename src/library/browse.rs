@@ -54,7 +54,9 @@ use crate::playlist::uri::TrackUri;
 /// reason -- and because "the first sheet alphabetically wins" is something a
 /// person can be told.
 ///
-/// **This is a browser rule.** `stats`, `search`, `query` and the library queue
+/// The browser's rule, and the library queue's: the queue built from the whole
+/// index when nothing is named on the command line showed every song of a
+/// per-track cue album twice, one of them green. `stats`, `search` and `query`
 /// still see every row.
 pub const CANONICAL: &str = "\
     t.hidden = 0

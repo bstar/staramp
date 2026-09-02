@@ -1026,13 +1026,19 @@ fn build_queue(
     // non-slash characters as the set strips the file name and stops at the
     // slash, which is SQLite's way of spelling `dirname`. Tracks without a
     // number come after the numbered ones, by name.
+    //
+    // One song, one row: a per-track cue sheet indexes each song twice, as
+    // the file and as the sheet's track over that same file, and the queue
+    // showed both -- every song of such an album twice over, one green. The
+    // browser's rule picks one of each pair; see `browse::CANONICAL`.
     let db = library::db::Db::open_readonly(index)?;
     let mut stmt = db.conn.prepare(&format!(
         "{META_SELECT}
-         WHERE t.hidden = 0
+         WHERE {canonical}
          ORDER BY t.album_artist, t.album,
                   rtrim(t.uri, replace(t.uri, '/', '')),
-                  t.disc_no, t.track_no IS NULL, t.track_no, t.uri"
+                  t.disc_no, t.track_no IS NULL, t.track_no, t.uri",
+        canonical = library::browse::CANONICAL,
     ))?;
     let rows = stmt.query_map([], read_meta)?;
     let items = rows

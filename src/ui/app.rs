@@ -714,6 +714,28 @@ struct Look {
     last_marquee: Instant,
 }
 
+/// Which panels are open, where the keyboard is, and the geometry the last
+/// frame was drawn into.
+struct Panels {
+    eq: bool,
+    album: bool,
+    playlist: bool,
+    help: bool,
+    picker: bool,
+    focus: Focus,
+    /// How far down the help has been scrolled.
+    ///
+    /// It needs to scroll at all because the key list is 58 lines against an
+    /// inner height of at most 36: everything past `windows` had never been on
+    /// screen, which is a poor way to document a keyboard.
+    help_scroll: u16,
+    /// The area the last frame was drawn into, so a page key can move by a
+    /// screenful rather than by a hardcoded ten.
+    last_area: Rect,
+    padding_x: u16,
+    padding_y: u16,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -722,12 +744,8 @@ pub struct App {
     last_track_revision: u64,
     last_state: PlayState,
     look: Look,
+    panels: Panels,
 
-    show_eq: bool,
-    show_album: bool,
-    show_playlist: bool,
-    focus: Focus,
-    show_help: bool,
     /// Dropouts counted the last time one happened, and when that was.
     ///
     /// The device's counter only ever climbs, so showing it directly meant one
@@ -738,16 +756,9 @@ pub struct App {
     /// The count at the start of the quiet stretch, so a burst is counted from
     /// where it began rather than from the beginning of the session.
     dropout_base: u64,
-    /// How far down the help has been scrolled.
-    ///
-    /// It needs to scroll at all because the key list is 58 lines against an
-    /// inner height of at most 36: everything past `windows` had never been on
-    /// screen, which is a poor way to document a keyboard.
-    help_scroll: u16,
 
     /// Playlists from the configured directory, and the picker over them.
     playlists: Vec<PlaylistEntry>,
-    show_picker: bool,
     /// The cover chooser, open over the current album.
     chooser: Option<Chooser>,
     /// A panel's settings, open over everything.
@@ -796,9 +807,6 @@ pub struct App {
     /// Held across opens: building it costs ~290 ms and nothing invalidates it
     /// until the index is rescanned.
     browse_model: Option<Arc<crate::library::browse::Model>>,
-    /// The area the last frame was drawn into, so a page key can move by a
-    /// screenful rather than by a hardcoded ten.
-    last_area: Rect,
     /// Set when this instance is mirroring another rather than owning audio.
     mirror: Option<Mirror>,
     /// The leader's current track URI. A mirror's own queue items carry no
@@ -909,9 +917,6 @@ pub struct App {
 
     fx: Effects,
     onset: OnsetDetector,
-
-    padding_x: u16,
-    padding_y: u16,
 
     last_frame: Instant,
     quit: bool,
@@ -1087,8 +1092,8 @@ impl App {
     /// Seeded with the filter in force, so pressing `/` again shows what the
     /// list is being narrowed by and lets it be edited rather than retyped.
     fn open_filter_box(&mut self) {
-        self.show_playlist = true;
-        self.focus = Focus::Playlist;
+        self.panels.playlist = true;
+        self.panels.focus = Focus::Playlist;
         self.settings = None;
         self.filtering = Some(self.filter.clone());
     }
@@ -1470,13 +1475,28 @@ impl App {
             filter_gen: 0,
             queue_dirty: false,
             browse_model: None,
-            last_area: Rect::default(),
             player,
             mpris,
             ipc_stop,
             ipc_path,
             last_track_revision: 0,
             last_state: PlayState::Stopped,
+            panels: Panels {
+                eq: cfg.ui.show_equalizer,
+                album: cfg.ui.show_album,
+                playlist: cfg.ui.show_playlist,
+                help: false,
+                picker: false,
+                focus: if cfg.ui.show_playlist {
+                    Focus::Playlist
+                } else {
+                    Focus::Player
+                },
+                help_scroll: 0,
+                last_area: Rect::default(),
+                padding_x: cfg.ui.padding_x,
+                padding_y: cfg.ui.padding_y,
+            },
             look: Look {
                 theme,
                 ids: theme_ids,
@@ -1488,9 +1508,6 @@ impl App {
                 marquee: 0,
                 last_marquee: Instant::now(),
             },
-            show_eq: cfg.ui.show_equalizer,
-            show_album: cfg.ui.show_album,
-            show_playlist: cfg.ui.show_playlist,
             art: None,
             art_uri: None,
             retrying: None,
@@ -1499,17 +1516,9 @@ impl App {
             art_fetch: Arc::new(std::sync::atomic::AtomicBool::new(cfg.art.fetch)),
             // Whichever panel is open to be focused. A cursor in a panel that
             // is not on screen has nothing to move.
-            focus: if cfg.ui.show_playlist {
-                Focus::Playlist
-            } else {
-                Focus::Player
-            },
-            show_help: false,
-            help_scroll: 0,
             dropouts_at: None,
             dropout_base: 0,
             playlists: Vec::new(),
-            show_picker: false,
             chooser: None,
             settings: None,
             pending_resume: None,
@@ -1567,9 +1576,6 @@ impl App {
             ),
             onset: OnsetDetector::new(),
 
-            padding_x: cfg.ui.padding_x,
-            padding_y: cfg.ui.padding_y,
-
             last_frame: Instant::now(),
             quit: false,
             status: None,
@@ -1586,7 +1592,7 @@ impl App {
         self.mirror = Some(m);
         // A mirror has nothing of its own to resume or choose.
         self.pending_resume = None;
-        self.show_picker = false;
+        self.panels.picker = false;
     }
 
     pub fn is_mirror(&self) -> bool {
@@ -1680,7 +1686,7 @@ impl App {
                 }
                 self.loaded_name = name.clone();
                 self.source_playlist = Some(path.to_path_buf());
-                self.show_playlist = true;
+                self.panels.playlist = true;
                 self.cursor = 0;
                 self.scroll = 0;
                 self.note(format!("{name} \u{2014} {n} tracks"));
@@ -1721,9 +1727,9 @@ impl App {
                 })
                 .unwrap_or_default(),
             folded,
-            show_album: self.show_album,
-            show_equalizer: self.show_eq,
-            show_playlist: self.show_playlist,
+            show_album: self.panels.album,
+            show_equalizer: self.panels.eq,
+            show_playlist: self.panels.playlist,
             revision: 0,
         }
     }
@@ -1740,9 +1746,9 @@ impl App {
         // Panel *intent*. Whether a panel actually appears is still decided by
         // this terminal's own size in `regions`, so a window too small for the
         // playlist does not close it everywhere.
-        self.show_album = v.show_album;
-        self.show_eq = v.show_equalizer;
-        self.show_playlist = v.show_playlist;
+        self.panels.album = v.show_album;
+        self.panels.eq = v.show_equalizer;
+        self.panels.playlist = v.show_playlist;
         if !v.cursor.is_empty() {
             let wanted = crate::playlist::uri::TrackUri::parse(&v.cursor);
             let q = self.player.queue.lock().unwrap();
@@ -1945,7 +1951,7 @@ impl App {
     }
 
     pub fn set_playlists(&mut self, playlists: Vec<PlaylistEntry>) {
-        self.show_picker = !playlists.is_empty();
+        self.panels.picker = !playlists.is_empty();
         self.playlists = playlists;
     }
 
@@ -1955,7 +1961,7 @@ impl App {
         if !s.worth_resuming() {
             return;
         }
-        self.show_picker = false;
+        self.panels.picker = false;
         self.pending_resume = Some(s);
     }
 
@@ -2083,7 +2089,7 @@ impl App {
         self.pending_resume = None;
         session::Session::clear();
         // Fall through to the ordinary starting point.
-        self.show_picker = !self.playlists.is_empty();
+        self.panels.picker = !self.playlists.is_empty();
     }
 
     /// Capture the current state, if there is anything worth capturing.
@@ -2154,7 +2160,7 @@ impl App {
                 }
                 self.loaded_name = name.clone();
                 // Loading a playlist you cannot see is not loading it.
-                self.show_playlist = true;
+                self.panels.playlist = true;
                 // Remember where it came from, or the session saved from here
                 // has no playlist to resume into and falls back to the whole
                 // library. The picker is how a playlist is normally chosen, so
@@ -2162,7 +2168,7 @@ impl App {
                 self.source_playlist = Some(path);
                 self.cursor = 0;
                 self.scroll = 0;
-                self.show_picker = false;
+                self.panels.picker = false;
                 self.note(format!("{name} — {n} tracks"));
             }
             Ok(_) => self.note(format!("{name} is empty")),
@@ -2341,9 +2347,9 @@ impl App {
             seek_style: self.look.seek_style.name().to_string(),
             graphics: self.graphics.mode().name().to_string(),
             buttons: self.graphics.buttons_mode().name().to_string(),
-            show_album: self.show_album,
-            show_equalizer: self.show_eq,
-            show_playlist: self.show_playlist,
+            show_album: self.panels.album,
+            show_equalizer: self.panels.eq,
+            show_playlist: self.panels.playlist,
             vis_mode: self.vis_mode.name().to_string(),
             bar_width: self.bar_layout.width,
             bar_gap: self.bar_layout.gap,
@@ -2665,7 +2671,7 @@ impl App {
                 _ => {}
             }
         }
-        if self.show_picker {
+        if self.panels.picker {
             match action {
                 CursorUp => return self.move_picker(-1),
                 CursorDown => return self.move_picker(1),
@@ -2683,7 +2689,7 @@ impl App {
                 CloseOverlay | TogglePlaylistPanel | OpenPlaylistPicker => {
                     // Refusing to close an empty picker would trap the user with
                     // nothing to pick and no way out.
-                    self.show_picker = false;
+                    self.panels.picker = false;
                     return;
                 }
                 Quit => {
@@ -2697,27 +2703,27 @@ impl App {
         // The help is modal to the keyboard, which it never was: every key
         // used to act on the player behind it, and now one of them removes
         // rows you cannot see while you are reading about them.
-        if self.show_help {
+        if self.panels.help {
             match action {
                 Help | CloseOverlay => {
-                    self.show_help = false;
-                    self.help_scroll = 0;
+                    self.panels.help = false;
+                    self.panels.help_scroll = 0;
                     return;
                 }
                 CursorUp => {
-                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                    self.panels.help_scroll = self.panels.help_scroll.saturating_sub(1);
                     return;
                 }
                 CursorDown => {
-                    self.help_scroll += 1;
+                    self.panels.help_scroll += 1;
                     return;
                 }
                 PageUp | Home => {
-                    self.help_scroll = 0;
+                    self.panels.help_scroll = 0;
                     return;
                 }
                 PageDown | End => {
-                    self.help_scroll += 10;
+                    self.panels.help_scroll += 10;
                     return;
                 }
                 Quit => {
@@ -2733,7 +2739,7 @@ impl App {
         // Before the main match, or the playlist behind it would take the
         // cursor keys.
         if let Some(lib) = &mut self.library {
-            let page = self.last_area.height.saturating_sub(6).max(1) as i32;
+            let page = self.panels.last_area.height.saturating_sub(6).max(1) as i32;
             match action {
                 CursorUp => return lib.step(-1),
                 CursorDown => return lib.step(1),
@@ -2789,8 +2795,8 @@ impl App {
             RemoveTagged => self.remove_tagged(),
             SavePlaylist => self.save_playlist(),
 
-            CloseOverlay => self.show_help = false,
-            Help => self.show_help = !self.show_help,
+            CloseOverlay => self.panels.help = false,
+            Help => self.panels.help = !self.panels.help,
             PlayPause => {
                 if self.player.state.state() == PlayState::Stopped {
                     self.play_track_at_cursor();
@@ -2837,12 +2843,12 @@ impl App {
             FilterQueue => self.open_filter_box(),
             MoveAlbumUp => self.move_album(-1),
             MoveAlbumDown => self.move_album(1),
-            ToggleEqPanel => self.show_eq = !self.show_eq,
+            ToggleEqPanel => self.panels.eq = !self.panels.eq,
             ChooseCover => self.open_chooser(),
             RetryCover => self.retry_cover(),
             ToggleAlbumPanel => {
-                self.show_album = !self.show_album;
-                if self.show_album {
+                self.panels.album = !self.panels.album;
+                if self.panels.album {
                     // Ask straight away rather than waiting for the next track:
                     // opening the panel onto an empty frame looks broken.
                     self.art_uri = None;
@@ -2852,8 +2858,8 @@ impl App {
                     // Kitty holds uploaded images in the terminal's own
                     // memory; letting the protocol go is what releases one.
                     self.graphics.forget();
-                    if self.focus == Focus::Album {
-                        self.focus = Focus::Player;
+                    if self.panels.focus == Focus::Album {
+                        self.panels.focus = Focus::Player;
                     }
                     self.note("album closed \u{2014} i to bring it back".into())
                 }
@@ -2862,18 +2868,18 @@ impl App {
             // one to open, which left no way to bring a closed panel back and
             // made the key useless for the thing it is named after.
             TogglePlaylistPanel => {
-                self.show_playlist = !self.show_playlist;
-                if self.show_playlist {
-                    self.focus = Focus::Playlist;
-                } else if self.focus == Focus::Playlist {
-                    self.focus = Focus::Player;
+                self.panels.playlist = !self.panels.playlist;
+                if self.panels.playlist {
+                    self.panels.focus = Focus::Playlist;
+                } else if self.panels.focus == Focus::Playlist {
+                    self.panels.focus = Focus::Player;
                 }
             }
             OpenPlaylistPicker => {
                 if self.playlists.is_empty() {
                     self.note("no playlists — set playlist_dir in config.toml".into());
                 } else {
-                    self.show_picker = true;
+                    self.panels.picker = true;
                 }
             }
             ToggleVisualizer => {
@@ -2954,9 +2960,9 @@ impl App {
                 self.look.theme = t;
             }
             FocusNext => {
-                self.focus = match self.focus {
-                    Focus::Player if self.show_album => Focus::Album,
-                    Focus::Player | Focus::Album if self.show_eq => Focus::Equalizer,
+                self.panels.focus = match self.panels.focus {
+                    Focus::Player if self.panels.album => Focus::Album,
+                    Focus::Player | Focus::Album if self.panels.eq => Focus::Equalizer,
                     Focus::Album => Focus::Playlist,
                     Focus::Player => Focus::Playlist,
                     Focus::Equalizer => Focus::Playlist,
@@ -3194,7 +3200,7 @@ impl App {
     /// a rect reconstructed by eye.
     fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
         // Overlays are modal: while one is up nothing behind it can be clicked.
-        if self.pending_resume.is_some() || self.show_help {
+        if self.pending_resume.is_some() || self.panels.help {
             return;
         }
         let Some(r) = self.regions(full) else { return };
@@ -3210,7 +3216,7 @@ impl App {
         if self.chooser.is_some() {
             return;
         }
-        if self.show_picker {
+        if self.panels.picker {
             return self.picker_mouse(m, r.area);
         }
         if self.library.is_some() {
@@ -3289,8 +3295,8 @@ impl App {
                     let words = self.playlist_header();
                     match header::hit(rect, &words, x, y) {
                         Some(header::Item::Close) => {
-                            self.show_playlist = false;
-                            self.focus = Focus::Player;
+                            self.panels.playlist = false;
+                            self.panels.focus = Focus::Player;
                             return self.note("playlist closed — p to bring it back".into());
                         }
                         Some(header::Item::Settings) => return self.open_settings(Focus::Playlist),
@@ -3311,10 +3317,10 @@ impl App {
                 if let Some(rect) = r.album {
                     match header::hit(rect, header::PLAIN, x, y) {
                         Some(header::Item::Close) => {
-                            self.show_album = false;
+                            self.panels.album = false;
                             self.graphics.forget();
-                            if self.focus == Focus::Album {
-                                self.focus = Focus::Player;
+                            if self.panels.focus == Focus::Album {
+                                self.panels.focus = Focus::Player;
                             }
                             return self.note("album closed \u{2014} i to bring it back".into());
                         }
@@ -3335,7 +3341,7 @@ impl App {
                         None => {}
                     }
                     if hit(rect, x, y) {
-                        self.focus = Focus::Album;
+                        self.panels.focus = Focus::Album;
                         // The retry word first: it sits on the detail lines,
                         // which would otherwise swallow the click.
                         if self.album_retry_rect(rect).is_some_and(|r| hit(r, x, y)) {
@@ -3358,8 +3364,8 @@ impl App {
                 if let Some(rect) = r.equalizer {
                     match header::hit(rect, header::PLAIN, x, y) {
                         Some(header::Item::Close) => {
-                            self.show_eq = false;
-                            self.focus = Focus::Player;
+                            self.panels.eq = false;
+                            self.panels.focus = Focus::Player;
                             return self.note("equalizer closed — alt+g to bring it back".into());
                         }
                         Some(header::Item::Settings) => {
@@ -3396,7 +3402,7 @@ impl App {
     }
 
     fn equalizer_click(&mut self, rect: Rect, x: u16, y: u16) {
-        self.focus = Focus::Equalizer;
+        self.panels.focus = Focus::Equalizer;
         let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name) else {
             return;
         };
@@ -3448,7 +3454,7 @@ impl App {
     }
 
     fn player_click(&mut self, r: &Regions, x: u16, y: u16) {
-        self.focus = Focus::Player;
+        self.panels.focus = Focus::Player;
         let Some(g) = self.player_geometry(r) else {
             return;
         };
@@ -3492,7 +3498,7 @@ impl App {
     }
 
     fn playlist_click(&mut self, rect: Rect, x: u16, y: u16, double: bool) {
-        self.focus = Focus::Playlist;
+        self.panels.focus = Focus::Playlist;
         // The same rect the rows were drawn into, so a click lands on the
         // track it is pointing at rather than the one above it.
         let inner = playlist::list_rect(rect);
@@ -3566,7 +3572,7 @@ impl App {
                 let inner = picker::list_rect(area, self.playlists.len());
                 if !hit(inner, x, y) {
                     // Clicking outside a modal dismisses it.
-                    self.show_picker = false;
+                    self.panels.picker = false;
                     return;
                 }
                 let i = self.picker_scroll + (y - inner.y) as usize;
@@ -3644,8 +3650,8 @@ impl App {
             return None;
         }
         // Never let padding eat so much that the layout stops working.
-        let pad_x = clamp_padding(self.padding_x, full.width, MIN_WIDTH);
-        let pad_y = clamp_padding(self.padding_y, full.height, MIN_HEIGHT);
+        let pad_x = clamp_padding(self.panels.padding_x, full.width, MIN_WIDTH);
+        let pad_y = clamp_padding(self.panels.padding_y, full.height, MIN_HEIGHT);
         let area = Rect {
             x: full.x + pad_x,
             y: full.y + pad_y,
@@ -3656,12 +3662,12 @@ impl App {
         // Docked windows: the player is always present, the other two toggle.
         // The body plus its border.
         let player_h = crate::ui::panels::player::PANEL_ROWS;
-        let eq_h = if self.show_eq {
+        let eq_h = if self.panels.eq {
             crate::ui::panels::equalizer::PANEL_ROWS
         } else {
             0
         };
-        let album_h = if self.show_album {
+        let album_h = if self.panels.album {
             crate::ui::panels::album::PANEL_ROWS
         } else {
             0
@@ -3672,13 +3678,13 @@ impl App {
             .saturating_sub(player_h + album_h + eq_h + status_h);
         // Two of its rows are border and one is the header, so three rows is
         // a panel with nothing in it.
-        let show_playlist = self.show_playlist && playlist_h >= 4;
+        let show_playlist = self.panels.playlist && playlist_h >= 4;
 
         let mut constraints = vec![Constraint::Length(player_h)];
-        if self.show_album {
+        if self.panels.album {
             constraints.push(Constraint::Length(album_h));
         }
-        if self.show_eq {
+        if self.panels.eq {
             constraints.push(Constraint::Length(eq_h));
         }
         if show_playlist {
@@ -3696,12 +3702,12 @@ impl App {
         idx += 1;
         // The album sits directly under the player: it is about what is
         // playing, and the equalizer is about how.
-        let album = self.show_album.then(|| {
+        let album = self.panels.album.then(|| {
             let r = rows[idx];
             idx += 1;
             r
         });
-        let equalizer = self.show_eq.then(|| {
+        let equalizer = self.panels.eq.then(|| {
             let r = rows[idx];
             idx += 1;
             r
@@ -3748,7 +3754,7 @@ impl App {
 
         let Some(r) = self.regions(full) else { return };
         let area = r.area;
-        self.last_area = area;
+        self.panels.last_area = area;
 
         // The browser is the window while it is open, but the status bar stays:
         // it is where a note about what was just added appears.
@@ -3794,7 +3800,7 @@ impl App {
                 enabled: self.eq.enabled,
                 preset: eq::PRESETS[self.eq.preset].name,
                 focused_band: self.eq.band,
-                focused: self.focus == Focus::Equalizer,
+                focused: self.panels.focus == Focus::Equalizer,
             }
             .render(rect, buf);
         }
@@ -3913,7 +3919,7 @@ impl App {
             return;
         }
 
-        if self.show_picker {
+        if self.panels.picker {
             let inner_h = area
                 .height
                 .saturating_sub(4)
@@ -3941,7 +3947,7 @@ impl App {
             .render(area, buf);
         }
 
-        if self.show_help {
+        if self.panels.help {
             self.draw_help(area, buf);
         }
     }
@@ -4011,7 +4017,7 @@ impl App {
             shuffle,
             repeat,
             bit_perfect: st.bit_perfect.load(Relaxed),
-            focused: self.focus == Focus::Player,
+            focused: self.panels.focus == Focus::Player,
             mirroring: self.mirror.is_some(),
             marquee_offset: self.look.marquee,
             vis_mode: self.vis_mode,
@@ -4180,7 +4186,7 @@ impl App {
             cursor: self.cursor,
             playing,
             scroll: self.scroll,
-            focused: self.focus == Focus::Playlist,
+            focused: self.panels.focus == Focus::Playlist,
             glyphs: self.look.glyphs,
             header_items: &words,
         }
@@ -4246,7 +4252,7 @@ impl App {
             // the scan has never seen.
             fallback_album: item.as_ref().and_then(|i| i.album.as_deref()),
             fallback_artist: item.as_ref().and_then(|i| i.artist.as_deref()),
-            focused: self.focus == Focus::Album,
+            focused: self.panels.focus == Focus::Album,
         }
         .render(area, buf);
     }
@@ -4310,7 +4316,7 @@ impl App {
         let Some(w) = &self.art else {
             return self.note("no library index to look anything up in".into());
         };
-        self.show_album = true;
+        self.panels.album = true;
         self.graphics.forget();
         // Taken before asking, so an answer that arrives immediately -- a
         // cached cover, say -- still counts as having arrived.
@@ -4764,8 +4770,8 @@ impl App {
 
     /// Open the playlist's ordering, or close it if it is already open.
     fn open_filter(&mut self) {
-        self.show_playlist = true;
-        self.focus = Focus::Playlist;
+        self.panels.playlist = true;
+        self.panels.focus = Focus::Playlist;
         self.open_overlay(Focus::Playlist, Overlay::Filter)
     }
 
@@ -4982,7 +4988,7 @@ impl App {
         if rows.is_empty() {
             return self.note("no covers and no releases to choose from".into());
         }
-        self.show_album = true;
+        self.panels.album = true;
         self.chooser = Some(Chooser {
             cursor: album.choice.min(rows.len() - 1),
             uri,
@@ -5039,7 +5045,7 @@ impl App {
     /// Only while the panel is open: there is no point resolving covers nobody
     /// is looking at, and it keeps a closed panel entirely free.
     fn pump_album(&mut self) {
-        if !self.show_album {
+        if !self.panels.album {
             return;
         }
         let Some(w) = &self.art else { return };
@@ -5186,7 +5192,7 @@ impl App {
         // draw knows how tall the box came out and how many lines went in it.
         let inner_h = h.saturating_sub(2);
         let over = (keys.len() as u16).saturating_sub(inner_h);
-        let at = self.help_scroll.min(over);
+        let at = self.panels.help_scroll.min(over);
         let title = if over == 0 {
             " HELP ".to_string()
         } else if at == 0 {

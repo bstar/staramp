@@ -111,15 +111,15 @@ pub struct Output {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Vis {
-    /// bars · leds · peaks · dots · wave · scope · cava · off
+    /// bars · leds · peaks · dots · wave · scope · fluid · off
     pub mode: String,
     /// Shifts the analyzer's range, in dB. Raise it if your music sits quiet
     /// and the bars barely move; lower it if they spend their time pinned.
     ///
-    /// The `cava` mode ignores this: it scales itself to the material.
+    /// Applies to every mode, the fluid one included.
     pub gain_db: f32,
-    /// How much the `cava` mode smooths, 0 to 1. Higher is more fluid and
-    /// slower to react; lower snaps to the music.
+    /// How long the `fluid` mode's bars take to fall, 0 to 1. Higher holds
+    /// them up longer; lower snaps to the music.
     pub smoothing: f64,
     /// Cells per bar, and blank columns between bars.
     ///
@@ -268,7 +268,7 @@ impl Default for Vis {
     fn default() -> Self {
         Self {
             mode: "bars".into(),
-            smoothing: crate::vis::cava::DEFAULT_SMOOTHING,
+            smoothing: 0.45,
             bar_width: 3,
             bar_gap: 1,
             gain_db: 0.0,

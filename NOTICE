@@ -1,33 +1,15 @@
 staramp
 Copyright (c) 2026 bstar
 
-This product includes software developed as part of cliamp
-(https://github.com/bjarneo/cliamp), Copyright (c) Bjarne Øverli,
-licensed under the MIT License.
+The visualizer is staramp's own. `src/vis/spectrum.rs` spaces its bands on
+the ERB scale of Glasberg and Moore (1990) and weights them with the A curve
+of IEC 61672-1, and `src/vis/meter.rs` follows the peak-programme meter
+ballistics of IEC 60268-10. Those are published standards and formulae, not
+anyone's source. Earlier releases carried analysis ported from cliamp and
+cava; none of it remains.
 
-Portions of staramp derived from cliamp:
-
-  - The visualizer analysis pipeline (src/vis/analysis.rs) and the peak
-    ballistics (src/vis/ballistics.rs), ported from cliamp's
-    ui/visualizer.go and ui/vis_classic_peak.go.
-  - The 10-band equalizer centre frequencies (src/audio/dsp/eq.rs),
-    which follow Winamp's classic layout as used by cliamp.
-
-Each file listed above carries an attribution header naming its origin.
-The full cliamp licence text is reproduced in LICENSES/cliamp-MIT.txt.
-
-This product also includes software developed as part of cava
-(https://github.com/karlstav/cava), Copyright (c) 2015 Karl Stavestrand,
-licensed under the MIT License.
-
-Portions of staramp derived from cava:
-
-  - The cava analysis core (src/vis/cava.rs): the dual-window band
-    distribution, hard-coded EQ, autosens, and the gravity and integral
-    smoothing, ported from cava's cavacore.c; and the monstercat filter,
-    ported from cava's cava.c.
-
-The full cava licence text is reproduced in LICENSES/cava-MIT.txt.
+The ten equalizer centre frequencies are Winamp's classic layout, which is a
+specification rather than code. The filters are staramp's own.
 
 The terminal text effects follow the designs of TerminalTextEffects
 (https://github.com/ChrisBuilds/terminaltexteffects) and its Rust port ttfx

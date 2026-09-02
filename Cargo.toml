@@ -151,7 +151,7 @@ opt-level = 2
 # ---------------------------------------------------------------------------
 [package.metadata.deb]
 maintainer = "bstar <bob@dinicolas.com>"
-copyright = "2026, bstar; portions (c) Bjarne Overli (cliamp, MIT); portions (c) 2015 Karl Stavestrand (cava, MIT)"
+copyright = "2026, bstar"
 license-file = ["LICENSE", "0"]
 extended-description = """\
 A terminal music player for local libraries, built to feel like Winamp.

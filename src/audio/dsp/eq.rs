@@ -1,10 +1,10 @@
 //! Ten-band equalizer.
 //!
-//! The centre frequencies follow Winamp's classic layout as used by cliamp
-//! (MIT, Copyright (c) Bjarne Øverli); the filters themselves are our own.
-//!
-//! That layout is the point: this is a
-//! Winamp tribute and the band labels are part of the look. Coefficients are
+//! The centre frequencies are Winamp's classic ten: 60, 170, 310, 600 Hz and
+//! 1, 3, 6, 12, 14, 16 kHz. That layout is the point -- this is a Winamp
+//! tribute and the band labels are part of the look -- and a list of centre
+//! frequencies is a specification rather than anyone's code. The filters
+//! themselves are our own. Coefficients are
 //! published to the output callback through an `ArcSwap`, so moving a slider is
 //! heard immediately. Computing EQ on the decode thread instead would put a
 //! whole ring buffer — about 200 ms — between the gesture and the sound, which

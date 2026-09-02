@@ -34,9 +34,9 @@ use crate::ui::panels::resume::ResumeView;
 use crate::ui::panels::settings::{self, SettingsView};
 use crate::ui::panels::{equalizer, equalizer::EqView, header, player, player::PlayerView};
 use crate::ui::term;
-use crate::vis::analysis::Analyzer;
-use crate::vis::ballistics::Ballistics;
+use crate::vis::meter::Meters;
 use crate::vis::mode::VisMode;
+use crate::vis::spectrum::{Motion, Spectrum};
 
 /// Animation cadence. The reference's separation of animation from analysis is
 /// worth keeping: the FFT does not need to run at frame rate.
@@ -815,15 +815,15 @@ pub struct App {
     eq_preset: usize,
     eq_band: usize,
 
-    analyzer: Analyzer,
+    analyzer: Spectrum,
     tap_buf: Vec<f32>,
-    /// cava's analysis, for the mode that uses it. Kept alongside the shared
-    /// analyzer rather than replacing it: only one of them runs per frame.
-    cava: crate::vis::cava::Cava,
-    /// Bars cava should produce, set from the panel width as it is drawn.
-    cava_bars: usize,
-    /// Mono scratch handed to cava, as f64 to match its arithmetic.
-    cava_in: Vec<f64>,
+    /// The same analysis with slower time constants, for the fluid mode.
+    /// Kept alongside the shared one rather than replacing it: only one of
+    /// them runs per frame, and each keeps its own envelope state.
+    fluid: Spectrum,
+    /// Bars the fluid mode should produce, set from the panel width as it is
+    /// drawn -- it puts one bar in every column.
+    fluid_bars: usize,
     /// Newest samples, for the trace modes that draw the waveform itself.
     wave: Vec<f32>,
     /// Which transport button faces to draw.
@@ -838,7 +838,7 @@ pub struct App {
     /// sweeping a paused bar says the track is moving when it is not.
     seek_phase: f32,
     vis_mode: VisMode,
-    ballistics: Ballistics,
+    meters: Meters,
     /// Analyzer output received from the instance being mirrored.
     mirror_bands: Vec<f32>,
 
@@ -1486,18 +1486,22 @@ impl App {
                 .unwrap_or(0),
             eq_band: 0,
             analyzer: {
-                let mut a = Analyzer::new(2048, 20, 44_100.0);
+                let mut a = Spectrum::new(2048, 20, 44_100.0);
                 a.set_gain_db(cfg.vis.gain_db);
                 a
             },
             tap_buf: vec![0.0; 4096],
-            cava: crate::vis::cava::Cava::with_smoothing(64, 44_100, cfg.vis.smoothing),
-            cava_bars: 64,
-            cava_in: Vec::with_capacity(4096),
+            fluid: {
+                let mut a = Spectrum::with_motion(2048, 64, 44_100.0, Motion::Fluid);
+                a.set_gain_db(cfg.vis.gain_db);
+                a.set_smoothing(cfg.vis.smoothing as f32);
+                a
+            },
+            fluid_bars: 64,
             wave: vec![0.0; 1024],
             glyphs: crate::ui::panels::player::Glyphs::default(),
             vis_mode: VisMode::parse(&cfg.vis.mode).unwrap_or_default(),
-            ballistics: Ballistics::new(),
+            meters: Meters::new(),
             mirror_bands: Vec::new(),
             title_effect: None,
             effect_title: String::new(),
@@ -2160,13 +2164,13 @@ impl App {
 
             if self.vis_mode != VisMode::Off {
                 if self.player.tap.read(&mut self.tap_buf) {
-                    if self.vis_mode.uses_cava() {
-                        self.feed_cava(dt);
-                        self.ballistics.update(self.cava.bands(), dt);
-                        self.player.publish_bands(self.cava.bands());
+                    if self.vis_mode.uses_fluid() {
+                        self.feed_fluid(dt);
+                        self.meters.update(self.fluid.bands(), dt);
+                        self.player.publish_bands(self.fluid.bands());
                     } else {
                         self.analyzer.analyze(&self.tap_buf, dt);
-                        self.ballistics.update(self.analyzer.bands(), dt);
+                        self.meters.update(self.analyzer.bands(), dt);
                         // Publish for any instance mirroring this one.
                         self.player.publish_bands(self.analyzer.bands());
                     }
@@ -2183,10 +2187,10 @@ impl App {
                     // been sending it all along; this is where it is used.
                     //
                     // The count is the leader's, taken from the leader's width.
-                    // `Ballistics::update` resizes when it changes and the
-                    // panel resamples to its own bar count, so two windows of
+                    // `Meters::update` resizes when it changes and the panel
+                    // resamples to its own bar count, so two windows of
                     // different widths both draw a full spectrum.
-                    self.ballistics.update(&self.mirror_bands.clone(), dt);
+                    self.meters.update(&self.mirror_bands.clone(), dt);
                 }
             }
             self.advance_seek_phase(dt);
@@ -2476,26 +2480,19 @@ impl App {
         }
     }
 
-    /// Advance cava by one frame.
+    /// Advance the fluid analysis by one frame.
     ///
-    /// cava keeps its own history and expects only the audio that is actually
-    /// new, so the count is taken from elapsed time rather than from the tap's
-    /// size. Handing it a full tap read every frame would shift the same
-    /// samples in repeatedly and smear the spectrum, because at 30 frames a
-    /// second a 4096-sample read overlaps itself about three times over.
-    fn feed_cava(&mut self, dt: f32) {
+    /// One bar per column, so the band count follows the panel width and is
+    /// re-planned whenever it changes. The whole tap window is transformed
+    /// every frame: the smoothing lives in the envelope followers, which are
+    /// defined against elapsed time, so overlapping windows cost nothing and
+    /// a short frame simply moves the bars less far.
+    fn feed_fluid(&mut self, dt: f32) {
         use std::sync::atomic::Ordering::Relaxed;
-        let rate = self.player.state.sample_rate.load(Relaxed).max(8_000) as u32;
-        self.cava.reconfigure(self.cava_bars.max(1), rate);
-
-        let want = ((rate as f32 * dt) as usize).clamp(1, self.tap_buf.len());
-        self.cava_in.clear();
-        self.cava_in.extend(
-            self.tap_buf[self.tap_buf.len() - want..]
-                .iter()
-                .map(|s| *s as f64),
-        );
-        self.cava.execute(&self.cava_in);
+        let rate = self.player.state.sample_rate.load(Relaxed).max(8_000) as f32;
+        self.fluid.set_bands(self.fluid_bars.max(1), rate);
+        self.fluid.set_rate(rate);
+        self.fluid.analyze(&self.tap_buf, dt);
     }
 
     /// Notice a track change and kick off the title transition.
@@ -3719,10 +3716,10 @@ impl App {
             return;
         }
 
-        // cava draws one bar per column, so the analysis has to know how wide
-        // the panel is. Taking it here means a resize costs one frame of a
-        // stale count rather than a second layout pass.
-        if self.vis_mode.uses_cava() {
+        // The fluid mode draws one bar per column, so the analysis has to
+        // know how wide the panel is. Taking it here means a resize costs one
+        // frame of a stale count rather than a second layout pass.
+        if self.vis_mode.uses_fluid() {
             let repeat = self.player.queue.lock().unwrap().repeat();
             if let Some(g) = player::geometry(
                 r.player,
@@ -3731,7 +3728,8 @@ impl App {
                 repeat,
                 self.glyphs,
             ) {
-                self.cava_bars = crate::ui::panels::visualizer::cava_bar_count(g.visualizer.width);
+                self.fluid_bars =
+                    crate::ui::panels::visualizer::fluid_bar_count(g.visualizer.width);
             }
         }
 
@@ -3976,16 +3974,8 @@ impl App {
             seek_style: self.seek_style,
             // Ballistic positions rather than the raw analyzer output: the caps
             // and the bar bodies have their own physics.
-            bands: if showing {
-                self.ballistics.bars()
-            } else {
-                &empty
-            },
-            peaks: if showing {
-                self.ballistics.peaks()
-            } else {
-                &empty
-            },
+            bands: if showing { self.meters.bars() } else { &empty },
+            peaks: if showing { self.meters.peaks() } else { &empty },
             wave: if showing && self.vis_mode.needs_waveform() {
                 &self.wave
             } else {

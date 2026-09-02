@@ -85,15 +85,20 @@ pub struct Frame<'a> {
     pub wave: &'a [f32],
 }
 
-/// Fractional block characters, eighth-height steps.
+/// A cell filled from the bottom in eighths: space, then U+2581 through
+/// U+2588.
 ///
-/// Ported from cliamp (MIT, Copyright (c) Bjarne Øverli), along with the
-/// `frac_block` shading it feeds. Deciding each cell from the band level
-/// against that row's own span is what makes the bars move smoothly instead of
-/// jumping a whole character at a time.
+/// Unicode's block elements, in the order Unicode defines them, which is what
+/// gives a bar eight times the vertical resolution of the character grid it is
+/// drawn on. Deciding each cell from the level against that row's own span is
+/// what makes a bar move smoothly rather than a whole character at a time.
 const BAR_BLOCKS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
 /// The character for one cell of a bar, given the level and the row's span.
+///
+/// Three cases: the level is past the top of this row, so the cell is full;
+/// it is somewhere inside, so the cell is the eighth nearest below it; or it
+/// has not reached this row, so the cell is blank.
 fn frac_block(level: f32, row_bottom: f32, row_top: f32) -> char {
     if level >= row_top {
         return '█';
@@ -141,7 +146,7 @@ pub fn render(
         VisMode::Dots => render_columns(area, buf, theme, frame, Fill::Braille, false, bars, None),
         VisMode::Wave => render_wave(area, buf, theme, frame),
         VisMode::Scope => render_scope(area, buf, theme, frame),
-        VisMode::Cava => render_cava(area, buf, theme, frame, bars),
+        VisMode::Fluid => render_fluid(area, buf, theme, frame, bars),
         VisMode::Off => {}
     }
 }
@@ -212,7 +217,7 @@ fn render_columns(
         }
         let level = sample(frame.bands, b, bars).clamp(0.0, 1.0);
         let peak = sample(frame.peaks, b, bars).clamp(0.0, 1.0);
-        let (cap_row, cap_glyph) = crate::vis::ballistics::cap_position(peak, height);
+        let (cap_row, cap_glyph) = crate::vis::meter::cap_position(peak, height);
         let cap_visible = caps && peak > level + 0.01_f32.max(0.5 / dot_rows.max(1) as f32);
 
         for row in 0..height {
@@ -432,7 +437,7 @@ fn render_leds(area: Rect, buf: &mut Buffer, theme: &Theme, frame: &Frame, layou
 /// A handful of flat bands rather than a continuous blend. Over the three rows
 /// the main window gives the analyzer a smooth gradient is barely a gradient
 /// at all, whereas banding gives the eye a fixed line to read a level against
-/// -- which is what the Winamp analyzer and cava's own gradient both rely on.
+/// -- which is what the Winamp analyzer's own gradient relies on.
 const COLOUR_BANDS: usize = 4;
 
 /// How much of the theme's ramp the bars mode uses, as a fraction of it.
@@ -514,22 +519,22 @@ fn banded_colour(theme: &Theme, row_bottom: f32, bands: usize) -> Color {
     rgb(theme.vis_ramp[(band * last / (bands - 1).max(1)).min(last)])
 }
 
-/// Bars the cava mode draws in a panel this wide.
+/// Bars the fluid mode draws in a panel this wide.
 ///
 /// Shared with the analysis so it produces exactly the bars the renderer is
 /// going to draw rather than a count that has to be resampled.
-pub fn cava_bar_count(width: u16) -> usize {
+pub fn fluid_bar_count(width: u16) -> usize {
     BarLayout::default().count(width)
 }
 
-/// cava's look: narrow bars, eighth-block resolution.
+/// The fluid look: narrow bars, eighth-block resolution.
 ///
 /// Deliberately not `render_columns`. That draws two-cell bars and decides
 /// each cell from the band level, which is the Winamp analyzer's chunky
 /// ladder. This is as many bars as the panel can hold at one cell apiece, so
 /// the spectrum reads as a curve. The eighth blocks give eight steps per row,
 /// so the three-row panel carries twenty-four levels rather than three.
-fn render_cava(area: Rect, buf: &mut Buffer, theme: &Theme, frame: &Frame, layout: BarLayout) {
+fn render_fluid(area: Rect, buf: &mut Buffer, theme: &Theme, frame: &Frame, layout: BarLayout) {
     if frame.bands.is_empty() || area.height == 0 {
         return;
     }
@@ -831,7 +836,7 @@ mod render_tests {
         let rows = draw(VisMode::Peaks, 48, 6);
         let joined = rows.join("");
         assert!(
-            crate::vis::ballistics::CAP_GLYPHS
+            crate::vis::meter::CAP_GLYPHS
                 .iter()
                 .any(|g| joined.contains(*g)),
             "no cap glyph drawn:\n{}",
@@ -840,7 +845,7 @@ mod render_tests {
     }
 
     /// Render one flat level across the panel and hand back column 0's cells.
-    fn cava_column(level: f32, height: u16) -> Vec<(String, Color)> {
+    fn fluid_column(level: f32, height: u16) -> Vec<(String, Color)> {
         let theme = builtin::load("cosmic").unwrap();
         let area = Rect::new(0, 0, 12, height);
         let mut buf = Buffer::empty(area);
@@ -850,7 +855,7 @@ mod render_tests {
             area,
             &mut buf,
             &theme,
-            VisMode::Cava,
+            VisMode::Fluid,
             &Frame {
                 bands: &bands,
                 peaks: &bands,
@@ -867,10 +872,10 @@ mod render_tests {
     }
 
     #[test]
-    fn cava_resolves_below_a_whole_row() {
+    fn fluid_resolves_below_a_whole_row() {
         // The eighth blocks: a four-row panel carries 32 levels, so a level
         // between rows draws a partial block rather than rounding to a row.
-        let cells = cava_column(0.55, 4);
+        let cells = fluid_column(0.55, 4);
         assert!(
             cells
                 .iter()
@@ -883,12 +888,12 @@ mod render_tests {
     #[test]
     fn a_quiet_band_still_draws() {
         // Too small to fill a row must not mean invisible.
-        assert!(cava_column(0.05, 3).iter().any(|(ch, _)| ch != " "));
+        assert!(fluid_column(0.05, 3).iter().any(|(ch, _)| ch != " "));
     }
 
     #[test]
-    fn cava_colours_in_bands_rather_than_a_gradient() {
-        let mut colours: Vec<Color> = cava_column(1.0, 16).iter().map(|(_, c)| *c).collect();
+    fn fluid_colours_in_bands_rather_than_a_gradient() {
+        let mut colours: Vec<Color> = fluid_column(1.0, 16).iter().map(|(_, c)| *c).collect();
         colours.dedup();
         assert_eq!(
             colours.len(),
@@ -980,7 +985,7 @@ mod render_tests {
         // sub-cell separator disappeared exactly along the top edge -- the
         // part of the spectrum you look at.
         let layout = BarLayout::default();
-        for mode in [VisMode::Bars, VisMode::Peaks, VisMode::Cava, VisMode::Leds] {
+        for mode in [VisMode::Bars, VisMode::Peaks, VisMode::Fluid, VisMode::Leds] {
             let theme = builtin::load("cosmic").unwrap();
             let area = Rect::new(0, 0, 40, 5);
             let mut buf = Buffer::empty(area);

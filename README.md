@@ -794,11 +794,9 @@ them, and `STARAMP_LOG` takes a full tracing filter if you want to narrow it
 
 ## Credits
 
-The visualizer engine and several UI conventions are ported from
-[cliamp](https://github.com/bjarneo/cliamp) by Bjarne Øverli (MIT). The `cava`
-visualization is a port of the analysis core from
-[cava](https://github.com/karlstav/cava) by Karl Stavestrand (MIT). The
-terminal text effects follow the designs of
+The visualizer is staramp's own: bands on the ERB scale of Glasberg and Moore
+(1990), weighted with the A curve of IEC 61672-1, and peak indicators on the
+meter ballistics of IEC 60268-10. The terminal text effects follow the designs of
 [TerminalTextEffects](https://github.com/ChrisBuilds/terminaltexteffects) and
 its Rust port [ttfx](https://github.com/omacom/ttfx), reimplemented here rather
 than depended on. Colour schemes come from

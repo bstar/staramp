@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum VisMode {
-    /// cava's analysis: narrow bars, eighth-block resolution, and the fluid
-    /// rise-and-fall its smoothing is known for. The only mode that scales
-    /// itself to the material, so it needs no gain set.
-    Cava,
+    /// Narrow bars, one per column, at eighth-block resolution, with slower
+    /// time constants and more neighbour spread than the others: the bars
+    /// move as one surface rather than as a row of separate meters.
+    Fluid,
     /// Winamp's LED analyzer: two LED rows per terminal row, coloured by row
     /// rather than by level, over a dot grid.
     Leds,
@@ -29,7 +29,7 @@ pub enum VisMode {
 impl VisMode {
     pub fn name(self) -> &'static str {
         match self {
-            VisMode::Cava => "cava",
+            VisMode::Fluid => "fluid",
             VisMode::Leds => "leds",
             VisMode::Bars => "bars",
             VisMode::Peaks => "peaks",
@@ -42,7 +42,9 @@ impl VisMode {
 
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.to_ascii_lowercase().as_str() {
-            "cava" => VisMode::Cava,
+            "fluid" => VisMode::Fluid,
+            // What this mode used to be called, so an existing config loads.
+            "cava" => VisMode::Fluid,
             "leds" | "led" | "classic" | "viscolor" => VisMode::Leds,
             "bars" | "bar" => VisMode::Bars,
             "peaks" | "peak" => VisMode::Peaks,
@@ -57,7 +59,7 @@ impl VisMode {
     /// Cycle order, `off` last so `w` reaches every mode before disabling.
     pub fn all() -> &'static [VisMode] {
         &[
-            VisMode::Cava,
+            VisMode::Fluid,
             VisMode::Leds,
             VisMode::Bars,
             VisMode::Peaks,
@@ -79,12 +81,14 @@ impl VisMode {
         matches!(self, VisMode::Wave | VisMode::Scope)
     }
 
-    /// Does this mode read cava's analysis rather than the shared analyzer?
+    /// Does this mode read the slow-smoothed analysis rather than the shared
+    /// one? Only the fluid mode does; it also sets its own band count from
+    /// the panel width.
     ///
     /// The two pipelines differ all the way down -- window sizes, band
     /// distribution, smoothing -- so only one of them runs per frame.
-    pub fn uses_cava(self) -> bool {
-        matches!(self, VisMode::Cava)
+    pub fn uses_fluid(self) -> bool {
+        matches!(self, VisMode::Fluid)
     }
 
     pub fn prev(self) -> Self {
@@ -135,16 +139,16 @@ mod tests {
         let names: Vec<&str> = VisMode::all().iter().map(|m| m.name()).collect();
         assert_eq!(
             names,
-            ["cava", "leds", "bars", "peaks", "dots", "wave", "scope", "off"]
+            ["fluid", "leds", "bars", "peaks", "dots", "wave", "scope", "off"]
         );
     }
 
     #[test]
-    fn cava_has_its_own_analysis_and_the_others_share_one() {
-        assert!(VisMode::Cava.uses_cava());
-        for m in VisMode::all().iter().filter(|m| **m != VisMode::Cava) {
+    fn the_fluid_mode_has_its_own_analysis_and_the_others_share_one() {
+        assert!(VisMode::Fluid.uses_fluid());
+        for m in VisMode::all().iter().filter(|m| **m != VisMode::Fluid) {
             assert!(
-                !m.uses_cava(),
+                !m.uses_fluid(),
                 "{} should use the shared analyzer",
                 m.name()
             );
@@ -153,7 +157,7 @@ mod tests {
 
     #[test]
     fn cycling_visits_every_mode_and_returns() {
-        let mut m = VisMode::Cava;
+        let mut m = VisMode::Fluid;
         let mut seen = vec![m];
         for _ in 0..VisMode::all().len() - 1 {
             m = m.next();
@@ -162,7 +166,7 @@ mod tests {
         seen.sort_by_key(|m| m.name());
         seen.dedup();
         assert_eq!(seen.len(), VisMode::all().len());
-        assert_eq!(m.next(), VisMode::Cava, "wraps back to the start");
+        assert_eq!(m.next(), VisMode::Fluid, "wraps back to the start");
     }
 
     #[test]

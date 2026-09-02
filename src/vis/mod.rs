@@ -1,4 +1,3 @@
-pub mod analysis;
-pub mod ballistics;
-pub mod cava;
+pub mod meter;
 pub mod mode;
+pub mod spectrum;

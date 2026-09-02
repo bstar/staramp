@@ -18,7 +18,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use super::decode::Decoder;
 use super::dsp::eq::{EqHandle, EqSettings, EqState};
 use super::dsp::gain::{ReplayGain, RgMode};
-use super::output::{Output, RateMode};
+use super::output::Output;
 use super::ring;
 use super::source;
 use super::tap::Tap;
@@ -852,14 +852,6 @@ pub fn needs_rebuild(
     next: &super::decode::StreamSpec,
 ) -> bool {
     current_rate != next.sample_rate || current_channels != next.channels
-}
-
-/// Convenience for the RateMode the UI displays.
-pub fn rate_mode_label(m: RateMode) -> &'static str {
-    match m {
-        RateMode::Native => "bit-perfect",
-        RateMode::Resampled { .. } => "resampled",
-    }
 }
 
 #[cfg(test)]

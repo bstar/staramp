@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, StreamConfig, SupportedBufferSize};
+use cpal::{SampleRate, StreamConfig};
 use rtrb::Consumer;
 
 use super::tap::Tap;
@@ -336,12 +336,4 @@ fn choose_format(device: &cpal::Device, wanted: u32, wanted_channels: u16) -> Re
     }
 
     Ok((supported[0].max_sample_rate().0, channels))
-}
-
-/// Describe the device's buffer-size range, for diagnostics.
-pub fn describe_buffer_size(b: &SupportedBufferSize) -> String {
-    match b {
-        SupportedBufferSize::Range { min, max } => format!("{min}..{max}"),
-        SupportedBufferSize::Unknown => "unknown".into(),
-    }
 }

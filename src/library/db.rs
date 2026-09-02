@@ -330,12 +330,6 @@ impl Db {
             .conn
             .query_row("SELECT COUNT(*) FROM track", [], |r| r.get(0))?)
     }
-
-    pub fn file_count(&self) -> Result<i64> {
-        Ok(self
-            .conn
-            .query_row("SELECT COUNT(*) FROM file", [], |r| r.get(0))?)
-    }
 }
 
 pub fn now_secs() -> i64 {

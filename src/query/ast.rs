@@ -169,21 +169,6 @@ impl Op {
             Op::NotContains => "!~",
         }
     }
-
-    /// The operator meaning the opposite, where one exists. Used to push a
-    /// `not` down into a predicate so the rule builder can still show it.
-    pub fn negated(self) -> Option<Op> {
-        Some(match self {
-            Op::Eq => Op::Ne,
-            Op::Ne => Op::Eq,
-            Op::Gt => Op::Le,
-            Op::Le => Op::Gt,
-            Op::Lt => Op::Ge,
-            Op::Ge => Op::Lt,
-            Op::Contains => Op::NotContains,
-            Op::NotContains => Op::Contains,
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

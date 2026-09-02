@@ -4,7 +4,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget};
+use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
@@ -704,9 +704,6 @@ impl Default for SeekStyle {
     }
 }
 
-/// Seconds for the highlight to travel the bar once.
-const SHEEN_PERIOD: f32 = 3.5;
-
 /// How much of the bar the highlight covers.
 const SHEEN_WIDTH: f32 = 0.26;
 
@@ -1024,10 +1021,6 @@ pub fn truncate(s: &str, width: usize) -> String {
     }
     out.push('…');
     out
-}
-
-pub fn paragraph_placeholder<'a>(text: &'a str, t: &Theme) -> Paragraph<'a> {
-    Paragraph::new(text).style(Style::default().fg(rgb(t.empty_fg)))
 }
 
 #[cfg(test)]

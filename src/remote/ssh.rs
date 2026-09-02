@@ -53,13 +53,6 @@ const ALIVE_COUNT: u32 = 3;
 const BACKOFF_START_MS: u64 = 250;
 const BACKOFF_MAX_MS: u64 = 30_000;
 
-/// How long a connection must last before it counts as healthy.
-///
-/// Resetting the backoff on connect rather than on *staying* connected means a
-/// link that flaps -- authenticating and dropping every second -- resets its
-/// curve every cycle and hammers the far end for ever.
-const HEALTHY_AFTER: Duration = Duration::from_secs(60);
-
 /// Whether a failure is worth retrying.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Failure {
@@ -260,10 +253,6 @@ pub const LINK_UP: u64 = 2;
 pub const LINK_FATAL: u64 = 3;
 
 impl LinkState {
-    pub fn is_up(&self) -> bool {
-        self.state.load(Ordering::Relaxed) == LINK_UP
-    }
-
     pub fn epoch(&self) -> u64 {
         self.epoch.load(Ordering::Acquire)
     }
@@ -453,11 +442,6 @@ fn roll() -> u64 {
         .unwrap_or(0);
     n.wrapping_mul(6364136223846793005)
         .wrapping_add(1442695040888963407)
-}
-
-/// True once a connection has been up long enough to trust.
-pub fn healthy_since(up: Instant) -> bool {
-    up.elapsed() >= HEALTHY_AFTER
 }
 
 #[cfg(test)]

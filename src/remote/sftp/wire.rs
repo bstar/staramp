@@ -160,11 +160,6 @@ impl<'a> Cursor<'a> {
         Some(String::from_utf8_lossy(self.bytes()?).into_owned())
     }
 
-    /// Skip an ATTRS structure without interpreting it.
-    pub fn skip_attrs(&mut self) -> Option<()> {
-        self.attrs().map(|_| ())
-    }
-
     /// An ATTRS structure. Only `size` and `mtime` are ever load-bearing.
     pub fn attrs(&mut self) -> Option<Attrs> {
         let flags = self.u32()?;

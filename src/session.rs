@@ -5,7 +5,7 @@
 //! done automatically: silently resuming into the middle of a track is
 //! startling, and there is no way to say no to it after the fact.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -169,14 +169,6 @@ pub fn resume_position(saved: f64) -> f64 {
 
 pub fn exists() -> bool {
     Session::path().map(|p| p.is_file()).unwrap_or(false)
-}
-
-pub fn path_matches(session: &Session, playlist: Option<&Path>) -> bool {
-    match (&session.playlist, playlist) {
-        (Some(a), Some(b)) => a == b,
-        (None, None) => true,
-        _ => false,
-    }
 }
 
 #[cfg(test)]

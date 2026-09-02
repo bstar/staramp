@@ -5,14 +5,6 @@
 //! control, so the change lands on an exact sample. Master volume is applied in
 //! the **callback**, where a slider must be heard immediately.
 
-/// Where a track's ReplayGain came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RgSource {
-    None = 0,
-    Tags = 1,
-    Scanned = 2,
-}
-
 /// Which gain to prefer when a track has both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RgMode {

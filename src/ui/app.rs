@@ -634,6 +634,37 @@ enum Focus {
     Playlist,
 }
 
+/// The equalizer's own state.
+///
+/// Its own struct because it is self-contained: five values that only the
+/// equalizer panel and the gain publisher ever read, and nothing else in the
+/// app needs to know they exist.
+struct EqState {
+    gains: [f32; 10],
+    preamp: f32,
+    enabled: bool,
+    /// Index into `eq::PRESETS`, not a name -- the panel cycles through them
+    /// by position and the name is only wanted when the setting is written.
+    preset: usize,
+    /// Which band the keyboard is on.
+    band: usize,
+}
+
+impl EqState {
+    fn from_config(cfg: &crate::config::Config) -> Self {
+        Self {
+            gains: cfg.eq.band_gains(),
+            preamp: cfg.eq.preamp,
+            enabled: cfg.eq.enabled,
+            preset: eq::PRESETS
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(&cfg.eq.preset))
+                .unwrap_or(0),
+            band: 0,
+        }
+    }
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -809,11 +840,7 @@ pub struct App {
     /// The settings as the file last had them, to diff against.
     saved: Remembered,
 
-    eq_gains: [f32; 10],
-    eq_preamp: f32,
-    eq_enabled: bool,
-    eq_preset: usize,
-    eq_band: usize,
+    eq: EqState,
 
     analyzer: Spectrum,
     tap_buf: Vec<f32>,
@@ -1477,14 +1504,7 @@ impl App {
             mirror_view: 0,
             group_desc: cfg.playlist.group_desc,
             mirror_group: false,
-            eq_gains: cfg.eq.band_gains(),
-            eq_preamp: cfg.eq.preamp,
-            eq_enabled: cfg.eq.enabled,
-            eq_preset: eq::PRESETS
-                .iter()
-                .position(|p| p.name.eq_ignore_ascii_case(&cfg.eq.preset))
-                .unwrap_or(0),
-            eq_band: 0,
+            eq: EqState::from_config(cfg),
             analyzer: {
                 let mut a = Spectrum::new(2048, 20, 44_100.0);
                 a.set_gain_db(cfg.vis.gain_db);
@@ -2306,10 +2326,10 @@ impl App {
             group_desc: self.group_desc,
             shuffle,
             repeat,
-            eq_enabled: self.eq_enabled,
-            eq_preset: eq::PRESETS[self.eq_preset].name.to_string(),
-            eq_preamp: self.eq_preamp,
-            eq_gains: self.eq_gains,
+            eq_enabled: self.eq.enabled,
+            eq_preset: eq::PRESETS[self.eq.preset].name.to_string(),
+            eq_preamp: self.eq.preamp,
+            eq_gains: self.eq.gains,
         }
     }
 
@@ -2838,9 +2858,9 @@ impl App {
                 self.note(format!("visualizer: {}", self.vis_mode.name()));
             }
             ToggleEqEnabled => {
-                self.eq_enabled = !self.eq_enabled;
+                self.eq.enabled = !self.eq.enabled;
                 self.apply_eq();
-                self.note(if self.eq_enabled { "eq on" } else { "eq off" }.into());
+                self.note(if self.eq.enabled { "eq on" } else { "eq off" }.into());
             }
             NextEqPreset => self.step_preset(1),
             PrevEqPreset => self.step_preset(-1),
@@ -2936,11 +2956,11 @@ impl App {
 
     fn step_preset(&mut self, delta: i32) {
         let n = eq::PRESETS.len() as i32;
-        self.eq_preset = (((self.eq_preset as i32 + delta) % n + n) % n) as usize;
-        self.eq_gains = eq::PRESETS[self.eq_preset].gains;
-        self.eq_enabled = true;
+        self.eq.preset = (((self.eq.preset as i32 + delta) % n + n) % n) as usize;
+        self.eq.gains = eq::PRESETS[self.eq.preset].gains;
+        self.eq.enabled = true;
         self.apply_eq();
-        self.note(format!("eq: {}", eq::PRESETS[self.eq_preset].name));
+        self.note(format!("eq: {}", eq::PRESETS[self.eq.preset].name));
     }
 
     fn apply_eq(&self) {
@@ -2951,9 +2971,9 @@ impl App {
             .load(std::sync::atomic::Ordering::Relaxed)
             .max(8_000) as u32;
         self.player.set_eq(EqSettings::build(
-            self.eq_enabled,
-            self.eq_preamp,
-            &self.eq_gains,
+            self.eq.enabled,
+            self.eq.preamp,
+            &self.eq.gains,
             rate,
         ));
     }
@@ -3217,7 +3237,7 @@ impl App {
                 }
                 if let Some(rect) = r.equalizer {
                     if hit(rect, x, y) {
-                        if let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq_preset].name)
+                        if let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name)
                         {
                             if let Some(b) = g.band_at(x) {
                                 let step = if up { 1.0 } else { -1.0 };
@@ -3350,7 +3370,7 @@ impl App {
 
     fn equalizer_click(&mut self, rect: Rect, x: u16, y: u16) {
         self.focus = Focus::Equalizer;
-        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq_preset].name) else {
+        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name) else {
             return;
         };
         if hit(g.toggle, x, y) {
@@ -3364,7 +3384,7 @@ impl App {
         }
         if hit(g.sliders, x, y) {
             if let Some(b) = g.band_at(x) {
-                self.eq_band = b;
+                self.eq.band = b;
                 self.drag = Some(Drag::EqBand(b));
                 self.set_eq_band(rect, b, y);
             }
@@ -3372,19 +3392,19 @@ impl App {
     }
 
     fn set_eq_band(&mut self, rect: Rect, band: usize, y: u16) {
-        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq_preset].name) else {
+        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name) else {
             return;
         };
-        self.eq_gains[band] = g.gain_at(y);
-        self.eq_enabled = true;
+        self.eq.gains[band] = g.gain_at(y);
+        self.eq.enabled = true;
         self.apply_eq();
     }
 
     fn nudge_eq_band(&mut self, band: usize, delta: f32) {
-        let g = (self.eq_gains[band] + delta).clamp(-eq::MAX_GAIN_DB, eq::MAX_GAIN_DB);
-        self.eq_gains[band] = g;
-        self.eq_band = band;
-        self.eq_enabled = true;
+        let g = (self.eq.gains[band] + delta).clamp(-eq::MAX_GAIN_DB, eq::MAX_GAIN_DB);
+        self.eq.gains[band] = g;
+        self.eq.band = band;
+        self.eq.enabled = true;
         self.apply_eq();
         self.note(format!("{} {g:+.0} dB", eq::BAND_LABELS[band]));
     }
@@ -3742,11 +3762,11 @@ impl App {
         if let Some(rect) = r.equalizer {
             EqView {
                 theme: &self.theme,
-                gains: self.eq_gains,
-                preamp: self.eq_preamp,
-                enabled: self.eq_enabled,
-                preset: eq::PRESETS[self.eq_preset].name,
-                focused_band: self.eq_band,
+                gains: self.eq.gains,
+                preamp: self.eq.preamp,
+                enabled: self.eq.enabled,
+                preset: eq::PRESETS[self.eq.preset].name,
+                focused_band: self.eq.band,
                 focused: self.focus == Focus::Equalizer,
             }
             .render(rect, buf);
@@ -4335,11 +4355,11 @@ impl App {
                 "equalizer".into(),
                 vec![
                     (
-                        Row::setting("enabled", on_off(self.eq_enabled)),
+                        Row::setting("enabled", on_off(self.eq.enabled)),
                         Setting::EqEnabled,
                     ),
                     (
-                        Row::setting("preset", eq::PRESETS[self.eq_preset].name),
+                        Row::setting("preset", eq::PRESETS[self.eq.preset].name),
                         Setting::EqPreset,
                     ),
                     (Row::action("reset the bands"), Setting::EqReset),
@@ -4859,9 +4879,9 @@ impl App {
             Setting::EqEnabled => self.handle(Action::ToggleEqEnabled),
             Setting::EqPreset => self.handle(Action::NextEqPreset),
             Setting::EqReset => {
-                self.eq_gains = [0.0; 10];
-                self.eq_preamp = 0.0;
-                self.eq_preset = 0;
+                self.eq.gains = [0.0; 10];
+                self.eq.preamp = 0.0;
+                self.eq.preset = 0;
                 self.apply_eq();
                 self.note("eq: bands reset".into());
             }

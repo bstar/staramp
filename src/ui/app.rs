@@ -786,6 +786,19 @@ impl Visuals {
     }
 }
 
+/// What has changed since `config.toml` was last written, and when that was.
+///
+/// Settings are diffed and written on a timer rather than on every keystroke,
+/// so all three of these are read together or not at all.
+struct Saving {
+    /// Settings changed but not yet written. Keyed on section and name, so a
+    /// slider dragged across the panel writes one line, once.
+    pending: std::collections::BTreeMap<(String, String), Value>,
+    /// The settings as the file last had them, to diff against.
+    saved: Remembered,
+    last_written: Instant,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -887,7 +900,6 @@ pub struct App {
     art_fetch: Arc<std::sync::atomic::AtomicBool>,
     /// Where the current queue came from, so the session can name it.
     source_playlist: Option<PathBuf>,
-    last_saved: Instant,
     /// What a held left button is currently adjusting.
     drag: Option<Drag>,
     /// Where and when the last left click landed, for double-click detection.
@@ -939,14 +951,10 @@ pub struct App {
     folded: std::collections::HashSet<String>,
     /// Bumped whenever `folded` changes, so the rows are rebuilt for it.
     fold_gen: u64,
-    /// Settings changed but not yet written to `config.toml`. Keyed on section
-    /// and name, so a slider dragged across the panel writes one line, once.
-    pending: std::collections::BTreeMap<(String, String), Value>,
-    /// The settings as the file last had them, to diff against.
-    saved: Remembered,
 
     eq: EqState,
     vis: Visuals,
+    saving: Saving,
 
     /// Analyzer output received from the instance being mirrored.
     mirror_bands: Vec<f32>,
@@ -1561,7 +1569,6 @@ impl App {
             mirror_uri: String::new(),
             mirror_revision: u64::MAX,
             source_playlist: None,
-            last_saved: Instant::now(),
             drag: None,
             last_click: None,
             picker_cursor: 0,
@@ -1576,8 +1583,6 @@ impl App {
             rows_from: (0, false, 0, None, 0),
             folded: std::collections::HashSet::new(),
             fold_gen: 0,
-            pending: std::collections::BTreeMap::new(),
-            saved: Remembered::from_config(cfg),
             view,
             share: crate::view::Share::parse(&cfg.session.share),
             view_seen: 0,
@@ -1588,6 +1593,11 @@ impl App {
             mirror_group: false,
             eq: EqState::from_config(cfg),
             vis: Visuals::from_config(cfg),
+            saving: Saving {
+                pending: std::collections::BTreeMap::new(),
+                saved: Remembered::from_config(cfg),
+                last_written: Instant::now(),
+            },
             mirror_bands: Vec::new(),
             fx: Effects::from_config(cfg),
 
@@ -2150,10 +2160,10 @@ impl App {
 
     /// Save periodically, so a crash or a closed terminal loses little.
     fn save_session(&mut self, force: bool) {
-        if !force && self.last_saved.elapsed() < Duration::from_secs(5) {
+        if !force && self.saving.last_written.elapsed() < Duration::from_secs(5) {
             return;
         }
-        self.last_saved = Instant::now();
+        self.saving.last_written = Instant::now();
         self.flush_settings();
         if let Some(s) = self.snapshot() {
             let _ = s.save();
@@ -2348,7 +2358,8 @@ impl App {
     /// the session's own timer and again on the way out, so the file is
     /// written at most once every few seconds however hard a slider is pulled.
     fn remember(&mut self, section: &str, key: &str, value: Value) {
-        self.pending
+        self.saving
+            .pending
             .insert((section.to_string(), key.to_string()), value);
     }
 
@@ -2404,12 +2415,13 @@ impl App {
     /// leaves every other key alone.
     fn collect_settings(&mut self) {
         let now = self.settings_now();
-        let was = self.saved.clone();
+        let was = self.saving.saved.clone();
         if now == was {
             return;
         }
         let mut set = |section: &str, key: &str, v: Value| {
-            self.pending
+            self.saving
+                .pending
                 .insert((section.to_string(), key.to_string()), v);
         };
         use crate::config::edit::ROOT;
@@ -2477,7 +2489,7 @@ impl App {
             let g = now.eq_gains.iter().map(|v| *v as f64).collect();
             set("eq", "gains", Value::Floats(g));
         }
-        self.saved = now;
+        self.saving.saved = now;
     }
 
     /// Write everything held, oldest key first.
@@ -2486,10 +2498,10 @@ impl App {
     /// the session, not a player that stops.
     fn flush_settings(&mut self) {
         self.collect_settings();
-        if self.pending.is_empty() {
+        if self.saving.pending.is_empty() {
             return;
         }
-        let pending = std::mem::take(&mut self.pending);
+        let pending = std::mem::take(&mut self.saving.pending);
         let path = match crate::paths::config_file() {
             Ok(p) => p,
             Err(e) => return self.note(format!("cannot find config.toml: {e}")),

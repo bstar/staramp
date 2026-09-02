@@ -2187,7 +2187,9 @@ impl App {
                         let size = term.size()?;
                         self.handle_mouse(m, Rect::new(0, 0, size.width, size.height));
                     }
-                    Event::Resize(..) => {}
+                    // A font zoom arrives as a resize, and it changes the
+                    // cell size the button images were built for.
+                    Event::Resize(..) => self.graphics.remeasure(),
                     _ => {}
                 }
             }

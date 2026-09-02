@@ -1,6 +1,30 @@
 staramp
 Copyright (c) 2026 bstar
 
+staramp links FFmpeg (https://ffmpeg.org) -- libavformat, libavcodec,
+libavutil and libswresample -- to decode the formats symphonia does not.
+FFmpeg is the FFmpeg project's work, not staramp's.
+
+Most of FFmpeg is licensed under the GNU Lesser General Public License,
+version 2.1 or later; its text is in LICENSES/ffmpeg-LGPL-2.1.txt. Some
+builds are configured with `--enable-gpl` or `--enable-version3`, which put
+the resulting libraries under the GPL or under version 3 of either licence,
+and a binary linked against such a build inherits those terms. FFmpeg's own
+LICENSE.md sets out which components fall where.
+
+The libraries are always linked dynamically, never statically. The `.deb`,
+the Arch package and the Nix package declare a dependency on the system
+FFmpeg and use whatever that system provides. The AppImage and the portable
+tarball carry a copy alongside the binary, because libavcodec's soname
+differs on every distribution -- there the copy is Debian's build, it sits
+beside the executable in `usr/lib`, and it can be replaced with another of
+the same soname without rebuilding staramp.
+
+Source for FFmpeg is available from the project at
+https://ffmpeg.org/download.html, and for the build in a given package from
+whichever distribution supplied it -- Debian's for the AppImage and the
+tarball.
+
 The visualizer is staramp's own. `src/vis/spectrum.rs` spaces its bands on
 the ERB scale of Glasberg and Moore (1990) and weights them with the A curve
 of IEC 61672-1, and `src/vis/meter.rs` follows the peak-programme meter

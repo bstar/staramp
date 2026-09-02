@@ -794,6 +794,12 @@ them, and `STARAMP_LOG` takes a full tracing filter if you want to narrow it
 
 ## Credits
 
+staramp links [FFmpeg](https://ffmpeg.org) for the formats symphonia does not
+decode. FFmpeg is LGPL-2.1-or-later, with some builds configured under the
+GPL or version 3; it is linked dynamically, and the AppImage and tarball
+carry Debian's build beside the binary. See [NOTICE](NOTICE) and
+[LICENSES/ffmpeg-LGPL-2.1.txt](LICENSES/ffmpeg-LGPL-2.1.txt).
+
 The visualizer is staramp's own: bands on the ERB scale of Glasberg and Moore
 (1990), weighted with the A curve of IEC 61672-1, and peak indicators on the
 meter ballistics of IEC 60268-10. The terminal text effects follow the designs of

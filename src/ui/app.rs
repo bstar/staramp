@@ -799,6 +799,38 @@ struct Saving {
     last_written: Instant,
 }
 
+/// What the user is part-way through typing, holding or dragging.
+///
+/// All of it is transient: every field is empty when nothing is being edited,
+/// which is why the whole struct has a `Default` and none of it comes from
+/// the config.
+#[derive(Default)]
+struct Editing {
+    /// What `space` does, once it has been asked.
+    ///
+    /// Remembered per loaded playlist for as long as the browser stays open, so
+    /// filling one up is `space` `space` `space` rather than a modal each time.
+    /// Cleared on the way back to the player, and cleared if the playlist
+    /// underneath changes -- an answer about `kaledon` says nothing about the
+    /// next thing loaded.
+    add_mode: Option<(String, Setting)>,
+    /// What `space` is holding while the modal asks about it.
+    adding: Option<(String, Vec<QueueItem>)>,
+    /// A new playlist's name, while it is being typed.
+    naming: Option<String>,
+    /// The words the playlist is narrowed to. Empty is everything.
+    words: String,
+    /// The filter box, while it is open: what has been typed so far, seeded
+    /// with the filter in force so `/` again shows what is being matched.
+    typing: Option<String>,
+    /// Bumped when the filter changes, so the rows rebuild.
+    gen: u64,
+    /// What a held left button is currently adjusting.
+    drag: Option<Drag>,
+    /// Where and when the last left click landed, for double-click detection.
+    last_click: Option<(u16, u16, Instant)>,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -843,25 +875,6 @@ pub struct App {
     tagged: std::collections::HashSet<usize>,
     /// Copied rows, held as items so they survive loading another playlist.
     clipboard: Vec<QueueItem>,
-    /// What `space` does, once it has been asked.
-    ///
-    /// Remembered per loaded playlist for as long as the browser stays open, so
-    /// filling one up is `space` `space` `space` rather than a modal each time.
-    /// Cleared on the way back to the player, and cleared if the playlist
-    /// underneath changes -- an answer about `kaledon` says nothing about the
-    /// next thing loaded.
-    add_mode: Option<(String, Setting)>,
-    /// What `space` is holding while the modal asks about it.
-    adding: Option<(String, Vec<QueueItem>)>,
-    /// A new playlist's name, while it is being typed.
-    naming: Option<String>,
-    /// The words the playlist is narrowed to. Empty is everything.
-    filter: String,
-    /// The filter box, while it is open: what has been typed so far, seeded
-    /// with the filter in force so `/` again shows what is being matched.
-    filtering: Option<String>,
-    /// Bumped when the filter changes, so the rows rebuild.
-    filter_gen: u64,
     /// The queue has been changed and not written anywhere.
     ///
     /// Adding never touches a file. The playlist on disk changes only when it
@@ -900,10 +913,6 @@ pub struct App {
     art_fetch: Arc<std::sync::atomic::AtomicBool>,
     /// Where the current queue came from, so the session can name it.
     source_playlist: Option<PathBuf>,
-    /// What a held left button is currently adjusting.
-    drag: Option<Drag>,
-    /// Where and when the last left click landed, for double-click detection.
-    last_click: Option<(u16, u16, Instant)>,
     picker_cursor: usize,
     picker_scroll: usize,
     /// Which playlist is loaded, for the playlist pane's title.
@@ -955,6 +964,7 @@ pub struct App {
     eq: EqState,
     vis: Visuals,
     saving: Saving,
+    edit: Editing,
 
     /// Analyzer output received from the instance being mirrored.
     mirror_bands: Vec<f32>,
@@ -1050,7 +1060,7 @@ impl App {
     /// name is being typed every letter is a letter.
     fn name_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
         use crossterm::event::{KeyCode, KeyModifiers};
-        let Some(name) = &mut self.naming else {
+        let Some(name) = &mut self.edit.naming else {
             return false;
         };
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
@@ -1063,10 +1073,10 @@ impl App {
             KeyCode::Backspace => {
                 name.pop();
             }
-            KeyCode::Esc => self.naming = None,
+            KeyCode::Esc => self.edit.naming = None,
             KeyCode::Enter => {
                 let name = name.trim().to_string();
-                self.naming = None;
+                self.edit.naming = None;
                 if name.is_empty() {
                     return true;
                 }
@@ -1084,7 +1094,7 @@ impl App {
                 if path.exists() {
                     // Saving as new must never quietly become an overwrite.
                     self.note(format!("{name} already exists -- pick another name"));
-                    self.naming = Some(name);
+                    self.edit.naming = Some(name);
                     return true;
                 }
                 self.write_playlist(path);
@@ -1101,7 +1111,7 @@ impl App {
     /// while words are being typed every letter is a letter.
     fn filter_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
         use crossterm::event::{KeyCode, KeyModifiers};
-        let Some(text) = &mut self.filtering else {
+        let Some(text) = &mut self.edit.typing else {
             return false;
         };
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
@@ -1111,18 +1121,18 @@ impl App {
             KeyCode::Backspace => {
                 text.pop();
             }
-            KeyCode::Esc => self.filtering = None,
+            KeyCode::Esc => self.edit.typing = None,
             KeyCode::Enter => {
                 let text = text.trim().to_string();
-                self.filtering = None;
-                if text != self.filter {
-                    self.filter = text;
-                    self.filter_gen += 1;
+                self.edit.typing = None;
+                if text != self.edit.words {
+                    self.edit.words = text;
+                    self.edit.gen += 1;
                 }
-                if self.filter.is_empty() {
+                if self.edit.words.is_empty() {
                     self.note("filter cleared".into());
                 } else {
-                    self.note(format!("filter: {}", self.filter));
+                    self.note(format!("filter: {}", self.edit.words));
                 }
             }
             _ => return false,
@@ -1138,7 +1148,7 @@ impl App {
         self.panels.playlist = true;
         self.panels.focus = Focus::Playlist;
         self.settings = None;
-        self.filtering = Some(self.filter.clone());
+        self.edit.typing = Some(self.edit.words.clone());
     }
 
     /// Keys typed into the search line, before any table sees them.
@@ -1510,12 +1520,6 @@ impl App {
             library: None,
             tagged: Default::default(),
             clipboard: Vec::new(),
-            add_mode: None,
-            adding: None,
-            naming: None,
-            filter: String::new(),
-            filtering: None,
-            filter_gen: 0,
             queue_dirty: false,
             browse_model: None,
             player,
@@ -1569,8 +1573,6 @@ impl App {
             mirror_uri: String::new(),
             mirror_revision: u64::MAX,
             source_playlist: None,
-            drag: None,
-            last_click: None,
             picker_cursor: 0,
             picker_scroll: 0,
             loaded_name: DEFAULT_QUEUE_NAME.into(),
@@ -1593,6 +1595,7 @@ impl App {
             mirror_group: false,
             eq: EqState::from_config(cfg),
             vis: Visuals::from_config(cfg),
+            edit: Editing::default(),
             saving: Saving {
                 pending: std::collections::BTreeMap::new(),
                 saved: Remembered::from_config(cfg),
@@ -2305,11 +2308,11 @@ impl App {
                         }
                         // Naming a playlist eats keys ahead of everything, so
                         // `l` in a playlist name does not open the browser.
-                        if self.naming.is_some() && self.name_type(k) {
+                        if self.edit.naming.is_some() && self.name_type(k) {
                             continue;
                         }
                         // So does the filter box, for the same reason.
-                        if self.filtering.is_some() && self.filter_type(k) {
+                        if self.edit.typing.is_some() && self.filter_type(k) {
                             continue;
                         }
                         // The search line is the only other thing that eats raw
@@ -2789,8 +2792,8 @@ impl App {
                     // Leaving for the player forgets what `space` meant, so
                     // coming back asks again rather than acting on an answer
                     // given about a different sitting.
-                    self.add_mode = None;
-                    self.adding = None;
+                    self.edit.add_mode = None;
+                    self.edit.adding = None;
                     return;
                 }
                 Quit => {
@@ -3252,7 +3255,7 @@ impl App {
         }
 
         match m.kind {
-            MouseEventKind::Drag(MouseButton::Left) => match self.drag {
+            MouseEventKind::Drag(MouseButton::Left) => match self.edit.drag {
                 Some(Drag::Seek) => self.seek_to_x(&r, x),
                 Some(Drag::Volume) => self.volume_at_x(&r, x),
                 Some(Drag::EqBand(b)) => {
@@ -3262,7 +3265,7 @@ impl App {
                 }
                 None => {}
             },
-            MouseEventKind::Up(MouseButton::Left) => self.drag = None,
+            MouseEventKind::Up(MouseButton::Left) => self.edit.drag = None,
 
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let up = m.kind == MouseEventKind::ScrollUp;
@@ -3446,7 +3449,7 @@ impl App {
         if hit(g.sliders, x, y) {
             if let Some(b) = g.band_at(x) {
                 self.eq.band = b;
-                self.drag = Some(Drag::EqBand(b));
+                self.edit.drag = Some(Drag::EqBand(b));
                 self.set_eq_band(rect, b, y);
             }
         }
@@ -3513,11 +3516,11 @@ impl App {
             return self.handle(Action::CycleRepeat);
         }
         if c.volume.is_some_and(|v| hit(v, x, y)) {
-            self.drag = Some(Drag::Volume);
+            self.edit.drag = Some(Drag::Volume);
             return self.volume_at_x(r, x);
         }
         if g.seek.is_some_and(|s| hit(s, x, y)) {
-            self.drag = Some(Drag::Seek);
+            self.edit.drag = Some(Drag::Seek);
             return self.seek_to_x(r, x);
         }
         if hit(g.visualizer, x, y) {
@@ -3620,12 +3623,12 @@ impl App {
     /// Record a click and say whether it completes a double click.
     fn register_click(&mut self, x: u16, y: u16) -> bool {
         let now = Instant::now();
-        let double = self.last_click.is_some_and(|(px, py, at)| {
+        let double = self.edit.last_click.is_some_and(|(px, py, at)| {
             px == x && py == y && now.duration_since(at) < DOUBLE_CLICK
         });
         // Clear on a double so a third click starts a fresh pair rather than
         // firing again on every click of a rapid run.
-        self.last_click = (!double).then_some((x, y, now));
+        self.edit.last_click = (!double).then_some((x, y, now));
         double
     }
 
@@ -3884,7 +3887,7 @@ impl App {
 
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        if let Some(text) = &self.filtering {
+        if let Some(text) = &self.edit.typing {
             let rows = [settings::Row::setting(
                 "matching",
                 format!("{text}\u{2582}"),
@@ -3900,7 +3903,7 @@ impl App {
             .render(area, buf);
             return;
         }
-        if let Some(name) = &self.naming {
+        if let Some(name) = &self.edit.naming {
             let rows = [settings::Row::setting("name", format!("{name}\u{2582}"))];
             SettingsView {
                 theme: &self.look.theme,
@@ -4130,13 +4133,7 @@ impl App {
         drop(q);
         let grouped = self.session_grouped();
         let q = self.player.queue.lock().unwrap();
-        let from = (
-            q.revision(),
-            grouped,
-            self.fold_gen,
-            playing,
-            self.filter_gen,
-        );
+        let from = (q.revision(), grouped, self.fold_gen, playing, self.edit.gen);
         drop(q);
 
         // Rebuilt only when the queue, the grouping or a fold actually moved:
@@ -4163,8 +4160,8 @@ impl App {
                 true => playlist::Rows::grouped(&self.items, &self.folded, playing),
                 false => playlist::Rows::flat(self.items.len()),
             };
-            if !self.filter.trim().is_empty() {
-                let mask = crate::playlist::filter::mask(&self.items, &self.filter);
+            if !self.edit.words.trim().is_empty() {
+                let mask = crate::playlist::filter::mask(&self.items, &self.edit.words);
                 self.rows = std::mem::take(&mut self.rows).matching(&mask);
             }
             self.rows_from = from;
@@ -4197,8 +4194,8 @@ impl App {
         // The filter in force is part of what the panel is showing, so it
         // goes in the title beside the name rather than only in a note that
         // scrolls away.
-        if !self.filter.trim().is_empty() {
-            name = format!("{name} \u{b7} /{}", self.filter.trim());
+        if !self.edit.words.trim().is_empty() {
+            name = format!("{name} \u{b7} /{}", self.edit.words.trim());
         }
         // The tag set names tracks; the panel draws view positions. Translated
         // here rather than stored twice, so a reorder cannot leave the two
@@ -4564,7 +4561,7 @@ impl App {
     /// would make filling a playlist unbearable.
     fn adding_for(&self) -> (String, Vec<(settings::Row, Setting)>) {
         use settings::Row;
-        let (what, items) = match &self.adding {
+        let (what, items) = match &self.edit.adding {
             Some((w, i)) => (w.as_str(), i.len()),
             None => ("", 0),
         };
@@ -4592,6 +4589,7 @@ impl App {
         // The remembered answer is about *this* playlist. If a different one
         // has been loaded since, ask again.
         let remembered = self
+            .edit
             .add_mode
             .as_ref()
             .filter(|(name, _)| name == &self.loaded_name)
@@ -4599,7 +4597,7 @@ impl App {
         match remembered {
             Some(mode) => self.apply_add(mode, items, &what),
             None => {
-                self.adding = Some((what, items));
+                self.edit.adding = Some((what, items));
                 self.open_overlay(Focus::Playlist, Overlay::Adding);
             }
         }
@@ -4871,14 +4869,14 @@ impl App {
             // straight in. Cancelling remembers nothing.
             Setting::AddAppend | Setting::AddReplace => {
                 self.settings = None;
-                let Some((what, items)) = self.adding.take() else {
+                let Some((what, items)) = self.edit.adding.take() else {
                     return;
                 };
-                self.add_mode = Some((self.loaded_name.clone(), item));
+                self.edit.add_mode = Some((self.loaded_name.clone(), item));
                 return self.apply_add(item, items, &what);
             }
             Setting::AddCancel => {
-                self.adding = None;
+                self.edit.adding = None;
                 self.settings = None;
                 return;
             }
@@ -4895,7 +4893,7 @@ impl App {
             }
             Setting::SaveAsNew => {
                 self.settings = None;
-                self.naming = Some(String::new());
+                self.edit.naming = Some(String::new());
                 return;
             }
             Setting::SaveCancel => {

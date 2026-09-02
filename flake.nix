@@ -44,8 +44,8 @@
               the player matches the rest of the desktop automatically
             '';
             glyphs = lib.mkOption {
-              type = lib.types.enum [ "unicode" "nerd" "ascii" ];
-              default = "unicode";
+              type = lib.types.enum [ "block" "unicode" "nerd" "ascii" "pixel" "image" ];
+              default = "block";
               description = ''
                 Transport button faces. `nerd` uses the private-use icons a
                 patched font provides; setting it also installs `nerdFont` so

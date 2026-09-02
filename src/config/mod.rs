@@ -142,8 +142,15 @@ pub struct Ui {
     /// the top and bottom edges do not have the same problem.
     pub padding_x: u16,
     pub padding_y: u16,
-    /// Transport button faces: `unicode`, `block`, `nerd`, or `ascii`.
+    /// Transport button faces: `block`, `unicode`, `nerd`, `ascii`, `pixel`,
+    /// or `image`.
     ///
+    /// `block` is the default because it is drawn by the terminal's own font
+    /// at text size on every machine, so two installs look alike without
+    /// being configured; the other text sets depend on what font each
+    /// terminal has. `pixel` and `image` draw the shapes themselves, from
+    /// block elements and over the graphics protocol respectively, and so do
+    /// not depend on the font at all.
     /// `nerd` needs a patched font installed *and selected in the terminal* --
     /// a terminal program cannot choose its own typeface, so this only says
     /// which codepoints to emit.
@@ -280,7 +287,7 @@ impl Default for Ui {
         Self {
             padding_x: 1,
             padding_y: 0,
-            glyphs: "unicode".into(),
+            glyphs: "block".into(),
             seek_style: "ansi".into(),
             graphics: "auto".into(),
             // What a first run opens with, and what every run after it opens
@@ -420,9 +427,12 @@ volume = 1.0
 [ui]
 # How album covers are drawn: auto, kitty, blocks, or off.
 graphics = "auto"
-# Transport button faces: unicode, block, nerd, ascii.
-# `nerd` needs a patched font selected in your terminal.
-glyphs = "unicode"
+# Transport button faces: block, unicode, nerd, ascii, pixel, image.
+# `block` is drawn by your terminal's own font at text size, so it looks the
+# same on every machine. `pixel` and `image` draw the shapes themselves and
+# need no font: `pixel` from block elements, `image` over the kitty graphics
+# protocol. `nerd` needs a patched font selected in your terminal. `o` cycles.
+glyphs = "block"
 
 [art]
 # Look covers up on the Cover Art Archive when the disk has none. Off by

@@ -174,6 +174,7 @@ struct Remembered {
     theme: String,
     volume: f32,
     seek_style: String,
+    glyphs: String,
     graphics: String,
     show_album: bool,
     show_equalizer: bool,
@@ -199,6 +200,7 @@ impl Remembered {
             theme: cfg.theme.clone(),
             volume: cfg.volume,
             seek_style: cfg.ui.seek_style.clone(),
+            glyphs: cfg.ui.glyphs.clone(),
             graphics: cfg.ui.graphics.clone(),
             show_album: cfg.ui.show_album,
             show_equalizer: cfg.ui.show_equalizer,
@@ -2223,6 +2225,7 @@ impl App {
             theme: self.theme_ids[self.theme_index].clone(),
             volume: self.player.volume(),
             seek_style: self.seek_style.name().to_string(),
+            glyphs: self.glyphs.name().to_string(),
             graphics: self.graphics.mode().name().to_string(),
             show_album: self.show_album,
             show_equalizer: self.show_eq,
@@ -2282,6 +2285,9 @@ impl App {
         }
         if now.seek_style != was.seek_style {
             set("ui", "seek_style", Value::Str(now.seek_style.clone()));
+        }
+        if now.glyphs != was.glyphs {
+            set("ui", "glyphs", Value::Str(now.glyphs.clone()));
         }
         if now.graphics != was.graphics {
             set("ui", "graphics", Value::Str(now.graphics.clone()));
@@ -2795,6 +2801,21 @@ impl App {
                 self.seek_style = self.seek_style.next();
                 let name = self.seek_style.name();
                 self.note(format!("seek bar: {name}"));
+            }
+            NextGlyphs => {
+                self.glyphs = self.glyphs.next();
+                let name = self.glyphs.name();
+                // An image set on a terminal with no protocol is drawn as
+                // the block set, and the note says so rather than naming a
+                // thing that is not on the screen.
+                let shown = if self.glyphs.kind == player::Kind::Image
+                    && !self.graphics.draws_pixels()
+                {
+                    " (no graphics protocol here: drawn as block)"
+                } else {
+                    ""
+                };
+                self.note(format!("buttons: {name}{shown}"));
             }
             WidenBars | NarrowBars => {
                 let by = if action == WidenBars { 1 } else { -1 };
@@ -3882,6 +3903,40 @@ impl App {
             underruns: dropouts,
         }
         .render(area, buf);
+
+        // The image faces go on last, over the plates the panel drew as text.
+        // Where the protocol has nothing to say -- no picker, no cell size --
+        // those text plates are what stays, which is the fallback by
+        // construction rather than by a second code path.
+        if self.glyphs.kind == player::Kind::Image {
+            let state = st.state();
+            let (position, duration) = (st.position_secs(), st.duration_secs());
+            let t = &self.theme;
+            let (bg, plate, plate_lit, ink, ink_lit) = (
+                t.bg,
+                t.transport_button_bg,
+                t.transport_button_active_bg,
+                t.transport_button_fg,
+                t.transport_button_active_fg,
+            );
+            if let Some(g) = player::geometry(area, position, duration, repeat, self.glyphs) {
+                use crate::ui::panels::faces::Button;
+                let c = &g.controls;
+                let buttons = [
+                    (Button::Prev, c.prev, false),
+                    (Button::Play, c.play, state == PlayState::Playing),
+                    (Button::Pause, c.pause, state == PlayState::Paused),
+                    (Button::Stop, c.stop, state == PlayState::Stopped),
+                    (Button::Next, c.next, false),
+                ];
+                for (which, rect, lit) in buttons {
+                    let (fg, on) = if lit { (ink_lit, plate_lit) } else { (ink, plate) };
+                    if let Some(p) = self.graphics.button(which, rect, fg, on, bg) {
+                        ratatui_image::Image::new(p).render(rect, buf);
+                    }
+                }
+            }
+        }
     }
 
     fn draw_playlist(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {

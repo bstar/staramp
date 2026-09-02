@@ -45,6 +45,7 @@ pub enum Action {
     NextTheme,
     ToggleVisualizer,
     NextSeekStyle,
+    NextGlyphs,
     ToggleAnimations,
     WidenBars,
     NarrowBars,
@@ -231,6 +232,12 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::CycleRepeat,
         keys: "r",
         label: "repeat off/all/one",
+        group: "transport",
+    },
+    Binding {
+        action: Action::NextGlyphs,
+        keys: "o",
+        label: "button style",
         group: "transport",
     },
     Binding {
@@ -573,6 +580,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('w'), false, _, false) => Action::ToggleVisualizer,
         (Char('W'), ..) => Action::PrevVisualizer,
         (Char('d'), false, _, false) => Action::NextSeekStyle,
+        (Char('o'), false, _, false) => Action::NextGlyphs,
         (Char('a'), false, _, false) => Action::ToggleAnimations,
         (Char('t'), false, _, false) => Action::TagRow,
         (Char('T'), ..) => Action::ClearTags,
@@ -615,6 +623,7 @@ mod tests {
         use super::*;
         let plain = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
         assert_eq!(resolve(plain('d')), Some(Action::NextSeekStyle));
+        assert_eq!(resolve(plain('o')), Some(Action::NextGlyphs));
         assert_eq!(resolve(plain('a')), Some(Action::ToggleAnimations));
         assert_eq!(resolve(plain('+')), Some(Action::WidenBars));
         assert_eq!(resolve(plain('=')), Some(Action::WidenBars));

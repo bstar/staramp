@@ -10,6 +10,7 @@
 //! keystrokes. So the probe happens before the alternate screen, at startup,
 //! and its answer is carried in.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use ratatui::layout::{Rect, Size};
@@ -17,6 +18,9 @@ use ratatui_image::picker::cap_parser::QueryStdioOptions;
 use ratatui_image::picker::{Picker, ProtocolType};
 use ratatui_image::protocol::Protocol;
 use ratatui_image::Resize;
+
+use crate::theme::color::Rgb;
+use crate::ui::panels::faces::Button;
 
 /// What the user asked for, from `[ui] graphics`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -89,6 +93,11 @@ fn is_fresh(
     cached.is_some_and(|(had, at)| Arc::ptr_eq(had, img) && at == size)
 }
 
+/// What a transport button image was built for: which button, in which
+/// colours, at what size in pixels. Colours are in the key rather than the
+/// theme's name so a theme change simply misses and rebuilds.
+type ButtonKey = (Button, (u8, u8, u8), (u8, u8, u8), (u8, u8, u8), u32, u32);
+
 pub struct Graphics {
     mode: Mode,
     /// What the terminal said it could do, kept so the setting can be changed
@@ -98,6 +107,11 @@ pub struct Graphics {
     /// `None` when the terminal has no protocol, or the user asked for none.
     picker: Option<Picker>,
     cached: Option<Cached>,
+    /// The transport buttons, for the `image` face set. Built once each and
+    /// transmitted once each: the protocol sends the pixels the first time
+    /// and a placement every frame after, so holding the five (ten, with the
+    /// lit variants) is what makes drawing them every frame free.
+    buttons: HashMap<ButtonKey, Protocol>,
 }
 
 impl Graphics {
@@ -153,6 +167,7 @@ impl Graphics {
             probed,
             picker: None,
             cached: None,
+            buttons: HashMap::new(),
         };
         g.apply();
         if let Some(p) = &g.picker {
@@ -175,8 +190,9 @@ impl Graphics {
 
     /// Point the picker at whatever the current mode asks for.
     fn apply(&mut self) {
-        // The built image belongs to the old renderer.
+        // The built images belong to the old renderer.
         self.cached = None;
+        self.buttons.clear();
         self.picker = match self.mode {
             Mode::Off | Mode::Blocks => None,
             // Half blocks are drawn by the panel itself, which knows the
@@ -204,7 +220,70 @@ impl Graphics {
             probed: None,
             picker: None,
             cached: None,
+            buttons: HashMap::new(),
         }
+    }
+
+    /// Is there a protocol to draw pixels with at all?
+    ///
+    /// What the `image` face set needs to know: without one it is drawn as
+    /// the block text set, and the note that says which set is in use
+    /// should say so rather than name a thing that is not on the screen.
+    pub fn draws_pixels(&self) -> bool {
+        self.picker
+            .as_ref()
+            .is_some_and(|p| p.protocol_type() != ProtocolType::Halfblocks)
+    }
+
+    /// A transport button as an image the size of its cells, in the colours
+    /// given, building and transmitting it the first time it is asked for.
+    ///
+    /// `None` when there is no protocol, or the terminal never said how big
+    /// a cell is -- in which case there is nothing to size the image to, and
+    /// the caller draws the text face instead.
+    pub fn button(
+        &mut self,
+        which: Button,
+        area: Rect,
+        fg: Rgb,
+        plate: Rgb,
+        bg: Rgb,
+    ) -> Option<&Protocol> {
+        if !self.draws_pixels() || area.width == 0 || area.height == 0 {
+            return None;
+        }
+        let picker = self.picker.as_ref()?;
+        let cell = picker.font_size();
+        if cell.width == 0 || cell.height == 0 {
+            return None;
+        }
+        let (w, h) = (
+            area.width as u32 * cell.width as u32,
+            area.height as u32 * cell.height as u32,
+        );
+        let tuple = |c: Rgb| (c.r, c.g, c.b);
+        let key = (which, tuple(fg), tuple(plate), tuple(bg), w, h);
+        if !self.buttons.contains_key(&key) {
+            // A theme change leaves the old colours' entries behind. Ten
+            // live entries is the working set; anything well beyond it is
+            // history, and cheap to rebuild.
+            if self.buttons.len() > 60 {
+                self.buttons.clear();
+            }
+            let img = crate::ui::panels::faces::raster(which, w, h, fg, plate, bg);
+            let dynamic = image::DynamicImage::ImageRgb8(img);
+            let size = Size::new(area.width, area.height);
+            match picker.new_protocol(dynamic, size, Resize::Fit(None)) {
+                Ok(p) => {
+                    self.buttons.insert(key, p);
+                }
+                Err(e) => {
+                    tracing::debug!("encoding a button failed: {e}");
+                    return None;
+                }
+            }
+        }
+        self.buttons.get(&key)
     }
 
     pub fn mode(&self) -> Mode {

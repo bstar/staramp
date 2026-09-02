@@ -1,6 +1,7 @@
 pub mod album;
 pub mod chooser;
 pub mod equalizer;
+pub mod faces;
 pub mod frame;
 pub mod header;
 pub mod library;

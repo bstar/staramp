@@ -69,6 +69,11 @@ Those are exactly the two steps the `macos-14` job runs.
   `vfs.index_path()` rather than always opening the local one. Reasoned from
   the code -- `ui/app.rs` was already fixed the same way and this call site was
   missed -- but never exercised. Needs a live SSH host serving a cue album.
+- **The `image` button faces on a Mac terminal.** They are drawn with the
+  same `ratatui-image` path the cover art uses, so wherever the cover shows
+  as a picture the buttons should too -- iTerm2, Ghostty, WezTerm, kitty.
+  Exercised in kitty on Linux only. Sixel terminals transmit the whole
+  image every frame rather than once, so five buttons may cost there.
 - **U+23F8 outside one terminal.** The `unicode` pause face carries default
   emoji presentation. `unicode-width` reports one cell and a terminal may draw
   two, in colour, which shifts every transport button after it rightward. It
@@ -83,5 +88,3 @@ Those are exactly the two steps the `macos-14` job runs.
   Playing is reachable (`MPNowPlayingInfoCenter`, and `objc2` is already in the
   graph via cpal) but wants an `NSApplication` run loop on the main thread,
   which the TUI owns.
-- `block` and `ascii` keep a one-cell `play` in a four-cell plate, so those two
-  faces sit half a cell off centre. `unicode` and `nerd` are exact.

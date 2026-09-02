@@ -261,6 +261,7 @@ program does.
 | `s`            | shuffle on or off                            |
 | `S`            | reshuffle now                                |
 | `r`            | repeat off / all / one                       |
+| `o`            | button style                                 |
 
 | Progress bar    |                            |
 | --------------- | -------------------------- |
@@ -391,7 +392,7 @@ knobs:
 | `playlist_dir`                 | `.m3u` directory, read and written in place                                                      |
 | `theme`                        | `"system"` to follow the desktop, or a name                                                      |
 | `volume`                       | 0.0 to 1.0                                                                                       |
-| `[ui] glyphs`                  | transport button faces: `unicode`, `block`, `nerd`, `ascii`. See [Fonts](#fonts)                 |
+| `[ui] glyphs`                  | transport button faces: `block`, `unicode`, `nerd`, `ascii`, `pixel`, `image`. See [Fonts](#fonts) |
 | `[ui] seek_style`              | how the seek bar is drawn: `ansi` (default), `bar`, `thin`, `blocks`                             |
 | `[ui] graphics`                | how covers are drawn: `auto`, `kitty`, `blocks`, `off`. See [Album art](#album-art)              |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the window                                                         |
@@ -645,10 +646,21 @@ them.
 
 | Setting             | Needs                                               | If it is missing                                  |
 | ------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| `unicode` (default) | U+00AB, U+00BB, U+25B6, U+23F8, U+25A0 in the terminal font | drawn from a fallback font, smaller than the text |
-| `block`             | nothing beyond ASCII and block elements             | nothing to miss                                   |
+| `block` (default)   | nothing beyond ASCII and block elements             | nothing to miss                                   |
+| `unicode`           | U+00AB, U+00BB, U+25B6, U+23F8, U+25A0 in the terminal font | drawn from a fallback font, smaller than the text |
 | `nerd`              | any Nerd Font, selected in the terminal             | boxes                                             |
 | `ascii`             | nothing                                             | nothing to miss                                   |
+| `pixel`             | quadrant block elements, which every terminal has   | nothing to miss                                   |
+| `image`             | a graphics protocol: kitty, sixel or iTerm2         | drawn as `block`                                  |
+
+The last two take the font out of it. Both draw the Material Design transport
+shapes -- the ones the Nerd Font set uses -- from the shapes themselves rather
+than from a glyph. `pixel` builds them from quadrant block elements, two pixels
+to a cell each way, on a wider plate; it is chunky, and it is the same chunky
+everywhere. `image` rasterises them at the terminal's real cell size and puts
+them there the way cover art is put there, so they are exact, and identical on
+every terminal that can show them. `o` cycles through all six, and the choice
+is remembered.
 
 `[ui] seek_style` chooses the seek bar's characters the same way. `ansi`, the
 default, draws `[====----]` from plain characters, which any terminal can
@@ -664,8 +676,11 @@ eighths.
 If the transport buttons look smaller than the `SHUF` and `REP` labels next to
 them, that is font fallback: your terminal font does not carry those shapes, so
 another font supplies them and draws them to its own metrics. No codepoint
-fixes that. `block` avoids it by using only characters every monospace font
-draws itself, so the controls come out the size of the letters beside them.
+fixes that. `block`, the default, avoids it by using only characters every
+monospace font draws itself, so the controls come out the size of the letters
+beside them on every machine, whatever font each terminal is set to. That is
+why it is the default: two installs look alike without either being
+configured. `unicode` is the larger-looking set where the font carries it.
 
 Everything else star/amp draws (box drawing, block elements, braille) is
 covered by any font shipped as a terminal font, so `ascii` is a complete
@@ -772,8 +787,9 @@ holds the device exclusively, that fails. `[output] mode = "fixed"` pins one
 rate instead.
 
 **The transport buttons are the wrong size, or show boxes.** That is font
-fallback, not a bug. `[ui] glyphs = "block"` uses only characters every
-monospace font draws itself. See [Fonts](#fonts).
+fallback, not a bug, and it means `[ui] glyphs` has been set away from the
+default. `block` uses only characters every monospace font draws itself. See
+[Fonts](#fonts).
 
 **The album art is a blocky mess.** The terminal does not speak the kitty
 graphics protocol, or the detection cannot see through ssh or a multiplexer.

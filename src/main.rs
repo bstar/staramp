@@ -670,7 +670,9 @@ fn cmd_remote(host: Option<String>, root: Option<String>, refresh: bool) -> Resu
         anyhow::bail!("{host} has an index but no playable tracks in it");
     }
 
-    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
+    graphics.log_capabilities();
     let mut app = ui::app::App::on(vfs, items, &cfg)?;
     app.set_graphics(graphics);
     app.run()
@@ -1262,7 +1264,9 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
     // Before anything touches the terminal. Detecting a graphics protocol
     // means writing a query and reading the answer off stdin, and once the app
     // has the keyboard that answer arrives as keystrokes.
-    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
+    graphics.log_capabilities();
 
     // Another instance already owns the audio device. Rather than fighting it
     // for the sound card, mirror it: render its state and forward every key.

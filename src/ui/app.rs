@@ -175,6 +175,7 @@ struct Remembered {
     volume: f32,
     seek_style: String,
     graphics: String,
+    buttons: String,
     show_album: bool,
     show_equalizer: bool,
     show_playlist: bool,
@@ -200,6 +201,7 @@ impl Remembered {
             volume: cfg.volume,
             seek_style: cfg.ui.seek_style.clone(),
             graphics: cfg.ui.graphics.clone(),
+            buttons: cfg.ui.buttons.clone(),
             show_album: cfg.ui.show_album,
             show_equalizer: cfg.ui.show_equalizer,
             show_playlist: cfg.ui.show_playlist,
@@ -2287,6 +2289,7 @@ impl App {
             volume: self.player.volume(),
             seek_style: self.seek_style.name().to_string(),
             graphics: self.graphics.mode().name().to_string(),
+            buttons: self.graphics.buttons_mode().name().to_string(),
             show_album: self.show_album,
             show_equalizer: self.show_eq,
             show_playlist: self.show_playlist,
@@ -2348,6 +2351,9 @@ impl App {
         }
         if now.graphics != was.graphics {
             set("ui", "graphics", Value::Str(now.graphics.clone()));
+        }
+        if now.buttons != was.buttons {
+            set("ui", "buttons", Value::Str(now.buttons.clone()));
         }
         if now.show_album != was.show_album {
             set("ui", "show_album", Value::Bool(now.show_album));
@@ -2863,6 +2869,28 @@ impl App {
                 self.seek_style = self.seek_style.next();
                 let name = self.seek_style.name();
                 self.note(format!("seek bar: {name}"));
+            }
+            NextButtons => {
+                let next = self.graphics.buttons_mode().next();
+                self.graphics.set_buttons_mode(next);
+                // Say what was actually got, not what was asked for: on a
+                // terminal with no protocol `auto` and `text` look the same,
+                // and a toggle that reports a change nobody can see is worse
+                // than one that explains itself.
+                let note = match (next, self.graphics.pictures_available()) {
+                    (crate::ui::graphics::Buttons::Auto, true) => {
+                        "transport buttons: pictures".to_string()
+                    }
+                    (crate::ui::graphics::Buttons::Auto, false) => {
+                        "transport buttons: pictures, but this terminal has no \
+                         protocol for them -- still text"
+                            .to_string()
+                    }
+                    (crate::ui::graphics::Buttons::Text, _) => {
+                        "transport buttons: text".to_string()
+                    }
+                };
+                self.note(note);
             }
             WidenBars | NarrowBars => {
                 let by = if action == WidenBars { 1 } else { -1 };

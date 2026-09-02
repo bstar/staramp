@@ -148,6 +148,13 @@ pub struct Ui {
     /// or block glyphs and fill by eighths of a cell, so they creep rather
     /// than stepping -- at the cost of needing a font that carries them.
     pub seek_style: String,
+    /// How the transport buttons are drawn: `auto` or `text`.
+    ///
+    /// `auto` draws them as pictures wherever the terminal can show one,
+    /// which is the only way two terminals set to different fonts show the
+    /// same buttons. `text` forces the ASCII faces. Separate from `graphics`
+    /// on purpose: turning covers off is not a statement about buttons.
+    pub buttons: String,
     /// How album covers are drawn: `auto`, `kitty`, `blocks`, or `off`.
     ///
     /// `auto` asks the terminal. Detection is right nearly always and wrong
@@ -275,6 +282,7 @@ impl Default for Ui {
             padding_x: 1,
             padding_y: 0,
             seek_style: "ansi".into(),
+            buttons: "auto".into(),
             graphics: "auto".into(),
             // What a first run opens with, and what every run after it opens
             // with is whatever the last one was left as.
@@ -413,6 +421,10 @@ volume = 1.0
 [ui]
 # How album covers are drawn: auto, kitty, blocks, or off.
 graphics = "auto"
+# Transport buttons: "auto" draws them as pictures wherever the terminal can
+# show one, which is the only way two terminals set to different fonts show
+# the same buttons; "text" forces the ASCII faces. `o` switches between them.
+buttons = "auto"
 
 [art]
 # Look covers up on the Cover Art Archive when the disk has none. Off by

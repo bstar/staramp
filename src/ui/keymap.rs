@@ -48,6 +48,7 @@ pub enum Action {
     ToggleAnimations,
     WidenBars,
     NarrowBars,
+    NextButtons,
     PrevVisualizer,
     OpenFilter,
     FilterQueue,
@@ -280,6 +281,12 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::NextSeekStyle,
         keys: "d",
         label: "seek bar style",
+        group: "progress bar",
+    },
+    Binding {
+        action: Action::NextButtons,
+        keys: "o",
+        label: "button style",
         group: "progress bar",
     },
     Binding {
@@ -589,6 +596,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Delete, ..) | (Char('D'), ..) => Action::RemoveTagged,
         (Char('f'), false, _, false) => Action::OpenFilter,
         (Char('/'), false, _, false) => Action::FilterQueue,
+        (Char('o'), false, _, false) => Action::NextButtons,
         (Char('l'), false, _, false) => Action::OpenLibrary,
         (Char('+'), ..) | (Char('='), ..) => Action::WidenBars,
         (Char('-'), ..) | (Char('_'), ..) => Action::NarrowBars,
@@ -624,6 +632,7 @@ mod tests {
         let plain = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
         assert_eq!(resolve(plain('d')), Some(Action::NextSeekStyle));
         assert_eq!(resolve(plain('/')), Some(Action::FilterQueue));
+        assert_eq!(resolve(plain('o')), Some(Action::NextButtons));
         assert_eq!(resolve(plain('a')), Some(Action::ToggleAnimations));
         assert_eq!(resolve(plain('+')), Some(Action::WidenBars));
         assert_eq!(resolve(plain('=')), Some(Action::WidenBars));

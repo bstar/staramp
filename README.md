@@ -403,13 +403,14 @@ knobs:
 | `volume`                       | 0.0 to 1.0                                                                                       |
 | `[ui] seek_style`              | how the seek bar is drawn: `ansi` (default), `bar`, `thin`, `blocks`                             |
 | `[ui] graphics`                | how covers are drawn: `auto`, `kitty`, `blocks`, `off`. See [Album art](#album-art)              |
+| `[ui] buttons`                 | transport buttons: `auto` for pictures where the terminal can, `text` for ASCII. `o` toggles     |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the window                                                         |
 | `[art] fetch`                  | look covers up on the Cover Art Archive when the files have none. **Off** unless you turn it on  |
 | `[output] mode`                | `"native"` for bit-perfect, `"fixed"` to pin the rate                                            |
 | `[cue] pregap`                 | which track a pregap belongs to                                                                  |
-| `[vis] mode`                   | `bars` `leds` `peaks` `dots` `wave` `scope` `cava` `off`                                         |
-| `[vis] gain_db`                | shifts the analyzer range if your music sits quiet or loud (`cava` sets its own)                 |
-| `[vis] smoothing`              | how fluid the `cava` mode is, 0 to 1. Lower snaps to the music                                   |
+| `[vis] mode`                   | `bars` `leds` `peaks` `dots` `wave` `scope` `fluid` `off`                                        |
+| `[vis] gain_db`                | shifts the analyzer range if your music sits quiet or loud                                       |
+| `[vis] smoothing`              | how long the `fluid` mode's bars take to fall, 0 to 1. Lower snaps to the music                  |
 | `[vis] bar_width` / `bar_gap`  | cells per bar, and columns between bars                                                          |
 | `[eq] enabled` / `preset`      | 10-band equalizer                                                                                |
 | `[replaygain] mode`            | `off` (default), `track`, or `album`. See [ReplayGain](#replaygain)                              |
@@ -660,6 +661,11 @@ Where the terminal has no graphics protocol the buttons are drawn as text, in
 ASCII -- `<<`, `|>`, `||`, `[]`, `>>` -- which every font there has ever been
 can draw. A font with ligatures draws `|>` as one triangle; one without draws
 the two characters. Both are two cells, so nothing moves.
+
+`o` switches between the two, and `[ui] buttons = "text"` makes the choice
+stick. Worth having where a terminal claims a protocol it does not really
+have -- inside a multiplexer that does not forward graphics, most often, where
+the pictures are transmitted and simply never appear.
 
 `[ui] seek_style` chooses the seek bar's characters. `ansi`, the
 default, draws `[====----]` from plain characters, which any terminal can

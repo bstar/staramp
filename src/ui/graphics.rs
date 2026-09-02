@@ -59,6 +59,44 @@ impl Mode {
     }
 }
 
+/// Whether the transport buttons are drawn as pictures.
+///
+/// The pictures are the point -- they are the one way two terminals set to
+/// different fonts show the same buttons -- so `Auto` is the default and
+/// takes them wherever a protocol exists. `Text` is for seeing the fallback
+/// without changing terminals, and for a terminal that claims a protocol it
+/// does not really have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Buttons {
+    /// Pictures where the terminal can show them, ASCII where it cannot.
+    Auto,
+    /// The ASCII faces, whatever the terminal can do.
+    Text,
+}
+
+impl Buttons {
+    pub fn name(self) -> &'static str {
+        match self {
+            Buttons::Auto => "auto",
+            Buttons::Text => "text",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "text" | "ascii" => Buttons::Text,
+            _ => Buttons::Auto,
+        }
+    }
+
+    pub fn next(self) -> Self {
+        match self {
+            Buttons::Auto => Buttons::Text,
+            Buttons::Text => Buttons::Auto,
+        }
+    }
+}
+
 /// A built protocol and what it was built for.
 ///
 /// Encoding an image is not free, and the panel redraws thirty times a second.
@@ -115,6 +153,9 @@ pub struct Graphics {
     probed: Option<Picker>,
     /// `None` when the terminal has no protocol, or the user asked for none.
     picker: Option<Picker>,
+    /// Whether the buttons may be pictures. Separate from `mode`, which is
+    /// about covers: turning covers off is not a statement about buttons.
+    buttons_mode: Buttons,
     cached: Option<Cached>,
     /// The transport buttons. Built once each and transmitted once each: the
     /// protocol sends the pixels the first time
@@ -165,7 +206,19 @@ impl Graphics {
                 timeout: std::time::Duration::from_millis(250),
                 ..Default::default()
             }) {
-                Ok(p) => Some(p),
+                Ok(p) => {
+                    // Said out loud, because a terminal that answers the query
+                    // and then names half blocks looks exactly like one that
+                    // never answered: buttons and covers both come out as
+                    // text, and nothing before this said which it was.
+                    tracing::debug!(
+                        "graphics: terminal answered with {:?}, cell {}x{}",
+                        p.protocol_type(),
+                        p.font_size().width,
+                        p.font_size().height
+                    );
+                    Some(p)
+                }
                 Err(e) => {
                     tracing::debug!("no graphics protocol: {e}");
                     None
@@ -176,6 +229,7 @@ impl Graphics {
             mode,
             probed,
             picker: None,
+            buttons_mode: Buttons::Auto,
             cached: None,
             buttons: HashMap::new(),
         };
@@ -262,6 +316,7 @@ impl Graphics {
             mode: Mode::Off,
             probed: None,
             picker: None,
+            buttons_mode: Buttons::Auto,
             cached: None,
             buttons: HashMap::new(),
         }
@@ -274,6 +329,9 @@ impl Graphics {
     /// terminal can. Forcing `kitty` is honoured for both, since it exists
     /// for the terminals the probe cannot see.
     fn pixel_picker(&self) -> Option<&Picker> {
+        if self.buttons_mode == Buttons::Text {
+            return None;
+        }
         match self.mode {
             Mode::Kitty => self.picker.as_ref(),
             _ => self
@@ -283,10 +341,42 @@ impl Graphics {
         }
     }
 
-    /// Is there a protocol to draw the buttons with at all? Without one they
-    /// are drawn as text.
-    pub fn draws_pixels(&self) -> bool {
-        self.pixel_picker().is_some()
+    /// Log what the buttons and covers will actually do. Called once the
+    /// picker is settled, so it reports the decision rather than the inputs.
+    pub fn log_capabilities(&self) {
+        tracing::debug!(
+            "graphics: mode {}, pictures available {}, buttons {}",
+            self.mode.name(),
+            self.pictures_available(),
+            self.buttons_mode.name(),
+        );
+    }
+
+    pub fn buttons_mode(&self) -> Buttons {
+        self.buttons_mode
+    }
+
+    /// Choose whether the buttons are pictures.
+    ///
+    /// The built images are dropped: they are keyed by size and colour, not
+    /// by this, so leaving them would serve the old answer back.
+    pub fn set_buttons_mode(&mut self, b: Buttons) {
+        if self.buttons_mode != b {
+            self.buttons_mode = b;
+            self.buttons.clear();
+        }
+    }
+
+    /// Could the buttons be pictures if asked? Ignores the setting, so the
+    /// UI can say whether `text` is a choice or the only thing available.
+    pub fn pictures_available(&self) -> bool {
+        match self.mode {
+            Mode::Kitty => self.picker.is_some(),
+            _ => self
+                .probed
+                .as_ref()
+                .is_some_and(|p| p.protocol_type() != ProtocolType::Halfblocks),
+        }
     }
 
     /// A picture the size of its cells, in the colours given, building and

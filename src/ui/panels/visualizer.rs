@@ -432,14 +432,6 @@ fn render_leds(area: Rect, buf: &mut Buffer, theme: &Theme, frame: &Frame, layou
     }
 }
 
-/// Colour zones stacked up the panel.
-///
-/// A handful of flat bands rather than a continuous blend. Over the three rows
-/// the main window gives the analyzer a smooth gradient is barely a gradient
-/// at all, whereas banding gives the eye a fixed line to read a level against
-/// -- which is what the Winamp analyzer's own gradient relies on.
-const COLOUR_BANDS: usize = 4;
-
 /// How much of the theme's ramp the bars mode uses, as a fraction of it.
 ///
 /// Nearly all of it, measured in *lightness* rather than in stops. Walking the
@@ -506,19 +498,6 @@ fn ramp_at(theme: &Theme, t: f32) -> Color {
     rgb(ramp[i - 1].mix(ramp[i], into))
 }
 
-/// The colour for a row, quantised into `bands` zones of the theme's spectrum
-/// ramp. A Winamp skin's ramp gives the classic green to red.
-///
-/// The zones are spread across the whole ramp rather than taken from its foot,
-/// so however few there are the top of a full bar is still the ramp's last
-/// colour.
-fn banded_colour(theme: &Theme, row_bottom: f32, bands: usize) -> Color {
-    let last = theme.vis_ramp.len() - 1;
-    let f = row_bottom.clamp(0.0, 1.0);
-    let band = ((f * bands as f32) as usize).min(bands - 1);
-    rgb(theme.vis_ramp[(band * last / (bands - 1).max(1)).min(last)])
-}
-
 /// Bars the fluid mode draws in a panel this wide.
 ///
 /// Shared with the analysis so it produces exactly the bars the renderer is
@@ -560,14 +539,39 @@ fn render_fluid(area: Rect, buf: &mut Buffer, theme: &Theme, frame: &Frame, layo
             if cell == 0 {
                 continue;
             }
-            let colour = banded_colour(theme, from_bottom as f32 / rows as f32, COLOUR_BANDS);
+
+            // The same ramp the bars use, and the same two colours to a cell.
+            //
+            // This drew four flat colour bands, which was chosen when the
+            // analyzer was three rows tall and a continuous blend over three
+            // steps was barely a blend at all. On a panel with room the four
+            // zones read as four stripes rather than as a gradient, and the
+            // mode named for being fluid was the blockiest of them.
+            //
+            // A full cell is drawn as an upper half block whose foreground
+            // and background are sampled a half-cell apart, so each row
+            // carries two steps of the ramp instead of one. The tip is a
+            // part-height block and keeps its single colour, which is where
+            // the smoothness comes from.
+            let rungs = rows as usize * 2;
+            let rung_at = |offset: f32| {
+                let t = (from_bottom as f32 + offset) / rows as f32;
+                let rung = ((t.clamp(0.0, 1.0) * rungs as f32) as usize).min(rungs - 1);
+                rung_colour(theme, rung, rungs)
+            };
+            let (ch, fg, cell_bg) = if cell == 8 {
+                (HALF_UPPER, rung_at(0.75), rung_at(0.25))
+            } else {
+                (BAR_BLOCKS[cell], rung_at(0.25), bg)
+            };
+
             for dx in 0..layout.width {
                 if x + dx >= area.x + area.width {
                     break;
                 }
                 buf[(x + dx, area.y + row)]
-                    .set_char(BAR_BLOCKS[cell])
-                    .set_style(Style::default().fg(colour).bg(bg));
+                    .set_char(ch)
+                    .set_style(Style::default().fg(fg).bg(cell_bg));
             }
         }
     }
@@ -891,28 +895,47 @@ mod render_tests {
         assert!(fluid_column(0.05, 3).iter().any(|(ch, _)| ch != " "));
     }
 
+    /// The fluid mode ramps as finely as the bars do.
+    ///
+    /// It used four flat colour zones, chosen when the analyzer was three
+    /// rows tall and a continuous blend over three steps was barely a blend.
+    /// Given room those zones read as stripes, and the mode named for being
+    /// fluid was the blockiest of them.
     #[test]
-    fn fluid_colours_in_bands_rather_than_a_gradient() {
+    fn fluid_ramps_as_finely_as_the_bars() {
         let mut colours: Vec<Color> = fluid_column(1.0, 16).iter().map(|(_, c)| *c).collect();
         colours.dedup();
-        assert_eq!(
-            colours.len(),
-            COLOUR_BANDS,
-            "expected flat zones: {colours:?}"
+        assert!(
+            colours.len() >= 16,
+            "only {} steps over sixteen rows: {colours:?}",
+            colours.len()
         );
+        // Monotonic: the ramp climbs without doubling back, which is what
+        // separates a gradient from a pattern.
+        let lum: Vec<f64> = fluid_column(1.0, 16)
+            .iter()
+            .map(|(_, c)| match c {
+                Color::Rgb(r, g, b) => crate::theme::color::Rgb::new(*r, *g, *b).luminance(),
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        for w in lum.windows(2) {
+            assert!(w[0] >= w[1] - 1e-9, "the ramp doubles back: {lum:?}");
+        }
     }
 
+    /// Two colours to a cell, as the bars do it.
+    ///
+    /// A row is one cell and a cell is one colour, so a full cell is drawn as
+    /// an upper half block with its two halves sampled separately. That is
+    /// where the extra half of the gradations comes from.
     #[test]
-    fn the_colour_bands_span_the_whole_theme_ramp() {
-        let theme = builtin::load("cosmic").unwrap();
-        let last = theme.vis_ramp.len() - 1;
-        assert_eq!(
-            banded_colour(&theme, 0.0, COLOUR_BANDS),
-            rgb(theme.vis_ramp[0])
-        );
-        assert_eq!(
-            banded_colour(&theme, 0.99, COLOUR_BANDS),
-            rgb(theme.vis_ramp[last])
+    fn a_full_fluid_cell_carries_two_steps_of_the_ramp() {
+        let cells = fluid_column(1.0, 8);
+        assert!(
+            cells.iter().any(|(ch, _)| ch == "\u{2580}"),
+            "no two-tone cell: {:?}",
+            cells.iter().map(|c| &c.0).collect::<Vec<_>>()
         );
     }
 

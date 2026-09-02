@@ -3915,7 +3915,8 @@ impl App {
                 } else {
                     (ink, plate)
                 };
-                if let Some(p) = self.graphics.button(which, rect, fg, on, bg) {
+                let which = crate::ui::graphics::Picture::Button(which);
+                if let Some(p) = self.graphics.picture(which, rect, fg, on, bg) {
                     // The placeholder row is written from the first cell and
                     // carries that cell's style, so the text plate's colours
                     // would show wherever the picture did not reach. Panel
@@ -4021,6 +4022,25 @@ impl App {
             header_items: &words,
         }
         .render(area, buf);
+
+        // The playing row's marker as a picture: the play triangle the
+        // transport shows, one cell tall, over the chevron the panel drew --
+        // which stays where there is no protocol. Its colours are read back
+        // from the cell, so a cursor bar over the playing row carries through.
+        let solid = |c: Color| match c {
+            Color::Rgb(r, g, b) => Some(crate::theme::color::Rgb { r, g, b }),
+            _ => None,
+        };
+        for (x, y) in playlist::marker_cells(area, &self.rows, self.scroll, playing) {
+            let cell = &buf[(x, y)];
+            let fg = solid(cell.fg).unwrap_or(self.theme.row_playing_fg);
+            let bg = solid(cell.bg).unwrap_or(self.theme.panel_bg);
+            let rect = Rect::new(x, y, 1, 1);
+            let mark = crate::ui::graphics::Picture::PlayMark;
+            if let Some(p) = self.graphics.picture(mark, rect, fg, bg, bg) {
+                ratatui_image::Image::new(p).render(rect, buf);
+            }
+        }
     }
 
     /// Adopt a probe made before the alternate screen was entered.

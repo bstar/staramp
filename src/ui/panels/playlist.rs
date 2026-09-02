@@ -31,6 +31,38 @@ pub fn list_rect(area: Rect) -> Rect {
     super::header::body(area)
 }
 
+/// The cells carrying a playing marker, for the picture that goes over it.
+///
+/// The playing track's row when it is on screen, and any record heading that
+/// advertises the playing track inside it -- the same rows the renderer puts
+/// its text marker on, derived the same way, so the picture lands where the
+/// chevron was and nowhere else.
+pub fn marker_cells(
+    area: Rect,
+    rows: &Rows,
+    scroll: usize,
+    playing: Option<usize>,
+) -> Vec<(u16, u16)> {
+    let Some(playing) = playing else {
+        return Vec::new();
+    };
+    let inner = list_rect(area);
+    let mut out = Vec::new();
+    for row in 0..inner.height as usize {
+        let Some(line) = rows.rows().get(scroll + row) else {
+            break;
+        };
+        let marked = match line {
+            Row::Track(i) => *i == playing,
+            Row::Section { playing, .. } => *playing,
+        };
+        if marked && inner.width > 0 {
+            out.push((inner.x, inner.y + row as u16));
+        }
+    }
+    out
+}
+
 /// One line of the list.
 ///
 /// A grouped playlist draws more lines than it has tracks, so "the third row"
@@ -1215,6 +1247,24 @@ mod render_tests {
     fn a_list_that_fits_has_no_scrollbar_at_all() {
         let col = marker_column(&draw(3, 0, 10));
         assert!(!col.contains('█'), "nothing to scroll: {col:?}");
+    }
+    #[test]
+    fn the_marker_cell_is_the_playing_row_when_it_is_on_screen() {
+        let rows = Rows::flat(20);
+        let area = Rect::new(0, 0, 40, 12);
+        let list = list_of(12);
+        assert_eq!(
+            marker_cells(area, &rows, 0, Some(2)),
+            vec![(list.x, list.y + 2)]
+        );
+        // Scrolled past it: nothing to mark.
+        assert!(marker_cells(area, &rows, 5, Some(2)).is_empty());
+        // Scrolled to it: relative to the top of the list.
+        assert_eq!(
+            marker_cells(area, &rows, 2, Some(2)),
+            vec![(list.x, list.y)]
+        );
+        assert!(marker_cells(area, &rows, 0, None).is_empty());
     }
 }
 

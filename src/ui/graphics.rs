@@ -93,10 +93,19 @@ fn is_fresh(
     cached.is_some_and(|(had, at)| Arc::ptr_eq(had, img) && at == size)
 }
 
-/// What a transport button image was built for: which button, in which
-/// colours, at what size in pixels. Colours are in the key rather than the
-/// theme's name so a theme change simply misses and rebuilds.
-type ButtonKey = (Button, (u8, u8, u8), (u8, u8, u8), (u8, u8, u8), u32, u32);
+/// The pictures drawn over the protocol besides the cover.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Picture {
+    /// A transport button: a plate with its icon.
+    Button(Button),
+    /// The playlist's playing-row marker: the play triangle alone, one cell.
+    PlayMark,
+}
+
+/// What a picture was built for: which one, in which colours, at what size
+/// in pixels. Colours are in the key rather than the theme's name so a theme
+/// change simply misses and rebuilds.
+type ButtonKey = (Picture, (u8, u8, u8), (u8, u8, u8), (u8, u8, u8), u32, u32);
 
 pub struct Graphics {
     mode: Mode,
@@ -280,15 +289,16 @@ impl Graphics {
         self.pixel_picker().is_some()
     }
 
-    /// A transport button as an image the size of its cells, in the colours
-    /// given, building and transmitting it the first time it is asked for.
+    /// A picture the size of its cells, in the colours given, building and
+    /// transmitting it the first time it is asked for. `plate` is the button
+    /// plate's colour, and unused by the marker.
     ///
     /// `None` when there is no protocol, or the terminal never said how big
     /// a cell is -- in which case there is nothing to size the image to, and
     /// the caller draws the text face instead.
-    pub fn button(
+    pub fn picture(
         &mut self,
-        which: Button,
+        which: Picture,
         area: Rect,
         fg: Rgb,
         plate: Rgb,
@@ -309,7 +319,10 @@ impl Graphics {
         let tuple = |c: Rgb| (c.r, c.g, c.b);
         let key = (which, tuple(fg), tuple(plate), tuple(bg), w, h);
         if !self.buttons.contains_key(&key) {
-            let img = crate::ui::panels::faces::raster(which, w, h, fg, plate, bg);
+            let img = match which {
+                Picture::Button(b) => crate::ui::panels::faces::raster(b, w, h, fg, plate, bg),
+                Picture::PlayMark => crate::ui::panels::faces::mark(w, h, fg, bg),
+            };
             let dynamic = image::DynamicImage::ImageRgb8(img);
             let size = Size::new(area.width, area.height);
             // Built before the map is touched: the picker is borrowed from

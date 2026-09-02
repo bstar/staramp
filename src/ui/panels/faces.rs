@@ -140,6 +140,45 @@ pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image:
     img
 }
 
+/// The play triangle alone, sized to a cell: the playlist's playing-row
+/// marker, so the row says the same thing the play button says and looks
+/// like it.
+///
+/// No plate. The triangle is fitted to the cell's width less a pixel each
+/// side, and to its height the same way when that is the tighter of the two,
+/// then centred, and it is `fg` on `bg` -- the row's own colours, read from
+/// the cell the text marker was drawn in, so a cursor bar over the playing
+/// row carries through.
+pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> image::RgbImage {
+    // The triangle's box on the 24-unit grid.
+    let (x0, y0, x1, y1) = (8.0f32, 5.14f32, 19.0f32, 19.14f32);
+    let (uw, uh) = (x1 - x0, y1 - y0);
+    let (wf, hf) = (w as f32, h as f32);
+    let mut scale = (wf - 2.0).max(1.0) / uw;
+    if uh * scale > hf - 2.0 {
+        scale = (hf - 2.0).max(1.0) / uh;
+    }
+    let ox = (wf - uw * scale) / 2.0 - x0 * scale;
+    let oy = (hf - uh * scale) / 2.0 - y0 * scale;
+
+    let mut img = image::RgbImage::new(w.max(1), h.max(1));
+    for (px, py, p) in img.enumerate_pixels_mut() {
+        let mut hits = 0u32;
+        for sy in 0..SS {
+            for sx in 0..SS {
+                let x = (px as f32 + (sx as f32 + 0.5) / SS as f32 - ox) / scale;
+                let y = (py as f32 + (sy as f32 + 0.5) / SS as f32 - oy) / scale;
+                if inside(PLAY[0], x, y) {
+                    hits += 1;
+                }
+            }
+        }
+        let c = mix(bg, fg, hits as f32 / (SS * SS) as f32);
+        *p = image::Rgb([c.r, c.g, c.b]);
+    }
+    img
+}
+
 /// Is `(x, y)` inside the `side`-by-`side` square at the origin whose corners
 /// are rounded to `radius`?
 fn in_rounded_square(x: f32, y: f32, side: f32, radius: f32) -> bool {
@@ -219,6 +258,39 @@ mod tests {
         assert_eq!(at(Button::Play, 18.0, 6.0), [100, 100, 100], "outside play");
         assert_eq!(at(Button::Next, 17.0, 12.0), [255, 255, 255], "next's bar");
         assert_eq!(at(Button::Prev, 7.0, 12.0), [255, 255, 255], "prev's bar");
+    }
+
+    #[test]
+    fn the_marker_is_a_triangle_filling_the_cell_with_a_pixel_to_spare() {
+        let img = mark(8, 17, INK, BG);
+        assert_eq!((img.width(), img.height()), (8, 17));
+        // A pixel of margin each side, so the tip's column and the base's
+        // column are inside the cell, and the corners are background.
+        for (x, y) in [(0, 0), (7, 0), (0, 16), (7, 16)] {
+            assert_eq!(img.get_pixel(x, y).0, [0, 0, 0], "corner {x},{y}");
+        }
+        assert_eq!(img.get_pixel(0, 8).0, [0, 0, 0], "the left margin");
+        assert_eq!(img.get_pixel(2, 8).0, [255, 255, 255], "inside the base");
+        assert_eq!(img.get_pixel(6, 2).0, [0, 0, 0], "above the tip");
+        // Centred vertically: the same amount of background above and below.
+        let column = |x: u32| {
+            (0..17)
+                .filter(|&y| img.get_pixel(x, y).0[0] > 0)
+                .collect::<Vec<_>>()
+        };
+        let base = column(1);
+        assert_eq!(
+            base.first().copied(),
+            Some(16 - base.last().copied().unwrap())
+        );
+    }
+
+    #[test]
+    fn a_short_wide_cell_fits_the_marker_to_its_height() {
+        let img = mark(20, 6, INK, BG);
+        assert_eq!(img.get_pixel(10, 0).0, [0, 0, 0], "the top margin holds");
+        assert_eq!(img.get_pixel(10, 5).0, [0, 0, 0], "the bottom margin holds");
+        assert!(img.pixels().any(|p| p.0[0] == 255), "some ink");
     }
 
     #[test]

@@ -416,6 +416,16 @@ const VOLUME_SLIDER: u16 = 10;
 /// A space and three digits: ` 100`.
 const VOLUME_READOUT: u16 = 4;
 
+/// The slider's three characters: a heavy rule for a filled cell, its left
+/// half for the odd five percent, and a light rule for the track.
+///
+/// Box drawing rather than block elements, so the control weighs about what
+/// the seek bar's own rule does. All three are in every font that draws a
+/// table.
+const VOLUME_FULL: char = '\u{2501}';
+const VOLUME_HALF: char = '\u{2578}';
+const VOLUME_TRACK: char = '\u{2500}';
+
 /// Total cells the volume control occupies, label and readout included.
 const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT;
 
@@ -601,23 +611,6 @@ pub enum SeekFill {
     Blocks,
     /// One character per cell, so this one steps whole cells.
     Ansi,
-}
-
-/// The shade ramp, lightest first.
-///
-/// The four characters every ANSI art of the era was built from. Two colours
-/// per cell is all a terminal offers, so density is the only gradient
-/// available -- which is exactly why the artists used them.
-const SHADES: [char; 4] = ['\u{2591}', '\u{2592}', '\u{2593}', '\u{2588}'];
-
-/// How dense the fill is at `along`, 0 to 1 across the bar.
-///
-/// Never the lightest shade: that one belongs to the track, and a filled cell
-/// drawn with it is a filled cell nobody can see. The gradient therefore runs
-/// across the three heavier shades.
-fn fill_shade(along: f32) -> usize {
-    let span = SHADES.len() - 2;
-    1 + ((along * span as f32).round() as usize).min(span)
 }
 
 /// The rules a bar can be drawn with, thinnest first.
@@ -969,41 +962,31 @@ fn render_controls(
             Style::default().fg(rgb(t.dim)),
         );
 
-        // One shape and one colour. This used to draw four different shade
-        // characters, chosen by position, over a colour that also changed
-        // across the bar -- two gradients at once, which read as noise rather
-        // than as a level, and made it impossible to see where the fill
-        // actually ended.
+        // A line, not a bar. Full-height blocks made the volume the heaviest
+        // thing on the row -- heavier than the transport it sits beside, for
+        // a control that is adjusted once a session -- so it is drawn at the
+        // weight of a rule instead, and reads as a level without shouting.
         //
-        // Eighths, the same as the seek bar in `blocks`: the two sliders now
-        // agree, and a level between cells shows as a partial block rather
-        // than as a lighter shade of a full one.
-        let eighths = (volume.clamp(0.0, 1.0) * v.width as f32 * 8.0).round() as u32;
+        // Half-cell resolution from the left-half stub, which is exactly the
+        // 5% the mouse steps in: every position the pointer can ask for is
+        // one of the twenty-one this can draw, and none of them is between
+        // two characters.
+        let halves = (volume.clamp(0.0, 1.0) * v.width as f32 * 2.0).round() as u32;
         let filled = if volume <= 0.0 {
             t.volume_mute_fg
         } else {
             t.volume_filled_fg
         };
         for i in 0..v.width {
-            let step = eighths.saturating_sub(i as u32 * 8).min(8) as usize;
-            let (ch, colour) = if step == 0 {
-                (EIGHTHS_WIDE[0], t.volume_track_fg)
-            } else {
-                (EIGHTHS_WIDE[step], filled)
+            let step = halves.saturating_sub(i as u32 * 2).min(2);
+            let (ch, colour) = match step {
+                0 => (VOLUME_TRACK, t.volume_track_fg),
+                1 => (VOLUME_HALF, filled),
+                _ => (VOLUME_FULL, filled),
             };
             buf[(v.x + i, v.y)]
                 .set_char(ch)
                 .set_style(Style::default().fg(rgb(colour)));
-        }
-
-        // The track behind the bar, so an empty slider is a groove rather than
-        // a gap. Drawn as the background of the cells the fill has not reached.
-        for i in 0..v.width {
-            let cell = &mut buf[(v.x + i, v.y)];
-            if cell.symbol() == " " {
-                cell.set_char('\u{2500}')
-                    .set_style(Style::default().fg(rgb(t.volume_track_fg)));
-            }
         }
 
         buf.set_string(
@@ -1268,13 +1251,13 @@ mod tests {
         let half = volume_cells(0.5);
         let cells: Vec<char> = half.chars().collect();
         assert_eq!(cells.len(), VOLUME_SLIDER as usize);
-        // Left half solid, right half track, and nothing in between.
+        // Left half filled, right half track, and nothing in between.
         assert!(
-            cells[..5].iter().all(|c| *c == EIGHTHS_WIDE[8]),
-            "the filled half is not solid: {half:?}"
+            cells[..5].iter().all(|c| *c == VOLUME_FULL),
+            "the filled half is not filled: {half:?}"
         );
         assert!(
-            cells[5..].iter().all(|c| *c != EIGHTHS_WIDE[8]),
+            cells[5..].iter().all(|c| *c == VOLUME_TRACK),
             "the empty half is not empty: {half:?}"
         );
     }
@@ -1284,15 +1267,38 @@ mod tests {
         // Drawn, not blank: an empty control that vanishes looks broken.
         let quiet = volume_cells(0.0);
         assert!(
-            quiet.chars().all(|c| c == '\u{2500}'),
+            quiet.chars().all(|c| c == VOLUME_TRACK),
             "silence is not all track: {quiet:?}"
         );
         assert_eq!(
             volume_cells(1.0)
                 .chars()
-                .filter(|c| *c == '\u{2500}')
+                .filter(|c| *c == VOLUME_TRACK)
                 .count(),
             0
+        );
+    }
+
+    /// The reason for the half-width stub.
+    #[test]
+    fn the_odd_five_percent_is_half_a_cell() {
+        // Ten cells is ten percent each, so every other mouse step lands
+        // mid-cell. Without a character for it the bar could only show tens,
+        // and half the pointer's positions would draw nothing new.
+        assert_eq!(volume_cells(0.35).chars().nth(3), Some(VOLUME_HALF));
+        assert_eq!(volume_cells(0.40).chars().nth(3), Some(VOLUME_FULL));
+        assert_eq!(volume_cells(0.30).chars().nth(3), Some(VOLUME_TRACK));
+    }
+
+    /// A rule, not a bar.
+    #[test]
+    fn the_slider_is_drawn_at_the_weight_of_a_line() {
+        // Block elements made the volume the heaviest thing on a row it
+        // shares with the transport, for a control adjusted once a session.
+        let full = volume_cells(1.0);
+        assert!(
+            !full.chars().any(|c| ('\u{2580}'..='\u{259F}').contains(&c)),
+            "the slider is drawn with block elements: {full:?}"
         );
     }
 
@@ -1825,7 +1831,9 @@ mod tests {
 
             let vol = c.volume.expect("volume fits at these widths");
             assert!(
-                at(vol).chars().all(|ch| SHADES.contains(&ch)),
+                at(vol)
+                    .chars()
+                    .all(|ch| [VOLUME_FULL, VOLUME_HALF, VOLUME_TRACK].contains(&ch)),
                 "volume rect is not the slider at width {width}: {:?}",
                 at(vol)
             );

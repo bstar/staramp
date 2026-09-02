@@ -926,6 +926,31 @@ struct QueueView {
     source: Option<PathBuf>,
 }
 
+/// What is open on top of the player.
+///
+/// At most one of these is showing at a time and every one of them starts
+/// closed, which is why the whole struct derives `Default`. `browse` is the
+/// exception that earns its place here: it is not itself an overlay but the
+/// model the library browser is built from, kept so reopening is instant.
+#[derive(Default)]
+struct Overlays {
+    /// Playlists from the configured directory, and the picker over them.
+    playlists: Vec<PlaylistEntry>,
+    picker_cursor: usize,
+    picker_scroll: usize,
+    /// The cover chooser, open over the current album.
+    chooser: Option<Chooser>,
+    /// A panel's settings, open over everything.
+    settings: Option<SettingsState>,
+    /// A previous session offered but not yet accepted or declined.
+    resume: Option<Session>,
+    /// The library browser, when it is open. Per window, not shared.
+    library: Option<crate::ui::panels::library::Library>,
+    /// Held across opens: building it costs ~290 ms and nothing invalidates it
+    /// until the index is rescanned.
+    browse: Option<Arc<crate::library::browse::Model>>,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -947,19 +972,6 @@ pub struct App {
     /// where it began rather than from the beginning of the session.
     dropout_base: u64,
 
-    /// Playlists from the configured directory, and the picker over them.
-    playlists: Vec<PlaylistEntry>,
-    /// The cover chooser, open over the current album.
-    chooser: Option<Chooser>,
-    /// A panel's settings, open over everything.
-    settings: Option<SettingsState>,
-    /// A previous session offered but not yet accepted or declined.
-    pending_resume: Option<Session>,
-    /// The library browser, when it is open. Per window, not shared.
-    library: Option<crate::ui::panels::library::Library>,
-    /// Held across opens: building it costs ~290 ms and nothing invalidates it
-    /// until the index is rescanned.
-    browse_model: Option<Arc<crate::library::browse::Model>>,
     /// Album details and cover art, resolved on their own thread.
     ///
     /// `None` when there is no index yet, which is simply a panel that says so.
@@ -977,8 +989,6 @@ pub struct App {
     /// Whether the art worker may ask the archive. Shared with the worker so
     /// the setting can be changed while the player is running.
     art_fetch: Arc<std::sync::atomic::AtomicBool>,
-    picker_cursor: usize,
-    picker_scroll: usize,
 
     eq: EqState,
     vis: Visuals,
@@ -986,6 +996,7 @@ pub struct App {
     edit: Editing,
     session: Sharing,
     queue: QueueView,
+    over: Overlays,
 
     fx: Effects,
 
@@ -1049,12 +1060,12 @@ impl App {
     /// 32,000-track index and most sessions never open it. Held afterwards, so
     /// the second `l` is instant.
     fn open_library(&mut self) {
-        if self.library.is_some() {
-            self.library = None;
+        if self.over.library.is_some() {
+            self.over.library = None;
             return;
         }
-        if let Some(model) = self.browse_model.clone() {
-            self.library = Some(crate::ui::panels::library::Library::new(model));
+        if let Some(model) = self.over.browse.clone() {
+            self.over.library = Some(crate::ui::panels::library::Library::new(model));
             return;
         }
         let Ok(index) = self.player.vfs().index_path() else {
@@ -1065,8 +1076,8 @@ impl App {
         match built {
             Ok(m) => {
                 let m = Arc::new(m);
-                self.browse_model = Some(Arc::clone(&m));
-                self.library = Some(crate::ui::panels::library::Library::new(m));
+                self.over.browse = Some(Arc::clone(&m));
+                self.over.library = Some(crate::ui::panels::library::Library::new(m));
             }
             Err(e) => self.note(format!("cannot read the index: {e}")),
         }
@@ -1166,7 +1177,7 @@ impl App {
     fn open_filter_box(&mut self) {
         self.panels.playlist = true;
         self.panels.focus = Focus::Playlist;
-        self.settings = None;
+        self.over.settings = None;
         self.edit.typing = Some(self.edit.words.clone());
     }
 
@@ -1178,7 +1189,7 @@ impl App {
     /// on the key event.
     fn library_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
         use crossterm::event::{KeyCode, KeyModifiers};
-        let Some(lib) = &mut self.library else {
+        let Some(lib) = &mut self.over.library else {
             return false;
         };
         if !lib.typing {
@@ -1428,7 +1439,9 @@ impl App {
     /// closes it.
     fn library_mouse(&mut self, m: MouseEvent, area: Rect) {
         use crate::ui::panels::library::{hit, layout, Hit};
-        let Some(lib) = &mut self.library else { return };
+        let Some(lib) = &mut self.over.library else {
+            return;
+        };
         let l = layout(area, lib.focus);
         let (x, y) = (m.column, m.row);
         match m.kind {
@@ -1447,7 +1460,7 @@ impl App {
                 Hit::Row { column, row } => {
                     let row = lib.scroll(column) + row as usize;
                     let again = self.register_click(x, y);
-                    if let Some(lib) = &mut self.library {
+                    if let Some(lib) = &mut self.over.library {
                         lib.select(column, row);
                     }
                     if again {
@@ -1539,8 +1552,6 @@ impl App {
         }
 
         let app = Self {
-            library: None,
-            browse_model: None,
             player,
             mpris,
             ipc_stop,
@@ -1584,17 +1595,12 @@ impl App {
             // is not on screen has nothing to move.
             dropouts_at: None,
             dropout_base: 0,
-            playlists: Vec::new(),
-            chooser: None,
-            settings: None,
-            pending_resume: None,
-            picker_cursor: 0,
-            picker_scroll: 0,
             // Built on the first frame: the queue's revision has already moved
             // past the zero this starts from.
             eq: EqState::from_config(cfg),
             vis: Visuals::from_config(cfg),
             edit: Editing::default(),
+            over: Overlays::default(),
             queue: QueueView {
                 // Built on the first frame: the queue's revision has already
                 // moved past the zero this starts from.
@@ -1647,7 +1653,7 @@ impl App {
     pub fn set_mirror(&mut self, m: Mirror) {
         self.session.link = Some(m);
         // A mirror has nothing of its own to resume or choose.
-        self.pending_resume = None;
+        self.over.resume = None;
         self.panels.picker = false;
     }
 
@@ -2009,7 +2015,7 @@ impl App {
 
     pub fn set_playlists(&mut self, playlists: Vec<PlaylistEntry>) {
         self.panels.picker = !playlists.is_empty();
-        self.playlists = playlists;
+        self.over.playlists = playlists;
     }
 
     /// Offer a previous session. Takes precedence over the playlist picker,
@@ -2019,7 +2025,7 @@ impl App {
             return;
         }
         self.panels.picker = false;
-        self.pending_resume = Some(s);
+        self.over.resume = Some(s);
     }
 
     /// Remember which file the queue came from, and what it is called.
@@ -2064,13 +2070,13 @@ impl App {
 
     /// Load the offered session and pick up where it stopped.
     fn accept_resume(&mut self) {
-        let Some(s) = self.pending_resume.take() else {
+        let Some(s) = self.over.resume.take() else {
             return;
         };
 
         // Reload the playlist it came from, if it is still there.
         let mut restored = None;
-        if let Some(path) = resume_playlist_path(&s, &self.playlists) {
+        if let Some(path) = resume_playlist_path(&s, &self.over.playlists) {
             match crate::load_playlist(&path) {
                 Ok(items) if !items.is_empty() => {
                     self.player.set_queue_tracks(items);
@@ -2143,10 +2149,10 @@ impl App {
     }
 
     fn decline_resume(&mut self) {
-        self.pending_resume = None;
+        self.over.resume = None;
         session::Session::clear();
         // Fall through to the ordinary starting point.
-        self.panels.picker = !self.playlists.is_empty();
+        self.panels.picker = !self.over.playlists.is_empty();
     }
 
     /// Capture the current state, if there is anything worth capturing.
@@ -2203,7 +2209,7 @@ impl App {
     }
 
     fn load_selected_playlist(&mut self) {
-        let Some(entry) = self.playlists.get(self.picker_cursor) else {
+        let Some(entry) = self.over.playlists.get(self.over.picker_cursor) else {
             return;
         };
         let (path, name) = (entry.path.clone(), entry.name.clone());
@@ -2234,11 +2240,12 @@ impl App {
     }
 
     fn move_picker(&mut self, delta: i32) {
-        if self.playlists.is_empty() {
+        if self.over.playlists.is_empty() {
             return;
         }
-        let n = self.playlists.len() as i64;
-        self.picker_cursor = ((self.picker_cursor as i64 + delta as i64).clamp(0, n - 1)) as usize;
+        let n = self.over.playlists.len() as i64;
+        self.over.picker_cursor =
+            ((self.over.picker_cursor as i64 + delta as i64).clamp(0, n - 1)) as usize;
     }
 
     pub fn run(&mut self) -> Result<()> {
@@ -2317,7 +2324,7 @@ impl App {
             self.poll_mirror();
             self.sync_view();
             self.check_track_change();
-            if self.pending_resume.is_none() && !self.is_mirror() {
+            if self.over.resume.is_none() && !self.is_mirror() {
                 self.save_session(false);
             }
             self.publish_mpris();
@@ -2332,7 +2339,7 @@ impl App {
                         // The resume prompt answers raw keys rather than
                         // actions: `n` should decline without becoming a
                         // global binding that shadows something else.
-                        if self.pending_resume.is_some() && self.answer_resume(k) {
+                        if self.over.resume.is_some() && self.answer_resume(k) {
                             continue;
                         }
                         // Naming a playlist eats keys ahead of everything, so
@@ -2349,7 +2356,7 @@ impl App {
                         if self.library_type(k) {
                             continue;
                         }
-                        let action = if self.library.is_some() {
+                        let action = if self.over.library.is_some() {
                             keymap::library(k).or_else(|| keymap::resolve(k))
                         } else {
                             keymap::resolve(k)
@@ -2683,7 +2690,7 @@ impl App {
         // a playlist rather than playing whatever the queue cursor was on.
         // Settings are modal while open: the arrows move the list rather than
         // the playlist behind it.
-        if let Some(st) = &self.settings {
+        if let Some(st) = &self.over.settings {
             let last = st.rows.len().saturating_sub(1) as i32;
             match action {
                 CursorUp => return self.move_settings(-1),
@@ -2692,7 +2699,7 @@ impl App {
                 PageDown | End => return self.move_settings(last + 1),
                 Activate => return self.take_setting(),
                 CloseOverlay => {
-                    self.settings = None;
+                    self.over.settings = None;
                     return;
                 }
                 // Asking for the list that is already up closes it, the way
@@ -2700,7 +2707,7 @@ impl App {
                 // switches, which `open_filter` sorts out.
                 OpenFilter => return self.open_filter(),
                 FilterQueue => {
-                    self.library = None;
+                    self.over.library = None;
                     return self.open_filter_box();
                 }
                 Quit => {
@@ -2710,7 +2717,7 @@ impl App {
                 _ => {}
             }
         }
-        if let Some(c) = &self.chooser {
+        if let Some(c) = &self.over.chooser {
             let last = c.rows.len().saturating_sub(1);
             match action {
                 CursorUp => return self.move_chooser(-1),
@@ -2721,7 +2728,7 @@ impl App {
                 End => return self.move_chooser(last as i32 + 1),
                 Activate => return self.take_chosen_cover(),
                 CloseOverlay | ChooseCover | ToggleAlbumPanel => {
-                    self.chooser = None;
+                    self.over.chooser = None;
                     return;
                 }
                 Quit => {
@@ -2738,11 +2745,11 @@ impl App {
                 PageUp => return self.move_picker(-10),
                 PageDown => return self.move_picker(10),
                 Home => {
-                    self.picker_cursor = 0;
+                    self.over.picker_cursor = 0;
                     return;
                 }
                 End => {
-                    self.picker_cursor = self.playlists.len().saturating_sub(1);
+                    self.over.picker_cursor = self.over.playlists.len().saturating_sub(1);
                     return;
                 }
                 Activate => return self.load_selected_playlist(),
@@ -2798,7 +2805,7 @@ impl App {
         // open on top of the browser and must keep the keys while they are up.
         // Before the main match, or the playlist behind it would take the
         // cursor keys.
-        if let Some(lib) = &mut self.library {
+        if let Some(lib) = &mut self.over.library {
             let page = self.panels.last_area.height.saturating_sub(6).max(1) as i32;
             match action {
                 CursorUp => return lib.step(-1),
@@ -2817,7 +2824,7 @@ impl App {
                 SavePlaylist => return self.save_playlist(),
                 LibraryAddAlbum => return self.library_add(true),
                 OpenLibrary | CloseOverlay => {
-                    self.library = None;
+                    self.over.library = None;
                     // Leaving for the player forgets what `space` meant, so
                     // coming back asks again rather than acting on an answer
                     // given about a different sitting.
@@ -2936,7 +2943,7 @@ impl App {
                 }
             }
             OpenPlaylistPicker => {
-                if self.playlists.is_empty() {
+                if self.over.playlists.is_empty() {
                     self.note("no playlists — set playlist_dir in config.toml".into());
                 } else {
                     self.panels.picker = true;
@@ -3260,7 +3267,7 @@ impl App {
     /// a rect reconstructed by eye.
     fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
         // Overlays are modal: while one is up nothing behind it can be clicked.
-        if self.pending_resume.is_some() || self.panels.help {
+        if self.over.resume.is_some() || self.panels.help {
             return;
         }
         let Some(r) = self.regions(full) else { return };
@@ -3270,16 +3277,16 @@ impl App {
         // panels underneath -- drawn, but stale -- take the click. The cover
         // chooser had no branch at all, which is why clicking under it could
         // start a different track.
-        if self.settings.is_some() {
+        if self.over.settings.is_some() {
             return self.settings_mouse(m, r.area);
         }
-        if self.chooser.is_some() {
+        if self.over.chooser.is_some() {
             return;
         }
         if self.panels.picker {
             return self.picker_mouse(m, r.area);
         }
-        if self.library.is_some() {
+        if self.over.library.is_some() {
             return self.library_mouse(m, r.area);
         }
 
@@ -3597,7 +3604,9 @@ impl App {
     /// would be a step that achieves nothing.
     fn settings_mouse(&mut self, m: MouseEvent, area: Rect) {
         let (x, y) = (m.column, m.row);
-        let Some(st) = &self.settings else { return };
+        let Some(st) = &self.over.settings else {
+            return;
+        };
         let rows = st.rows.len();
         let scroll = st.scroll;
         match m.kind {
@@ -3607,14 +3616,14 @@ impl App {
                 let inner = settings::list_rect(area, rows);
                 if !hit(inner, x, y) {
                     // Clicking outside a modal dismisses it.
-                    self.settings = None;
+                    self.over.settings = None;
                     return;
                 }
                 let i = scroll + (y - inner.y) as usize;
                 if i >= rows {
                     return;
                 }
-                if let Some(st) = &mut self.settings {
+                if let Some(st) = &mut self.over.settings {
                     st.cursor = i;
                 }
                 self.take_setting();
@@ -3629,18 +3638,18 @@ impl App {
             MouseEventKind::ScrollUp => self.move_picker(-3),
             MouseEventKind::ScrollDown => self.move_picker(3),
             MouseEventKind::Down(MouseButton::Left) => {
-                let inner = picker::list_rect(area, self.playlists.len());
+                let inner = picker::list_rect(area, self.over.playlists.len());
                 if !hit(inner, x, y) {
                     // Clicking outside a modal dismisses it.
                     self.panels.picker = false;
                     return;
                 }
-                let i = self.picker_scroll + (y - inner.y) as usize;
-                if i >= self.playlists.len() {
+                let i = self.over.picker_scroll + (y - inner.y) as usize;
+                if i >= self.over.playlists.len() {
                     return;
                 }
                 let double = self.register_click(x, y);
-                self.picker_cursor = i;
+                self.over.picker_cursor = i;
                 if double {
                     self.load_selected_playlist();
                 }
@@ -3818,7 +3827,7 @@ impl App {
 
         // The browser is the window while it is open, but the status bar stays:
         // it is where a note about what was just added appears.
-        if self.library.is_some() {
+        if self.over.library.is_some() {
             let browse = Rect {
                 height: area.height.saturating_sub(r.status.height),
                 ..area
@@ -3876,7 +3885,7 @@ impl App {
 
     fn draw_library(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         use crate::ui::panels::library::{self as lib, Column, LibraryView};
-        let Some(l) = &self.library else { return };
+        let Some(l) = &self.over.library else { return };
 
         // Scroll is derived at draw time from the cursor and this window's own
         // height, the way every other list here does it -- so two windows of
@@ -3907,7 +3916,7 @@ impl App {
         }
         .render(area, buf);
 
-        if let Some(l) = &mut self.library {
+        if let Some(l) = &mut self.over.library {
             for (c, s) in scrolls.into_iter().enumerate() {
                 l.set_scroll(c, s);
             }
@@ -3945,7 +3954,7 @@ impl App {
             .render(area, buf);
             return;
         }
-        if let Some(st) = &mut self.settings {
+        if let Some(st) = &mut self.over.settings {
             let h = settings::list_rect(area, st.rows.len()).height as usize;
             st.scroll = settings::clamp_scroll(st.cursor, st.scroll, h);
             SettingsView {
@@ -3960,7 +3969,7 @@ impl App {
             return;
         }
 
-        if let Some(c) = &mut self.chooser {
+        if let Some(c) = &mut self.over.chooser {
             let h = crate::ui::panels::chooser::list_rect(area, c.rows.len()).height as usize;
             c.scroll = crate::ui::panels::chooser::clamp_scroll(c.cursor, c.scroll, h);
             let album = self
@@ -3983,22 +3992,22 @@ impl App {
             let inner_h = area
                 .height
                 .saturating_sub(4)
-                .min(self.playlists.len() as u16 + 4)
+                .min(self.over.playlists.len() as u16 + 4)
                 .max(6)
                 .saturating_sub(2) as usize;
-            self.picker_scroll =
-                picker::clamp_scroll(self.picker_cursor, self.picker_scroll, inner_h);
+            self.over.picker_scroll =
+                picker::clamp_scroll(self.over.picker_cursor, self.over.picker_scroll, inner_h);
             PickerView {
                 theme: &self.look.theme,
-                entries: &self.playlists,
-                cursor: self.picker_cursor,
-                scroll: self.picker_scroll,
+                entries: &self.over.playlists,
+                cursor: self.over.picker_cursor,
+                scroll: self.over.picker_scroll,
                 empty_hint: "no playlists — set playlist_dir in config.toml",
             }
             .render(area, buf);
         }
 
-        if let Some(s) = &self.pending_resume {
+        if let Some(s) = &self.over.resume {
             ResumeView {
                 theme: &self.look.theme,
                 session: s,
@@ -4588,7 +4597,7 @@ impl App {
             .map(|p| p.to_path_buf())
             .or_else(|| crate::paths::playlist_dir().ok());
         if let Some(dir) = dir {
-            self.playlists = crate::scan_playlist_dir(&dir);
+            self.over.playlists = crate::scan_playlist_dir(&dir);
         }
     }
 
@@ -4619,7 +4628,9 @@ impl App {
 
     /// `space`: put what is selected into the loaded playlist.
     fn library_add(&mut self, whole_album: bool) {
-        let Some(lib) = &self.library else { return };
+        let Some(lib) = &self.over.library else {
+            return;
+        };
         let (what, items) = lib.selection(whole_album);
         if items.is_empty() {
             return self.note("nothing selected".into());
@@ -4854,11 +4865,12 @@ impl App {
     /// and asking for the other one switches to it rather than closing.
     fn open_overlay(&mut self, panel: Focus, kind: Overlay) {
         if self
+            .over
             .settings
             .as_ref()
             .is_some_and(|s| s.panel == panel && s.kind == kind)
         {
-            self.settings = None;
+            self.over.settings = None;
             return;
         }
         let (title, built) = self.settings_for(panel, kind);
@@ -4866,7 +4878,7 @@ impl App {
             return self.note("nothing to change here".into());
         }
         let (rows, items) = built.into_iter().unzip();
-        self.settings = Some(SettingsState {
+        self.over.settings = Some(SettingsState {
             panel,
             kind,
             title,
@@ -4878,17 +4890,19 @@ impl App {
     }
 
     fn move_settings(&mut self, delta: i32) {
-        let Some(s) = &mut self.settings else { return };
+        let Some(s) = &mut self.over.settings else {
+            return;
+        };
         let last = s.rows.len().saturating_sub(1) as i32;
         s.cursor = (s.cursor as i32 + delta).clamp(0, last) as usize;
     }
 
     /// Rebuild the rows in place, so the values shown are the values that are.
     fn refresh_settings(&mut self) {
-        let Some(s) = &self.settings else { return };
+        let Some(s) = &self.over.settings else { return };
         let (title, built) = self.settings_for(s.panel, s.kind);
         let (rows, items) = built.into_iter().unzip();
-        if let Some(s) = &mut self.settings {
+        if let Some(s) = &mut self.over.settings {
             s.title = title;
             s.rows = rows;
             s.items = items;
@@ -4897,7 +4911,7 @@ impl App {
 
     /// Act on the row the cursor is over.
     fn take_setting(&mut self) {
-        let Some(s) = &self.settings else { return };
+        let Some(s) = &self.over.settings else { return };
         let Some(item) = s.items.get(s.cursor).copied() else {
             return;
         };
@@ -4907,7 +4921,7 @@ impl App {
             // The answer is kept for this playlist, so the next `space` goes
             // straight in. Cancelling remembers nothing.
             Setting::AddAppend | Setting::AddReplace => {
-                self.settings = None;
+                self.over.settings = None;
                 let Some((what, items)) = self.edit.adding.take() else {
                     return;
                 };
@@ -4916,41 +4930,41 @@ impl App {
             }
             Setting::AddCancel => {
                 self.edit.adding = None;
-                self.settings = None;
+                self.over.settings = None;
                 return;
             }
             Setting::SavePlaylist => {
-                self.settings = None;
+                self.over.settings = None;
                 return self.save_playlist();
             }
             Setting::SaveOverwrite => {
-                self.settings = None;
+                self.over.settings = None;
                 let Some(p) = self.queue.source.clone() else {
                     return;
                 };
                 return self.write_playlist(p);
             }
             Setting::SaveAsNew => {
-                self.settings = None;
+                self.over.settings = None;
                 self.edit.naming = Some(String::new());
                 return;
             }
             Setting::SaveCancel => {
-                self.settings = None;
+                self.over.settings = None;
                 return;
             }
             // The rows that lead somewhere close the settings behind them,
             // rather than stacking one overlay on another.
             Setting::ChooseCover => {
-                self.settings = None;
+                self.over.settings = None;
                 return self.open_chooser();
             }
             Setting::RetryCover => {
-                self.settings = None;
+                self.over.settings = None;
                 return self.retry_cover();
             }
             Setting::LoadPlaylist => {
-                self.settings = None;
+                self.over.settings = None;
                 return self.handle(Action::OpenPlaylistPicker);
             }
             Setting::Shuffle => self.handle(Action::ToggleShuffle),
@@ -4958,15 +4972,15 @@ impl App {
             Setting::JoinSession => {
                 let name = self.queue.name.clone();
                 self.session.joining = None;
-                self.settings = None;
+                self.over.settings = None;
                 return self.note(format!("joined \u{2014} {name} is still playing"));
             }
             Setting::ReplaceQueue => {
                 let Some(path) = self.session.joining.take() else {
-                    self.settings = None;
+                    self.over.settings = None;
                     return;
                 };
-                self.settings = None;
+                self.over.settings = None;
                 return self.load_playlist_into_session(&path);
             }
             Setting::GroupOrder => self.cycle_grouping(),
@@ -5027,8 +5041,8 @@ impl App {
 
     /// Open the cover chooser for what is playing.
     fn open_chooser(&mut self) {
-        if self.chooser.is_some() {
-            self.chooser = None;
+        if self.over.chooser.is_some() {
+            self.over.chooser = None;
             return;
         }
         let Some(uri) = self.current_uri() else {
@@ -5062,7 +5076,7 @@ impl App {
             return self.note("no covers and no releases to choose from".into());
         }
         self.panels.album = true;
-        self.chooser = Some(Chooser {
+        self.over.chooser = Some(Chooser {
             cursor: album.choice.min(rows.len() - 1),
             uri,
             rows,
@@ -5072,14 +5086,18 @@ impl App {
     }
 
     fn move_chooser(&mut self, delta: i32) {
-        let Some(c) = &mut self.chooser else { return };
+        let Some(c) = &mut self.over.chooser else {
+            return;
+        };
         let last = c.rows.len().saturating_sub(1) as i32;
         c.cursor = (c.cursor as i32 + delta).clamp(0, last) as usize;
     }
 
     /// Use whatever the cursor is on.
     fn take_chosen_cover(&mut self) {
-        let Some(c) = self.chooser.take() else { return };
+        let Some(c) = self.over.chooser.take() else {
+            return;
+        };
         let Some(w) = &self.art else { return };
         self.graphics.forget();
 

@@ -873,6 +873,59 @@ struct Sharing {
     joining: Option<std::path::PathBuf>,
 }
 
+/// The playlist as this window is looking at it.
+///
+/// Distinct from the queue the *player* owns: that is the order tracks play
+/// in, and this is a view over it -- what is folded, what is selected, where
+/// the cursor is, and the rows last drawn. A follower has all of this without
+/// owning any audio.
+struct QueueView {
+    /// The queue in play order, cloned when it changes rather than every frame.
+    items: Vec<QueueItem>,
+    /// The lines the playlist draws, built during the frame and kept because a
+    /// click arrives between frames and has to map to the same rows the last
+    /// frame drew.
+    rows: playlist::Rows,
+    /// The queue revision, grouping and fold state `rows` was built from.
+    rows_from: (u64, bool, u64, Option<usize>, u64),
+    /// Records folded shut, by album title. Kept by album rather than by
+    /// position so a fold survives the order being reversed, the queue being
+    /// reloaded, or the session being resumed tomorrow.
+    folded: std::collections::HashSet<String>,
+    /// Bumped whenever `folded` changes, so the rows are rebuilt for it.
+    fold_gen: u64,
+    /// A position in the queue's view -- a track, not a row. Dividers are not
+    /// something you can select, so the cursor never lands on one.
+    cursor: usize,
+    /// A *row*, which is not the same thing once dividers take space.
+    scroll: usize,
+    /// Which way round album order runs. Held here as well as in the queue so
+    /// it survives the mode being switched off and on again.
+    group_desc: bool,
+    /// Rows marked for a bulk operation, by index into the queue's `tracks`.
+    ///
+    /// Track indices rather than URIs because a playlist may hold the same URI
+    /// more than once -- the reference library's own playlists have 793
+    /// repeated lines -- so a URI names no particular row. `tracks` only ever
+    /// moves under the three editing operations, which remap this in the same
+    /// breath, so an index survives shuffle, grouping and folds.
+    ///
+    /// Per window: `view.rs` shares "what is being looked at", and a half-made
+    /// selection is intent about what you are *about to do*, like focus.
+    tagged: std::collections::HashSet<usize>,
+    /// Copied rows, held as items so they survive loading another playlist.
+    clipboard: Vec<QueueItem>,
+    /// The queue has been changed and not written anywhere.
+    ///
+    /// Adding never touches a file. The playlist on disk changes only when it
+    /// is saved, and that asks first.
+    dirty: bool,
+    /// Which playlist is loaded, for the playlist pane's title.
+    name: String,
+    /// Where the current queue came from, so the session can name it.
+    source: Option<PathBuf>,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -904,24 +957,6 @@ pub struct App {
     pending_resume: Option<Session>,
     /// The library browser, when it is open. Per window, not shared.
     library: Option<crate::ui::panels::library::Library>,
-    /// Rows marked for a bulk operation, by index into the queue's `tracks`.
-    ///
-    /// Track indices rather than URIs because a playlist may hold the same URI
-    /// more than once -- the reference library's own playlists have 793
-    /// repeated lines -- so a URI names no particular row. `tracks` only ever
-    /// moves under the three editing operations, which remap this in the same
-    /// breath, so an index survives shuffle, grouping and folds.
-    ///
-    /// Per window: `view.rs` shares "what is being looked at", and a half-made
-    /// selection is intent about what you are *about to do*, like focus.
-    tagged: std::collections::HashSet<usize>,
-    /// Copied rows, held as items so they survive loading another playlist.
-    clipboard: Vec<QueueItem>,
-    /// The queue has been changed and not written anywhere.
-    ///
-    /// Adding never touches a file. The playlist on disk changes only when it
-    /// is saved, and that asks first.
-    queue_dirty: bool,
     /// Held across opens: building it costs ~290 ms and nothing invalidates it
     /// until the index is rescanned.
     browse_model: Option<Arc<crate::library::browse::Model>>,
@@ -942,41 +977,15 @@ pub struct App {
     /// Whether the art worker may ask the archive. Shared with the worker so
     /// the setting can be changed while the player is running.
     art_fetch: Arc<std::sync::atomic::AtomicBool>,
-    /// Where the current queue came from, so the session can name it.
-    source_playlist: Option<PathBuf>,
     picker_cursor: usize,
     picker_scroll: usize,
-    /// Which playlist is loaded, for the playlist pane's title.
-    loaded_name: String,
-
-    /// A position in the queue's view -- a track, not a row. Dividers are not
-    /// something you can select, so the cursor never lands on one.
-    cursor: usize,
-    /// A *row*, which is not the same thing once dividers take space.
-    scroll: usize,
-    /// Which way round album order runs. Held here as well as in the queue so
-    /// it survives the mode being switched off and on again.
-    group_desc: bool,
-    /// The queue in play order, cloned when it changes rather than every frame.
-    items: Vec<QueueItem>,
-    /// The lines the playlist draws, built during the frame and kept because a
-    /// click arrives between frames and has to map to the same rows the last
-    /// frame drew.
-    rows: playlist::Rows,
-    /// The queue revision, grouping and fold state `rows` was built from.
-    rows_from: (u64, bool, u64, Option<usize>, u64),
-    /// Records folded shut, by album title. Kept by album rather than by
-    /// position so a fold survives the order being reversed, the queue being
-    /// reloaded, or the session being resumed tomorrow.
-    folded: std::collections::HashSet<String>,
-    /// Bumped whenever `folded` changes, so the rows are rebuilt for it.
-    fold_gen: u64,
 
     eq: EqState,
     vis: Visuals,
     saving: Saving,
     edit: Editing,
     session: Sharing,
+    queue: QueueView,
 
     fx: Effects,
 
@@ -1009,7 +1018,7 @@ impl App {
     pub fn mirroring_on(vfs: Arc<crate::vfs::Vfs>, cfg: &crate::config::Config) -> Result<Self> {
         let player = Arc::new(Player::new(Arc::clone(&vfs), cfg.output.fixed_rate())?);
         let mut app = Self::with_player(player, Vec::new(), cfg)?;
-        app.source_playlist = None;
+        app.queue.source = None;
         app.spawn_art(vfs);
         Ok(app)
     }
@@ -1090,7 +1099,8 @@ impl App {
                     return true;
                 }
                 let dir = self
-                    .source_playlist
+                    .queue
+                    .source
                     .as_ref()
                     .and_then(|p| p.parent())
                     .map(|p| p.to_path_buf())
@@ -1241,7 +1251,10 @@ impl App {
 
     /// What the playlist's header row says right now.
     fn playlist_header(&self) -> Vec<crate::ui::panels::header::Item> {
-        crate::ui::panels::header::playlist_words(self.tagged.len(), self.clipboard.len())
+        crate::ui::panels::header::playlist_words(
+            self.queue.tagged.len(),
+            self.queue.clipboard.len(),
+        )
     }
 
     /// The rows a bulk action applies to, by index into `tracks`.
@@ -1249,8 +1262,8 @@ impl App {
     /// The tags when there are any, otherwise the row under the cursor -- so
     /// `del` and `y` are useful without tagging anything first.
     fn acting_on(&self) -> Vec<usize> {
-        if !self.tagged.is_empty() {
-            let mut v: Vec<usize> = self.tagged.iter().copied().collect();
+        if !self.queue.tagged.is_empty() {
+            let mut v: Vec<usize> = self.queue.tagged.iter().copied().collect();
             v.sort_unstable();
             return v;
         }
@@ -1265,15 +1278,15 @@ impl App {
         let Some(track) = self.cursor_track() else {
             return;
         };
-        if !self.tagged.remove(&track) {
-            self.tagged.insert(track);
+        if !self.queue.tagged.remove(&track) {
+            self.queue.tagged.insert(track);
         }
         self.move_cursor(1);
     }
 
     fn clear_tags(&mut self) {
-        let n = self.tagged.len();
-        self.tagged.clear();
+        let n = self.queue.tagged.len();
+        self.queue.tagged.clear();
         if n > 0 {
             self.note(format!("{n} untagged"));
         }
@@ -1285,14 +1298,14 @@ impl App {
         // In the order they were shown in, not storage order: copying a
         // scattered handful out of a grouped list and pasting it back in a
         // different order is not what anybody meant.
-        self.clipboard = q
+        self.queue.clipboard = q
             .view()
             .iter()
             .filter(|i| want.contains(i))
             .filter_map(|&i| q.tracks().get(i).cloned())
             .collect();
         drop(q);
-        let n = self.clipboard.len();
+        let n = self.queue.clipboard.len();
         self.note(match n {
             0 => "nothing to copy".into(),
             1 => "copied 1 track".into(),
@@ -1301,11 +1314,11 @@ impl App {
     }
 
     fn paste_tagged(&mut self) {
-        if self.clipboard.is_empty() {
+        if self.queue.clipboard.is_empty() {
             return self.note("nothing copied".into());
         }
-        let items = self.clipboard.clone();
-        let at = self.cursor + 1;
+        let items = self.queue.clipboard.clone();
+        let at = self.queue.cursor + 1;
         let uris: Vec<String> = items.iter().map(|t| t.uri.to_string()).collect();
         let done = match self.ask_session("paste-at", serde_json::json!({"at": at, "uris": uris})) {
             Some(Ok(n)) => n,
@@ -1320,11 +1333,11 @@ impl App {
         // Not `acting_on`: with nothing tagged that moves the cursor row to
         // where it already is -- a no-op that would still dirty the playlist
         // and put a `*` in the title nobody asked for.
-        if self.tagged.is_empty() {
+        if self.queue.tagged.is_empty() {
             return self.note("nothing tagged \u{2014} t marks a row".into());
         }
         let want = self.acting_on();
-        let at = self.cursor;
+        let at = self.queue.cursor;
         let rows: Vec<usize> = {
             let q = self.player.queue.lock().unwrap();
             want.iter().filter_map(|&t| q.view_position(t)).collect()
@@ -1334,7 +1347,7 @@ impl App {
             Some(Err(e)) => return self.note(format!("the session would not move them: {e}")),
             None => self.player.queue.lock().unwrap().move_to(&rows, at),
         };
-        self.tagged.clear();
+        self.queue.tagged.clear();
         self.after_edit();
         self.note(format!("moved {n}"));
     }
@@ -1360,7 +1373,7 @@ impl App {
             Some(Err(e)) => return self.note(format!("the session would not remove them: {e}")),
             None => self.player.queue.lock().unwrap().remove(&rows, protect),
         };
-        self.tagged.clear();
+        self.queue.tagged.clear();
         self.after_edit();
         self.note(match (n, kept) {
             (_, true) if n + 1 == asked && n == 0 => {
@@ -1377,10 +1390,10 @@ impl App {
     /// `tracks`, so a surviving index is a name for a different song -- keeping
     /// the in-range ones looks tidy and points them at the wrong rows.
     fn after_edit(&mut self) {
-        self.queue_dirty = true;
+        self.queue.dirty = true;
         let len = self.player.queue.lock().unwrap().len();
-        self.cursor = self.cursor.min(len.saturating_sub(1));
-        self.tagged.clear();
+        self.queue.cursor = self.queue.cursor.min(len.saturating_sub(1));
+        self.queue.tagged.clear();
     }
 
     /// Ask the session to edit its rows, and say what it actually did.
@@ -1527,9 +1540,6 @@ impl App {
 
         let app = Self {
             library: None,
-            tagged: Default::default(),
-            clipboard: Vec::new(),
-            queue_dirty: false,
             browse_model: None,
             player,
             mpris,
@@ -1578,23 +1588,30 @@ impl App {
             chooser: None,
             settings: None,
             pending_resume: None,
-            source_playlist: None,
             picker_cursor: 0,
             picker_scroll: 0,
-            loaded_name: DEFAULT_QUEUE_NAME.into(),
-            cursor: 0,
-            scroll: 0,
             // Built on the first frame: the queue's revision has already moved
             // past the zero this starts from.
-            items: Vec::new(),
-            rows: playlist::Rows::default(),
-            rows_from: (0, false, 0, None, 0),
-            folded: std::collections::HashSet::new(),
-            fold_gen: 0,
-            group_desc: cfg.playlist.group_desc,
             eq: EqState::from_config(cfg),
             vis: Visuals::from_config(cfg),
             edit: Editing::default(),
+            queue: QueueView {
+                // Built on the first frame: the queue's revision has already
+                // moved past the zero this starts from.
+                items: Vec::new(),
+                rows: playlist::Rows::default(),
+                rows_from: (0, false, 0, None, 0),
+                folded: std::collections::HashSet::new(),
+                fold_gen: 0,
+                cursor: 0,
+                scroll: 0,
+                group_desc: cfg.playlist.group_desc,
+                tagged: Default::default(),
+                clipboard: Vec::new(),
+                dirty: false,
+                name: DEFAULT_QUEUE_NAME.into(),
+                source: None,
+            },
             session: Sharing {
                 link: None,
                 uri: String::new(),
@@ -1723,11 +1740,11 @@ impl App {
                 if self.owns(&format!("load-playlist {}", path.display())) {
                     self.player.set_queue_tracks(items);
                 }
-                self.loaded_name = name.clone();
-                self.source_playlist = Some(path.to_path_buf());
+                self.queue.name = name.clone();
+                self.queue.source = Some(path.to_path_buf());
                 self.panels.playlist = true;
-                self.cursor = 0;
-                self.scroll = 0;
+                self.queue.cursor = 0;
+                self.queue.scroll = 0;
                 self.note(format!("{name} \u{2014} {n} tracks"));
             }
             Ok(_) => self.note(format!("{name} is empty")),
@@ -1743,12 +1760,13 @@ impl App {
 
     /// The view as this window currently has it.
     fn view_now(&self) -> crate::view::View {
-        let mut folded: Vec<String> = self.folded.iter().cloned().collect();
+        let mut folded: Vec<String> = self.queue.folded.iter().cloned().collect();
         folded.sort();
         crate::view::View {
-            playlist_name: self.loaded_name.clone(),
+            playlist_name: self.queue.name.clone(),
             playlist_path: self
-                .source_playlist
+                .queue
+                .source
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
@@ -1776,12 +1794,12 @@ impl App {
     /// Take on a view another window published.
     fn adopt_view(&mut self, v: &crate::view::View) {
         if !v.playlist_name.is_empty() {
-            self.loaded_name = v.playlist_name.clone();
+            self.queue.name = v.playlist_name.clone();
         }
-        self.source_playlist =
+        self.queue.source =
             (!v.playlist_path.is_empty()).then(|| std::path::PathBuf::from(&v.playlist_path));
-        self.folded = v.folded.iter().cloned().collect();
-        self.fold_gen = self.fold_gen.wrapping_add(1);
+        self.queue.folded = v.folded.iter().cloned().collect();
+        self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
         // Panel *intent*. Whether a panel actually appears is still decided by
         // this terminal's own size in `regions`, so a window too small for the
         // playlist does not close it everywhere.
@@ -1798,7 +1816,7 @@ impl App {
                 .and_then(|t| q.view_position(t));
             drop(q);
             if let Some(at) = at {
-                self.cursor = at;
+                self.queue.cursor = at;
             }
         }
     }
@@ -2012,9 +2030,9 @@ impl App {
     /// included, would then be talking about the wrong thing.
     pub fn set_source_playlist(&mut self, p: Option<PathBuf>) {
         if let Some(name) = p.as_ref().and_then(|p| p.file_stem()) {
-            self.loaded_name = name.to_string_lossy().into_owned();
+            self.queue.name = name.to_string_lossy().into_owned();
         }
-        self.source_playlist = p;
+        self.queue.source = p;
     }
 
     /// Handle a key while the resume prompt is up.
@@ -2056,8 +2074,8 @@ impl App {
             match crate::load_playlist(&path) {
                 Ok(items) if !items.is_empty() => {
                     self.player.set_queue_tracks(items);
-                    self.loaded_name = s.playlist_name.clone();
-                    self.source_playlist = Some(path);
+                    self.queue.name = s.playlist_name.clone();
+                    self.queue.source = Some(path);
                     restored = Some(true);
                 }
                 _ => restored = Some(false),
@@ -2087,8 +2105,8 @@ impl App {
         // The view comes back with the music. Folding is remembered by album
         // title, so it lands on the same records even if the playlist has been
         // edited since -- which is the whole reason it is not stored by row.
-        self.folded = s.folded.iter().map(|t| t.to_lowercase()).collect();
-        self.fold_gen = self.fold_gen.wrapping_add(1);
+        self.queue.folded = s.folded.iter().map(|t| t.to_lowercase()).collect();
+        self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
         if !s.album_order.is_empty() {
             let order: Vec<String> = s.album_order.iter().map(|t| t.to_lowercase()).collect();
             self.player.queue.lock().unwrap().set_manual_order(order);
@@ -2109,8 +2127,8 @@ impl App {
         // which is where the cursor would have been put anyway.
         let playing = self.player.queue.lock().unwrap().view_cursor();
         let len = self.player.queue.lock().unwrap().len();
-        self.cursor = if s.cursor < len { s.cursor } else { playing };
-        self.scroll = 0;
+        self.queue.cursor = if s.cursor < len { s.cursor } else { playing };
+        self.queue.scroll = 0;
         // Say when the playlist could not be brought back. Resuming the track
         // into whatever queue happened to be built is defensible, but doing it
         // silently leaves the user looking at the whole library wondering what
@@ -2147,8 +2165,8 @@ impl App {
         drop(q);
 
         Some(Session {
-            playlist: self.source_playlist.clone(),
-            playlist_name: self.loaded_name.clone(),
+            playlist: self.queue.source.clone(),
+            playlist_name: self.queue.name.clone(),
             index,
             total,
             position: self.player.state.position_secs(),
@@ -2159,12 +2177,12 @@ impl App {
             shuffle,
             repeat: repeat.to_string(),
             volume: self.player.volume(),
-            cursor: self.cursor,
+            cursor: self.queue.cursor,
             album_order: q_manual,
             folded: {
                 // Sorted, so a session file does not churn between saves for
                 // no reason anyone can see.
-                let mut v: Vec<String> = self.folded.iter().cloned().collect();
+                let mut v: Vec<String> = self.queue.folded.iter().cloned().collect();
                 v.sort();
                 v
             },
@@ -2197,16 +2215,16 @@ impl App {
                 if self.owns(&format!("load-playlist {}", path.display())) {
                     self.player.set_queue_tracks(items);
                 }
-                self.loaded_name = name.clone();
+                self.queue.name = name.clone();
                 // Loading a playlist you cannot see is not loading it.
                 self.panels.playlist = true;
                 // Remember where it came from, or the session saved from here
                 // has no playlist to resume into and falls back to the whole
                 // library. The picker is how a playlist is normally chosen, so
                 // this was every session started the ordinary way.
-                self.source_playlist = Some(path);
-                self.cursor = 0;
-                self.scroll = 0;
+                self.queue.source = Some(path);
+                self.queue.cursor = 0;
+                self.queue.scroll = 0;
                 self.panels.picker = false;
                 self.note(format!("{name} — {n} tracks"));
             }
@@ -2397,7 +2415,7 @@ impl App {
             animations: self.fx.active,
             fetch_art: self.art_fetch(),
             group_by: self.group_by_name(),
-            group_desc: self.group_desc,
+            group_desc: self.queue.group_desc,
             shuffle,
             repeat,
             eq_enabled: self.eq.enabled,
@@ -3087,7 +3105,7 @@ impl App {
             .lock()
             .unwrap()
             .view()
-            .get(self.cursor)
+            .get(self.queue.cursor)
             .copied()
     }
 
@@ -3101,10 +3119,10 @@ impl App {
         if n == 0 {
             return;
         }
-        let next = if self.rows.is_empty() {
-            (self.cursor as i64 + delta as i64).clamp(0, n as i64 - 1) as usize
+        let next = if self.queue.rows.is_empty() {
+            (self.queue.cursor as i64 + delta as i64).clamp(0, n as i64 - 1) as usize
         } else {
-            self.rows.step(self.cursor, delta)
+            self.queue.rows.step(self.queue.cursor, delta)
         };
         self.set_cursor(next);
     }
@@ -3115,7 +3133,7 @@ impl App {
         if n == 0 {
             return;
         }
-        let i = match self.rows.ends() {
+        let i = match self.queue.rows.ends() {
             Some((first, end)) => {
                 if last {
                     end
@@ -3136,8 +3154,8 @@ impl App {
 
     /// Put the cursor back on whatever is playing, after the order moved.
     fn follow_order(&mut self) {
-        self.cursor = self.player.queue.lock().unwrap().view_cursor();
-        self.scroll = 0;
+        self.queue.cursor = self.player.queue.lock().unwrap().view_cursor();
+        self.queue.scroll = 0;
     }
 
     /// Move the record the cursor is in, one place up or down the list.
@@ -3157,13 +3175,13 @@ impl App {
             .iter()
             .filter_map(|&i| q.tracks().get(i).cloned())
             .collect();
-        let Some(track) = q.view().get(self.cursor).copied() else {
+        let Some(track) = q.view().get(self.queue.cursor).copied() else {
             drop(q);
             return;
         };
         // Which record the cursor is in, named the way the order names it.
         let Some(here) = crate::playlist::group::keys(&items)
-            .get(self.cursor)
+            .get(self.queue.cursor)
             .map(|k| {
                 k.as_ref()
                     .map(|k| k.title().to_string())
@@ -3206,8 +3224,8 @@ impl App {
             .lock()
             .unwrap()
             .view_position(track)
-            .unwrap_or(self.cursor);
-        self.cursor = cursor;
+            .unwrap_or(self.queue.cursor);
+        self.queue.cursor = cursor;
         self.note(format!(
             "moved {} {}",
             if here.is_empty() {
@@ -3221,14 +3239,14 @@ impl App {
 
     /// Fold a record away, or open it again.
     fn toggle_fold(&mut self, title: &str) {
-        if !self.folded.remove(title) {
-            self.folded.insert(title.to_string());
+        if !self.queue.folded.remove(title) {
+            self.queue.folded.insert(title.to_string());
         }
-        self.fold_gen = self.fold_gen.wrapping_add(1);
+        self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
     }
 
     fn set_cursor(&mut self, i: usize) {
-        self.cursor = i;
+        self.queue.cursor = i;
     }
 
     fn note(&mut self, msg: String) {
@@ -3549,8 +3567,8 @@ impl App {
         }
         // The same rows the last frame drew, so a divider does not shift a
         // click onto its neighbour.
-        let row = self.scroll + (y - inner.y) as usize;
-        let i = match self.rows.rows().get(row) {
+        let row = self.queue.scroll + (y - inner.y) as usize;
+        let i = match self.queue.rows.rows().get(row) {
             // A heading folds its record away and opens it again. Selecting
             // the first track under it was the other candidate, and it is what
             // clicking that track already does.
@@ -4144,14 +4162,20 @@ impl App {
         drop(q);
         let grouped = self.session_grouped();
         let q = self.player.queue.lock().unwrap();
-        let from = (q.revision(), grouped, self.fold_gen, playing, self.edit.gen);
+        let from = (
+            q.revision(),
+            grouped,
+            self.queue.fold_gen,
+            playing,
+            self.edit.gen,
+        );
         drop(q);
 
         // Rebuilt only when the queue, the grouping or a fold actually moved:
         // the click handler reads it between frames and must see what was
         // drawn. `playing` is in there because a folded record says whether it
         // holds the track that is playing.
-        if self.rows_from != from {
+        if self.queue.rows_from != from {
             // Shown in play order, not storage order. With shuffle on those
             // differ, and rendering storage order made shuffle look like it did
             // nothing.
@@ -4161,46 +4185,47 @@ impl App {
             // them thirty times a second to draw fifteen was most of what the
             // panel cost.
             let q = self.player.queue.lock().unwrap();
-            self.items = q
+            self.queue.items = q
                 .view()
                 .iter()
                 .filter_map(|&i| q.tracks().get(i).cloned())
                 .collect();
             drop(q);
-            self.rows = match grouped {
-                true => playlist::Rows::grouped(&self.items, &self.folded, playing),
-                false => playlist::Rows::flat(self.items.len()),
+            self.queue.rows = match grouped {
+                true => playlist::Rows::grouped(&self.queue.items, &self.queue.folded, playing),
+                false => playlist::Rows::flat(self.queue.items.len()),
             };
             if !self.edit.words.trim().is_empty() {
-                let mask = crate::playlist::filter::mask(&self.items, &self.edit.words);
-                self.rows = std::mem::take(&mut self.rows).matching(&mask);
+                let mask = crate::playlist::filter::mask(&self.queue.items, &self.edit.words);
+                self.queue.rows = std::mem::take(&mut self.queue.rows).matching(&mask);
             }
-            self.rows_from = from;
+            self.queue.rows_from = from;
             // A cursor inside a record that has just been folded away has to
             // come back out; there is nothing on screen for it to sit on.
-            if let Some(t) = self.rows.nearest_shown(self.cursor) {
-                self.cursor = t;
+            if let Some(t) = self.queue.rows.nearest_shown(self.queue.cursor) {
+                self.queue.cursor = t;
             }
         }
 
         let visible = playlist::list_rect(area).height as usize;
-        let row = self.rows.row_of_track(self.cursor).unwrap_or(0);
-        self.scroll = PlaylistView::clamp_scroll(row, self.scroll, visible);
+        let row = self.queue.rows.row_of_track(self.queue.cursor).unwrap_or(0);
+        self.queue.scroll = PlaylistView::clamp_scroll(row, self.queue.scroll, visible);
         // Pull a record's heading into view along with its first track -- but
         // never at the cost of pushing the cursor off the bottom, which is
         // what the `min` refuses to do.
         if visible > 1 {
-            let anchor = self.rows.anchor_row(self.cursor);
-            self.scroll = PlaylistView::clamp_scroll(anchor, self.scroll, visible).min(self.scroll);
+            let anchor = self.queue.rows.anchor_row(self.queue.cursor);
+            self.queue.scroll = PlaylistView::clamp_scroll(anchor, self.queue.scroll, visible)
+                .min(self.queue.scroll);
         }
 
         // An asterisk, because adding never writes to disk and a playlist that
         // has been changed and not saved must say so -- otherwise the only way
         // to find out is to look for the tracks tomorrow and not find them.
-        let mut name = if self.queue_dirty {
-            format!("{} *", self.loaded_name)
+        let mut name = if self.queue.dirty {
+            format!("{} *", self.queue.name)
         } else {
-            self.loaded_name.clone()
+            self.queue.name.clone()
         };
         // The filter in force is part of what the panel is showing, so it
         // goes in the title beside the name rather than only in a note that
@@ -4216,7 +4241,7 @@ impl App {
             q.view()
                 .iter()
                 .enumerate()
-                .filter(|(_, t)| self.tagged.contains(t))
+                .filter(|(_, t)| self.queue.tagged.contains(t))
                 .map(|(slot, _)| slot)
                 .collect()
         };
@@ -4225,11 +4250,11 @@ impl App {
             theme: &self.look.theme,
             name: &name,
             tagged: &marked,
-            items: &self.items,
-            rows: &self.rows,
-            cursor: self.cursor,
+            items: &self.queue.items,
+            rows: &self.queue.rows,
+            cursor: self.queue.cursor,
             playing,
-            scroll: self.scroll,
+            scroll: self.queue.scroll,
             focused: self.panels.focus == Focus::Playlist,
             glyphs: self.look.glyphs,
             header_items: &words,
@@ -4244,7 +4269,7 @@ impl App {
             Color::Rgb(r, g, b) => Some(crate::theme::color::Rgb { r, g, b }),
             _ => None,
         };
-        for (x, y) in playlist::marker_cells(area, &self.rows, self.scroll, playing) {
+        for (x, y) in playlist::marker_cells(area, &self.queue.rows, self.queue.scroll, playing) {
             let cell = &buf[(x, y)];
             let fg = solid(cell.fg).unwrap_or(self.look.theme.row_playing_fg);
             let bg = solid(cell.bg).unwrap_or(self.look.theme.panel_bg);
@@ -4410,7 +4435,7 @@ impl App {
                 let (shuffle, repeat) = (q.shuffled(), q.repeat().to_string());
                 drop(q);
                 (
-                    self.loaded_name.clone(),
+                    self.queue.name.clone(),
                     vec![
                         (Row::setting("shuffle", on_off(shuffle)), Setting::Shuffle),
                         (
@@ -4486,12 +4511,12 @@ impl App {
         use settings::Row;
         let n = self.player.queue.lock().unwrap().tracks().len();
         let mut rows = vec![];
-        if let Some(p) = &self.source_playlist {
+        if let Some(p) = &self.queue.source {
             let was = crate::playlist::m3u::read_file(p).map(|pl| pl.len()).ok();
             rows.push((
                 Row::action(match was {
-                    Some(was) => format!("overwrite {} ({was} \u{2192} {n})", self.loaded_name),
-                    None => format!("overwrite {}", self.loaded_name),
+                    Some(was) => format!("overwrite {} ({was} \u{2192} {n})", self.queue.name),
+                    None => format!("overwrite {}", self.queue.name),
                 }),
                 Setting::SaveOverwrite,
             ));
@@ -4529,7 +4554,7 @@ impl App {
         let name = path
             .file_stem()
             .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| self.loaded_name.clone());
+            .unwrap_or_else(|| self.queue.name.clone());
         let pl = crate::playlist::m3u::from_uris(&name, uris.into_iter());
         let n = pl.len();
         match crate::playlist::m3u::write_file(
@@ -4538,9 +4563,9 @@ impl App {
             crate::playlist::m3u::WriteStyle::MpdCompatible,
         ) {
             Ok(()) => {
-                self.queue_dirty = false;
-                self.loaded_name = name.clone();
-                self.source_playlist = Some(path);
+                self.queue.dirty = false;
+                self.queue.name = name.clone();
+                self.queue.source = Some(path);
                 self.rescan_playlists();
                 self.note(format!("saved {n} tracks to {name}"));
             }
@@ -4556,7 +4581,8 @@ impl App {
     fn rescan_playlists(&mut self) {
         // Beside the playlist that is loaded, or the configured directory.
         let dir = self
-            .source_playlist
+            .queue
+            .source
             .as_ref()
             .and_then(|p| p.parent())
             .map(|p| p.to_path_buf())
@@ -4579,7 +4605,7 @@ impl App {
         };
         let here = self.player.queue.lock().unwrap().tracks().len();
         (
-            format!("{what} \u{2192} {}, which has {here}", self.loaded_name),
+            format!("{what} \u{2192} {}, which has {here}", self.queue.name),
             vec![
                 (
                     Row::action(format!("add {items} to the end")),
@@ -4604,7 +4630,7 @@ impl App {
             .edit
             .add_mode
             .as_ref()
-            .filter(|(name, _)| name == &self.loaded_name)
+            .filter(|(name, _)| name == &self.queue.name)
             .map(|(_, m)| *m);
         match remembered {
             Some(mode) => self.apply_add(mode, items, &what),
@@ -4674,8 +4700,8 @@ impl App {
             }
         }
 
-        self.queue_dirty = true;
-        let name = self.loaded_name.clone();
+        self.queue.dirty = true;
+        let name = self.queue.name.clone();
         self.note(match (replace, already) {
             (true, _) => format!("{what} \u{2192} {name}, replacing what was there"),
             (false, 0) => format!("added {added} to {name}"),
@@ -4737,7 +4763,7 @@ impl App {
                 Setting::ClearAlbumOrder,
             ));
         }
-        (self.loaded_name.clone(), rows)
+        (self.queue.name.clone(), rows)
     }
 
     /// Turn album order on, or back off again.
@@ -4755,7 +4781,7 @@ impl App {
         // Asked of the session, which may be another window's.
         let on = !self.session_grouped();
 
-        let descending = self.group_desc;
+        let descending = self.queue.group_desc;
         let want = match (on, descending) {
             (false, _) => "set-group off".to_string(),
             (true, true) => "set-group album desc".to_string(),
@@ -4783,8 +4809,8 @@ impl App {
         if !self.session_grouped() {
             return self.note("nothing to reverse until the albums are in order".into());
         }
-        self.group_desc = !self.group_desc;
-        let desc = self.group_desc;
+        self.queue.group_desc = !self.queue.group_desc;
+        let desc = self.queue.group_desc;
         // A direction over a hand-made arrangement means nothing, so asking
         // for one puts the records back in the order the years give them.
         if self.owns("set-album-order") {
@@ -4799,7 +4825,7 @@ impl App {
             self.player.queue.lock().unwrap().set_grouping(Some(desc));
         }
         self.follow_order();
-        self.note(if self.group_desc {
+        self.note(if self.queue.group_desc {
             "newest records first".into()
         } else {
             "oldest records first".into()
@@ -4885,7 +4911,7 @@ impl App {
                 let Some((what, items)) = self.edit.adding.take() else {
                     return;
                 };
-                self.edit.add_mode = Some((self.loaded_name.clone(), item));
+                self.edit.add_mode = Some((self.queue.name.clone(), item));
                 return self.apply_add(item, items, &what);
             }
             Setting::AddCancel => {
@@ -4899,7 +4925,7 @@ impl App {
             }
             Setting::SaveOverwrite => {
                 self.settings = None;
-                let Some(p) = self.source_playlist.clone() else {
+                let Some(p) = self.queue.source.clone() else {
                     return;
                 };
                 return self.write_playlist(p);
@@ -4930,7 +4956,7 @@ impl App {
             Setting::Shuffle => self.handle(Action::ToggleShuffle),
             Setting::Repeat => self.handle(Action::CycleRepeat),
             Setting::JoinSession => {
-                let name = self.loaded_name.clone();
+                let name = self.queue.name.clone();
                 self.session.joining = None;
                 self.settings = None;
                 return self.note(format!("joined \u{2014} {name} is still playing"));

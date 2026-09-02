@@ -44,8 +44,29 @@ const F_HIGH: f32 = 16_000.0;
 
 /// Quietest and loudest levels shown, in dB relative to full scale after
 /// weighting. Everything below the floor is off the bottom of the display.
-const FLOOR_DB: f32 = -68.0;
-const CEIL_DB: f32 = -6.0;
+///
+/// The ceiling is what *one band* reaches, not what the whole signal does,
+/// and that distinction is the whole calibration. Energy is spread across
+/// twenty ERB bands, so no single one holds anything near full scale: with
+/// the ceiling at -6 dBFS a loud master drove the tallest bar to 0.63 and the
+/// display simply never used its top third.
+///
+/// Measured rather than guessed, against pink noise at three mastering
+/// levels -- see `preview_levels_for_realistic_material`, which is how these
+/// numbers were arrived at and how to re-derive them if the weighting or the
+/// band count changes:
+///
+/// | master   | tallest bar |
+/// | -------- | ----------- |
+/// | -20 dBFS | 0.78        |
+/// | -14 dBFS | 0.95        |
+/// |  -9 dBFS | 1.00        |
+pub const FLOOR_DB: f32 = -68.0;
+pub const CEIL_DB: f32 = -32.0;
+
+/// The dB the display spans, for anything that has to convert a rate in
+/// decibels into the 0-to-1 units everything downstream speaks.
+pub const RANGE_DB: f32 = CEIL_DB - FLOOR_DB;
 
 /// Below this peak sample amplitude the input counts as silence.
 ///
@@ -378,6 +399,93 @@ mod tests {
     fn settle(s: &mut Spectrum, samples: &[f32]) {
         for _ in 0..120 {
             s.analyze(samples, 1.0 / 60.0);
+        }
+    }
+
+    /// Pink-ish noise at a given RMS: equal energy per octave, which is
+    /// roughly how music is distributed, unlike white noise or a tone.
+    fn pink(rms: f32, n: usize) -> Vec<f32> {
+        {
+            let pink = |rms: f32, n: usize| -> Vec<f32> {
+                let mut state = [0.0f32; 7];
+                let mut seed = 0x2545_F491_4F6C_DD1Du64;
+                let mut out = Vec::with_capacity(n);
+                for _ in 0..n {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    let w = (seed >> 40) as f32 / 8388608.0 - 1.0;
+                    // Voss-McCartney-ish filter bank.
+                    state[0] = 0.99886 * state[0] + w * 0.0555179;
+                    state[1] = 0.99332 * state[1] + w * 0.0750759;
+                    state[2] = 0.96900 * state[2] + w * 0.153852;
+                    state[3] = 0.86650 * state[3] + w * 0.3104856;
+                    state[4] = 0.55000 * state[4] + w * 0.5329522;
+                    state[5] = -0.7616 * state[5] - w * 0.0168980;
+                    let v = state.iter().take(6).sum::<f32>() + w * 0.5362;
+                    state[6] = w * 0.115926;
+                    out.push(v * 0.11);
+                }
+                let cur = (out.iter().map(|s| s * s).sum::<f32>() / n as f32).sqrt();
+                let k = if cur > 0.0 { rms / cur } else { 0.0 };
+                out.iter().map(|s| s * k).collect()
+            };
+            pink(rms, n)
+        }
+    }
+
+    /// The tallest bar for a master at this RMS, once settled.
+    fn peak_band(rms: f32) -> f32 {
+        let mut s = Spectrum::new(2048, 20, 44_100.0);
+        let sig = pink(rms, 2048);
+        for _ in 0..120 {
+            s.analyze(&sig, 1.0 / 60.0);
+        }
+        s.bands().iter().cloned().fold(0.0f32, f32::max)
+    }
+
+    /// The display has to use its whole height.
+    ///
+    /// The ceiling is what one *band* reaches, not what the signal does, and
+    /// getting that wrong is invisible in every other test: with it set to
+    /// -6 dBFS every bar was correct, smooth, in range -- and the top third
+    /// of the panel was never drawn, because no single band of twenty ever
+    /// holds that much of the energy.
+    #[test]
+    fn a_loud_master_fills_the_panel() {
+        let loud = peak_band(0.355);
+        assert!(loud >= 0.98, "a -9 dBFS master only reaches {loud:.2}");
+
+        let ordinary = peak_band(0.2);
+        assert!(
+            ordinary > 0.85,
+            "a -14 dBFS master only reaches {ordinary:.2}"
+        );
+
+        // And still climbs: a ceiling low enough to fill the panel must not
+        // be so low that everything is pinned there and loudness stops
+        // showing at all.
+        let quiet = peak_band(0.1);
+        assert!(
+            quiet < ordinary,
+            "{quiet:.2} then {ordinary:.2} is not a climb"
+        );
+        assert!(quiet > 0.5, "a -20 dBFS master is down at {quiet:.2}");
+    }
+
+    /// Not an assertion -- run with `--nocapture` to see the numbers the
+    /// ceiling was calibrated against.
+    #[test]
+    fn preview_levels_for_realistic_material() {
+        for (name, rms) in [("-20 dBFS", 0.1), ("-14 dBFS", 0.2), ("-9 dBFS", 0.355)] {
+            let mut s = Spectrum::new(2048, 20, 44_100.0);
+            let sig = pink(rms, 2048);
+            for _ in 0..120 {
+                s.analyze(&sig, 1.0 / 60.0);
+            }
+            let max = s.bands().iter().cloned().fold(0.0f32, f32::max);
+            let mean = s.bands().iter().sum::<f32>() / s.bands().len() as f32;
+            println!("  pink {name:10}  peak band {max:.2}  mean {mean:.2}");
         }
     }
 

@@ -27,8 +27,14 @@ const HOLD_S: f32 = 1.2;
 const FALL_DB_S: f32 = 12.0;
 
 /// The dB range the 0-to-1 display covers, so a fall in dB can be expressed
-/// in the units everything downstream actually uses. Matches `spectrum`.
-const RANGE_DB: f32 = 62.0;
+/// in the units everything downstream actually uses.
+///
+/// Taken from `spectrum` rather than copied from it. It was a hand-written
+/// 62.0 with a comment claiming they matched, and they stopped matching the
+/// moment the ceiling was recalibrated -- at which point the caps were
+/// falling at a rate derived from a range that no longer existed, which is
+/// the sort of drift a comment cannot prevent and an import can.
+use crate::vis::spectrum::RANGE_DB;
 
 /// The bars, and a peak indicator over each.
 #[derive(Default)]

@@ -43,6 +43,9 @@ pub struct Key {
     /// The record's folder, empty unless this title and artist are found in
     /// more than one -- that is, unless there is more than one rip of it.
     version: String,
+    /// The shortest tail of `version` that no other rip of this record
+    /// shares: what a heading shows. Empty when `version` is.
+    label: String,
 }
 
 impl Key {
@@ -71,21 +74,43 @@ impl Key {
         &self.version
     }
 
-    /// What to show for the version: the folder below the artist's, which is
-    /// where two rips differ -- `1970 - Black Sabbath [Castle]`, or
-    /// `FLAC/Paranoid` against `vinyl/Paranoid`. The artist folder itself is
-    /// left off because the heading already names the record.
+    /// What to show for the version: as little of the folder path as tells
+    /// this rip from the others, from the end -- `1970 - Black Sabbath
+    /// [Castle]` when the last folder differs, `FLAC/Paranoid` against
+    /// `vinyl/Paranoid` when it is the one above that does. A box set's rip
+    /// four folders deep is named by the one folder that is its own.
     pub fn version_label(&self) -> Option<&str> {
-        if self.version.is_empty() {
-            return None;
-        }
-        Some(
-            self.version
-                .split_once('/')
-                .map(|(_, rest)| rest)
-                .unwrap_or(&self.version),
-        )
+        (!self.label.is_empty()).then_some(self.label.as_str())
     }
+}
+
+/// The last `n` components of a path.
+fn tail(path: &str, n: usize) -> &str {
+    let mut cut = path.len();
+    for _ in 0..n {
+        match path[..cut].rfind('/') {
+            Some(i) => cut = i,
+            None => return path,
+        }
+    }
+    &path[cut + 1..]
+}
+
+/// The shortest tail of `dir` that none of `others` ends with.
+fn distinguishing_tail<'a>(dir: &'a str, others: &[String]) -> &'a str {
+    let depth = dir.split('/').count();
+    for n in 1..=depth {
+        let t = tail(dir, n);
+        let shared = others.iter().any(|o| {
+            o != dir
+                && (o.ends_with(t)
+                    && (o.len() == t.len() || o.as_bytes()[o.len() - t.len() - 1] == b'/'))
+        });
+        if !shared {
+            return t;
+        }
+    }
+    dir
 }
 
 /// The same normalisation the keys use, for a title from somewhere else --
@@ -174,6 +199,7 @@ pub fn keys<T: Tagged>(items: &[T]) -> Vec<Option<Key>> {
                 title,
                 artist,
                 version: String::new(),
+                label: String::new(),
             })
         })
         .collect();
@@ -189,8 +215,11 @@ pub fn keys<T: Tagged>(items: &[T]) -> Vec<Option<Key>> {
     }
     for (item, key) in items.iter().zip(keys.iter_mut()) {
         if let Some(k) = key {
-            if rips.get(k).is_some_and(|d| d.len() > 1) {
-                k.version = folder(item);
+            if let Some(dirs) = rips.get(k).filter(|d| d.len() > 1) {
+                let dir = folder(item);
+                let others: Vec<String> = dirs.iter().cloned().collect();
+                k.label = distinguishing_tail(&dir, &others).to_string();
+                k.version = dir;
             }
         }
     }
@@ -419,6 +448,49 @@ mod tests {
             dirs[0] == dirs[1] && dirs[2] == dirs[3] && dirs[1] != dirs[2],
             "{dirs:?}"
         );
+    }
+
+    #[test]
+    fn a_rip_is_named_by_as_little_of_its_path_as_tells_it_apart() {
+        let items = vec![
+            filed(
+                "Black Sabbath/FLAC/Paranoid",
+                "Paranoid",
+                "Black Sabbath",
+                1,
+            ),
+            filed(
+                "Black Sabbath/vinyl/Paranoid",
+                "Paranoid",
+                "Black Sabbath",
+                1,
+            ),
+            filed(
+                "Black Sabbath/Box/2004 Black Box/1970 Paranoid (Rhino)",
+                "Paranoid",
+                "Black Sabbath",
+                1,
+            ),
+        ];
+        let labels: Vec<Option<String>> = keys(&items)
+            .iter()
+            .map(|k| {
+                k.as_ref()
+                    .and_then(|k| k.version_label())
+                    .map(str::to_string)
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                Some("FLAC/Paranoid".into()),
+                Some("vinyl/Paranoid".into()),
+                Some("1970 Paranoid (Rhino)".into()),
+            ]
+        );
+        assert_eq!(tail("a/b/c", 1), "c");
+        assert_eq!(tail("a/b/c", 2), "b/c");
+        assert_eq!(tail("a/b/c", 9), "a/b/c");
     }
 
     #[test]

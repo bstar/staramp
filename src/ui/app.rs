@@ -693,6 +693,27 @@ impl Effects {
     }
 }
 
+/// How the player is drawn: the palette, the characters, and the two small
+/// animations that belong to the chrome rather than to the music.
+struct Look {
+    theme: Theme,
+    /// Every theme that can be cycled to, and where in that list we are.
+    ids: Vec<String>,
+    index: usize,
+    /// Which transport button faces to draw.
+    glyphs: crate::ui::panels::player::Glyphs,
+    /// Which characters the seek bar is drawn from.
+    seek_style: crate::ui::panels::player::SeekStyle,
+    /// How far the seek bar's highlight has travelled, 0 to 1.
+    ///
+    /// Held at zero unless something is actually playing: a highlight
+    /// sweeping a paused bar says the track is moving when it is not.
+    seek_phase: f32,
+    /// How far a title too long for its line has scrolled.
+    marquee: usize,
+    last_marquee: Instant,
+}
+
 pub struct App {
     player: Arc<Player>,
     mpris: Option<crate::mpris::MprisHandle>,
@@ -700,9 +721,7 @@ pub struct App {
     ipc_path: Option<PathBuf>,
     last_track_revision: u64,
     last_state: PlayState,
-    theme: Theme,
-    theme_ids: Vec<String>,
-    theme_index: usize,
+    look: Look,
 
     show_eq: bool,
     show_album: bool,
@@ -881,17 +900,8 @@ pub struct App {
     fluid_bars: usize,
     /// Newest samples, for the trace modes that draw the waveform itself.
     wave: Vec<f32>,
-    /// Which transport button faces to draw.
-    glyphs: crate::ui::panels::player::Glyphs,
     /// How wide the visualizer's bars are, and the gap between them.
     bar_layout: crate::ui::panels::visualizer::BarLayout,
-    /// Which characters the seek bar is drawn from.
-    seek_style: crate::ui::panels::player::SeekStyle,
-    /// How far the seek bar's highlight has travelled, 0 to 1.
-    ///
-    /// Held at zero unless something is actually playing: a highlight
-    /// sweeping a paused bar says the track is moving when it is not.
-    seek_phase: f32,
     vis_mode: VisMode,
     meters: Meters,
     /// Analyzer output received from the instance being mirrored.
@@ -903,8 +913,6 @@ pub struct App {
     padding_x: u16,
     padding_y: u16,
 
-    marquee_offset: usize,
-    last_marquee: Instant,
     last_frame: Instant,
     quit: bool,
     status: Option<(String, Instant)>,
@@ -1469,9 +1477,17 @@ impl App {
             ipc_path,
             last_track_revision: 0,
             last_state: PlayState::Stopped,
-            theme,
-            theme_ids,
-            theme_index,
+            look: Look {
+                theme,
+                ids: theme_ids,
+                index: theme_index,
+                glyphs: crate::ui::panels::player::Glyphs::default(),
+                seek_style: crate::ui::panels::player::SeekStyle::parse(&cfg.ui.seek_style)
+                    .unwrap_or_default(),
+                seek_phase: 0.0,
+                marquee: 0,
+                last_marquee: Instant::now(),
+            },
             show_eq: cfg.ui.show_equalizer,
             show_album: cfg.ui.show_album,
             show_playlist: cfg.ui.show_playlist,
@@ -1541,7 +1557,6 @@ impl App {
             },
             fluid_bars: 64,
             wave: vec![0.0; 1024],
-            glyphs: crate::ui::panels::player::Glyphs::default(),
             vis_mode: VisMode::parse(&cfg.vis.mode).unwrap_or_default(),
             meters: Meters::new(),
             mirror_bands: Vec::new(),
@@ -1550,16 +1565,11 @@ impl App {
                 cfg.vis.bar_width,
                 cfg.vis.bar_gap,
             ),
-            seek_style: crate::ui::panels::player::SeekStyle::parse(&cfg.ui.seek_style)
-                .unwrap_or_default(),
-            seek_phase: 0.0,
             onset: OnsetDetector::new(),
 
             padding_x: cfg.ui.padding_x,
             padding_y: cfg.ui.padding_y,
 
-            marquee_offset: 0,
-            last_marquee: Instant::now(),
             last_frame: Instant::now(),
             quit: false,
             status: None,
@@ -2235,9 +2245,9 @@ impl App {
             self.onset.feed(self.analyzer.bands(), dt);
             self.advance_effects(dt);
 
-            if now.duration_since(self.last_marquee) >= MARQUEE_STEP {
-                self.marquee_offset = self.marquee_offset.wrapping_add(1);
-                self.last_marquee = now;
+            if now.duration_since(self.look.last_marquee) >= MARQUEE_STEP {
+                self.look.marquee = self.look.marquee.wrapping_add(1);
+                self.look.last_marquee = now;
             }
 
             self.poll_mirror();
@@ -2326,9 +2336,9 @@ impl App {
         let (shuffle, repeat) = (q.shuffled(), q.repeat().to_string().to_lowercase());
         drop(q);
         Remembered {
-            theme: self.theme_ids[self.theme_index].clone(),
+            theme: self.look.ids[self.look.index].clone(),
             volume: self.player.volume(),
-            seek_style: self.seek_style.name().to_string(),
+            seek_style: self.look.seek_style.name().to_string(),
             graphics: self.graphics.mode().name().to_string(),
             buttons: self.graphics.buttons_mode().name().to_string(),
             show_album: self.show_album,
@@ -2478,7 +2488,7 @@ impl App {
     /// sweeping to its own clock.
     fn advance_seek_phase(&mut self, dt: f32) {
         if !self.fx.active || self.player.state.state() != PlayState::Playing {
-            self.seek_phase = 0.0;
+            self.look.seek_phase = 0.0;
             return;
         }
         let step = if self.fx.reactive {
@@ -2486,7 +2496,7 @@ impl App {
         } else {
             dt
         };
-        self.seek_phase = (self.seek_phase + step / SEEK_SHEEN_PERIOD).fract();
+        self.look.seek_phase = (self.look.seek_phase + step / SEEK_SHEEN_PERIOD).fract();
     }
 
     /// Step the retry highlight, and notice when the lookup has come back.
@@ -2887,7 +2897,7 @@ impl App {
                     // Drop what is mid-flight rather than leaving a half-drawn
                     // title on screen until the next track.
                     self.fx.running = None;
-                    self.seek_phase = 0.0;
+                    self.look.seek_phase = 0.0;
                 }
                 let on = self.fx.active;
                 self.note(
@@ -2900,8 +2910,8 @@ impl App {
                 );
             }
             NextSeekStyle => {
-                self.seek_style = self.seek_style.next();
-                let name = self.seek_style.name();
+                self.look.seek_style = self.look.seek_style.next();
+                let name = self.look.seek_style.name();
                 self.note(format!("seek bar: {name}"));
             }
             NextButtons => {
@@ -2937,11 +2947,11 @@ impl App {
                 }
             }
             NextTheme => {
-                self.theme_index = (self.theme_index + 1) % self.theme_ids.len();
-                let id = self.theme_ids[self.theme_index].clone();
+                self.look.index = (self.look.index + 1) % self.look.ids.len();
+                let id = self.look.ids[self.look.index].clone();
                 let (t, why) = builtin::resolve_named(&id);
                 self.note(format!("{} — {why}", t.name));
-                self.theme = t;
+                self.look.theme = t;
             }
             FocusNext => {
                 self.focus = match self.focus {
@@ -3433,7 +3443,7 @@ impl App {
             self.player.state.position_secs(),
             self.player.state.duration_secs(),
             repeat,
-            self.glyphs,
+            self.look.glyphs,
         )
     }
 
@@ -3726,9 +3736,9 @@ impl App {
         // inside the padding. Without this the padded columns show whatever the
         // terminal background is, which fights the theme.
         let bg = Style::default().bg(Color::Rgb(
-            self.theme.bg.r,
-            self.theme.bg.g,
-            self.theme.bg.b,
+            self.look.theme.bg.r,
+            self.look.theme.bg.g,
+            self.look.theme.bg.b,
         ));
         for y in full.top()..full.bottom() {
             for x in full.left()..full.right() {
@@ -3763,7 +3773,7 @@ impl App {
                 self.player.state.position_secs(),
                 self.player.state.duration_secs(),
                 repeat,
-                self.glyphs,
+                self.look.glyphs,
             ) {
                 self.fluid_bars =
                     crate::ui::panels::visualizer::fluid_bar_count(g.visualizer.width);
@@ -3778,7 +3788,7 @@ impl App {
 
         if let Some(rect) = r.equalizer {
             EqView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 gains: self.eq.gains,
                 preamp: self.eq.preamp,
                 enabled: self.eq.enabled,
@@ -3821,7 +3831,7 @@ impl App {
             empty: empties[c],
         });
         LibraryView {
-            theme: &self.theme,
+            theme: &self.look.theme,
             search: &l.search,
             typing: l.typing,
             columns,
@@ -3846,7 +3856,7 @@ impl App {
                 format!("{text}\u{2582}"),
             )];
             SettingsView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 heading: "FILTER",
                 title: "words found in the artist, title, album, year or path",
                 rows: &rows,
@@ -3859,7 +3869,7 @@ impl App {
         if let Some(name) = &self.naming {
             let rows = [settings::Row::setting("name", format!("{name}\u{2582}"))];
             SettingsView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 heading: "SAVE AS",
                 title: "a new playlist, beside the others",
                 rows: &rows,
@@ -3873,7 +3883,7 @@ impl App {
             let h = settings::list_rect(area, st.rows.len()).height as usize;
             st.scroll = settings::clamp_scroll(st.cursor, st.scroll, h);
             SettingsView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 heading: st.kind.heading(),
                 title: &st.title,
                 rows: &st.rows,
@@ -3893,7 +3903,7 @@ impl App {
                 .and_then(|i| i.album.clone())
                 .unwrap_or_else(|| "this album".into());
             ChooserView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 album: &album,
                 rows: &c.rows,
                 cursor: c.cursor,
@@ -3913,7 +3923,7 @@ impl App {
             self.picker_scroll =
                 picker::clamp_scroll(self.picker_cursor, self.picker_scroll, inner_h);
             PickerView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 entries: &self.playlists,
                 cursor: self.picker_cursor,
                 scroll: self.picker_scroll,
@@ -3924,7 +3934,7 @@ impl App {
 
         if let Some(s) = &self.pending_resume {
             ResumeView {
-                theme: &self.theme,
+                theme: &self.look.theme,
                 session: s,
                 now: crate::library::db::now_secs(),
             }
@@ -3990,7 +4000,7 @@ impl App {
         let empty: [f32; 0] = [];
         let showing = self.vis_mode != VisMode::Off;
         PlayerView {
-            theme: &self.theme,
+            theme: &self.look.theme,
             title,
             subtitle,
             tech,
@@ -4003,12 +4013,12 @@ impl App {
             bit_perfect: st.bit_perfect.load(Relaxed),
             focused: self.focus == Focus::Player,
             mirroring: self.mirror.is_some(),
-            marquee_offset: self.marquee_offset,
+            marquee_offset: self.look.marquee,
             vis_mode: self.vis_mode,
             bars: self.bar_layout,
-            glyphs: self.glyphs,
-            seek_phase: self.seek_phase,
-            seek_style: self.seek_style,
+            glyphs: self.look.glyphs,
+            seek_phase: self.look.seek_phase,
+            seek_style: self.look.seek_style,
             // Ballistic positions rather than the raw analyzer output: the caps
             // and the bar bodies have their own physics.
             bands: if showing { self.meters.bars() } else { &empty },
@@ -4028,7 +4038,7 @@ impl App {
         // construction rather than by a second code path.
         let state = st.state();
         let (position, duration) = (st.position_secs(), st.duration_secs());
-        let t = &self.theme;
+        let t = &self.look.theme;
         let (bg, plate, plate_lit, ink, ink_lit) = (
             t.bg,
             t.transport_button_bg,
@@ -4036,7 +4046,7 @@ impl App {
             t.transport_button_fg,
             t.transport_button_active_fg,
         );
-        if let Some(g) = player::geometry(area, position, duration, repeat, self.glyphs) {
+        if let Some(g) = player::geometry(area, position, duration, repeat, self.look.glyphs) {
             use crate::ui::panels::faces::Button;
             let c = &g.controls;
             let buttons = [
@@ -4162,7 +4172,7 @@ impl App {
         };
         let words = self.playlist_header();
         PlaylistView {
-            theme: &self.theme,
+            theme: &self.look.theme,
             name: &name,
             tagged: &marked,
             items: &self.items,
@@ -4171,7 +4181,7 @@ impl App {
             playing,
             scroll: self.scroll,
             focused: self.focus == Focus::Playlist,
-            glyphs: self.glyphs,
+            glyphs: self.look.glyphs,
             header_items: &words,
         }
         .render(area, buf);
@@ -4186,8 +4196,8 @@ impl App {
         };
         for (x, y) in playlist::marker_cells(area, &self.rows, self.scroll, playing) {
             let cell = &buf[(x, y)];
-            let fg = solid(cell.fg).unwrap_or(self.theme.row_playing_fg);
-            let bg = solid(cell.bg).unwrap_or(self.theme.panel_bg);
+            let fg = solid(cell.fg).unwrap_or(self.look.theme.row_playing_fg);
+            let bg = solid(cell.bg).unwrap_or(self.look.theme.panel_bg);
             let rect = Rect::new(x, y, 1, 1);
             let mark = crate::ui::graphics::Picture::PlayMark;
             if let Some(p) = self.graphics.picture(mark, rect, fg, bg, bg) {
@@ -4226,7 +4236,7 @@ impl App {
         };
 
         crate::ui::panels::album::AlbumView {
-            theme: &self.theme,
+            theme: &self.look.theme,
             album: album.as_deref(),
             protocol,
             show_cover,
@@ -5044,7 +5054,7 @@ impl App {
     }
 
     fn draw_status(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let t = &self.theme;
+        let t = &self.look.theme;
         let bg = Color::Rgb(t.status_bg.r, t.status_bg.g, t.status_bg.b);
         for x in 0..area.width {
             buf[(area.x + x, area.y)]
@@ -5122,7 +5132,7 @@ impl App {
     }
 
     fn draw_help(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-        let t = &self.theme;
+        let t = &self.look.theme;
         let fg = Color::Rgb(t.fg.r, t.fg.g, t.fg.b);
         let key = Color::Rgb(t.accent.r, t.accent.g, t.accent.b);
         let head = Color::Rgb(t.warn.r, t.warn.g, t.warn.b);

@@ -489,15 +489,6 @@ impl Config {
         Ok(true)
     }
 
-    pub fn save(&self) -> Result<()> {
-        let path = crate::paths::config_file()?;
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        std::fs::write(&path, toml::to_string_pretty(self)?)
-            .with_context(|| format!("writing {}", path.display()))
-    }
-
     /// Where playlists are read from, defaulting to the one inside staramp's
     /// own directory.
     pub fn resolved_playlist_dir(&self) -> Option<PathBuf> {

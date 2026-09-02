@@ -14,6 +14,11 @@
 //! panel gives about its own offset: deriving the geometry twice is how a click
 //! comes to select the row above the one it landed on.
 
+// A few accessors exist for a caller that has not been written: the browser
+// is opened one way today, and `new` and the model getters are what a second
+// entry point would need.
+#![allow(dead_code)]
+
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};

@@ -2508,17 +2508,6 @@ impl App {
     /// change that silently will not persist is worse than one that says so.
     /// Hold a setting to be written to `config.toml`.
     ///
-    /// Held rather than written: dragging the volume slider changes a setting
-    /// on every mouse event, and `edit::set` reads the whole file, rewrites it
-    /// and renames it over the original each time. Held changes are flushed on
-    /// the session's own timer and again on the way out, so the file is
-    /// written at most once every few seconds however hard a slider is pulled.
-    fn remember(&mut self, section: &str, key: &str, value: Value) {
-        self.saving
-            .pending
-            .insert((section.to_string(), key.to_string()), value);
-    }
-
     /// Every persistent setting as it stands now.
     fn settings_now(&self) -> Remembered {
         let q = self.player.queue.lock().unwrap();

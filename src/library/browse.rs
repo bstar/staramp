@@ -16,6 +16,11 @@
 //! Computed once, over everything, the browser and the playlist panel cannot
 //! disagree about where one record ends.
 
+// The model carries lookups the panel does not use yet -- by URI, by span,
+// and the album inference -- built while the index was in hand because they
+// cost nothing to keep and a second pass over 29,511 tracks to add later.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;

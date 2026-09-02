@@ -8,6 +8,11 @@
 //! even `order`, so a queue full of unplayable tracks cannot leave the player in
 //! a state where nothing works any more.
 
+// `with_seed` is how the shuffle tests get a reproducible order, and
+// `is_empty` and `play_next_len` are the questions a caller asks before
+// deciding whether to draw anything. Tested, and waiting on the UI that asks.
+#![allow(dead_code)]
+
 use crate::util::rng::Lcg;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

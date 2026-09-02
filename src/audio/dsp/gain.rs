@@ -5,6 +5,12 @@
 //! control, so the change lands on an exact sample. Master volume is applied in
 //! the **callback**, where a slider must be heard immediately.
 
+// `VolumeRamp` and `soft_clip` are complete and tested and nothing calls them
+// yet: the ramp is for fading between levels rather than stepping, and the
+// clipper for the ReplayGain preamp pushing a loud master past full scale.
+// Both want a UI decision before they are wired in.
+#![allow(dead_code)]
+
 /// Which gain to prefer when a track has both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RgMode {

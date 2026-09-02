@@ -125,6 +125,9 @@ impl group::Tagged for Track {
     fn artist(&self) -> Option<&str> {
         self.item.artist.as_deref()
     }
+    fn dir(&self) -> &str {
+        &self.dir
+    }
 }
 
 #[derive(Debug, Clone)]

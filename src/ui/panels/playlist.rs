@@ -160,18 +160,21 @@ impl Rows {
             // The title alone, not the whole grouping key: the artist half of
             // that key exists only to separate two records of the same name
             // inside one queue, and a fold has to mean the same thing in the
-            // next queue, where the namesake may not be there.
-            let fold = keys[i]
-                .as_ref()
-                .map(|k| k.title().to_string())
-                .unwrap_or_default();
+            // next queue, where the namesake may not be there. A rip's folder
+            // does go in, or folding one rip would fold all of them.
+            let version = keys[i].as_ref().and_then(|k| k.version_label());
+            let fold = match (keys[i].as_ref(), version) {
+                (None, _) => String::new(),
+                (Some(k), None) => k.title().to_string(),
+                (Some(k), Some(v)) => format!("{} \u{b7} {}", k.title(), v.to_lowercase()),
+            };
             let shut = folded.contains(&fold);
             for t in section_of.iter_mut().take(end).skip(i) {
                 *t = Some(rows.len());
             }
             rows.push(Row::Section {
                 fold,
-                label: heading(album, year),
+                label: heading(album, year, version),
                 tracks: end - i,
                 folded: shut,
                 playing: shut && playing.is_some_and(|p| (i..end).contains(&p)),
@@ -274,12 +277,18 @@ impl Rows {
     }
 }
 
-/// What a divider says: the record, and when it came out.
-fn heading(album: Option<&str>, year: Option<i64>) -> String {
-    match (album, year) {
-        (None, _) => "no album".into(),
+/// What a divider says: the record, when it came out, and -- when there is
+/// more than one rip of it in the queue -- the folder that tells this one
+/// from the others.
+fn heading(album: Option<&str>, year: Option<i64>, version: Option<&str>) -> String {
+    let head = match (album, year) {
+        (None, _) => return "no album".into(),
         (Some(a), Some(y)) => format!("{y} \u{b7} {a}"),
         (Some(a), None) => a.into(),
+    };
+    match version {
+        Some(v) => format!("{head} \u{b7} {v}"),
+        None => head,
     }
 }
 

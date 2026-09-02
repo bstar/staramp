@@ -13,7 +13,15 @@ use super::queue::QueueItem;
 
 /// What decides whether two items belong to the same record.
 ///
-/// The album title carries it, and the artist only breaks ties. Keying on
+/// The album title carries it, the artist breaks ties, and the folder breaks
+/// the ties that are left: the same title from the same artist in two
+/// directories is two rips of one record, and merging them made a 48-track
+/// *Black Sabbath* out of seven copies, interleaved by track number. The
+/// folder is only consulted when it has to be, so a record that exists once
+/// is keyed exactly as before. Disc folders fold up first -- see
+/// `infer::album_dir` -- so a two-disc set stays one record.
+///
+/// Keying on
 /// `(album_artist, album)` outright looks more careful and is worse in
 /// practice: a compilation whose `album_artist` is tagged on some tracks and
 /// not others splits into pieces, and that is far commoner in a real library
@@ -32,6 +40,9 @@ pub struct Key {
     title: String,
     /// Empty unless this title genuinely belongs to more than one artist.
     artist: String,
+    /// The record's folder, empty unless this title and artist are found in
+    /// more than one -- that is, unless there is more than one rip of it.
+    version: String,
 }
 
 impl Key {
@@ -52,6 +63,28 @@ impl Key {
     /// because most records leave it blank on purpose.
     pub fn artist(&self) -> &str {
         &self.artist
+    }
+
+    /// The folder that tells this rip from the others, empty when there is
+    /// only one rip.
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// What to show for the version: the folder below the artist's, which is
+    /// where two rips differ -- `1970 - Black Sabbath [Castle]`, or
+    /// `FLAC/Paranoid` against `vinyl/Paranoid`. The artist folder itself is
+    /// left off because the heading already names the record.
+    pub fn version_label(&self) -> Option<&str> {
+        if self.version.is_empty() {
+            return None;
+        }
+        Some(
+            self.version
+                .split_once('/')
+                .map(|(_, rest)| rest)
+                .unwrap_or(&self.version),
+        )
     }
 }
 
@@ -74,7 +107,8 @@ fn tag(s: Option<&str>) -> Option<String> {
     }
 }
 
-/// The three tags album identity is decided from.
+/// The three tags album identity is decided from, and the folder that
+/// separates rips.
 ///
 /// A trait rather than the concrete queue item, because the library browser
 /// holds a different row and the two must not end up with different rules for
@@ -83,6 +117,8 @@ pub trait Tagged {
     fn album(&self) -> Option<&str>;
     fn album_artist(&self) -> Option<&str>;
     fn artist(&self) -> Option<&str>;
+    /// The directory the track's file is in, relative to the library root.
+    fn dir(&self) -> &str;
 }
 
 impl Tagged for QueueItem {
@@ -94,6 +130,13 @@ impl Tagged for QueueItem {
     }
     fn artist(&self) -> Option<&str> {
         self.artist.as_deref()
+    }
+    fn dir(&self) -> &str {
+        self.uri
+            .backing_path()
+            .rsplit_once('/')
+            .map(|(d, _)| d)
+            .unwrap_or("")
     }
 }
 
@@ -115,7 +158,7 @@ pub fn keys<T: Tagged>(items: &[T]) -> Vec<Option<Key>> {
         }
     }
 
-    items
+    let mut keys: Vec<Option<Key>> = items
         .iter()
         .map(|item| {
             let title = tag(item.album())?;
@@ -127,9 +170,31 @@ pub fn keys<T: Tagged>(items: &[T]) -> Vec<Option<Key>> {
             } else {
                 String::new()
             };
-            Some(Key { title, artist })
+            Some(Key {
+                title,
+                artist,
+                version: String::new(),
+            })
         })
-        .collect()
+        .collect();
+
+    // Which folders hold each record. More than one is more than one rip,
+    // and only then does the folder join the key.
+    let folder = |item: &T| crate::library::infer::album_dir(item.dir()).to_string();
+    let mut rips: HashMap<Key, HashSet<String>> = HashMap::new();
+    for (item, key) in items.iter().zip(&keys) {
+        if let Some(k) = key {
+            rips.entry(k.clone()).or_default().insert(folder(item));
+        }
+    }
+    for (item, key) in items.iter().zip(keys.iter_mut()) {
+        if let Some(k) = key {
+            if rips.get(k).is_some_and(|d| d.len() > 1) {
+                k.version = folder(item);
+            }
+        }
+    }
+    keys
 }
 
 /// Where a group sits before its own key is considered.
@@ -166,9 +231,10 @@ pub fn titles_in_order(items: &[QueueItem]) -> Vec<String> {
 /// order, after everything that is named: loading a playlist full of records
 /// nobody has arranged should not scatter them.
 ///
-/// Within a record: disc, then track number, then the order it arrived in — so
-/// a rip with no track numbers keeps the order the playlist gave it instead of
-/// being scrambled by a sort that had nothing to sort on.
+/// Within a record: disc, then track number, then the file name for anything
+/// without one -- so a rip with no track numbers comes out in the order its
+/// files are named, which is nearly always the order of the record -- and
+/// last of all the order it arrived in.
 pub fn album_order(items: &[QueueItem], descending: bool, manual: &[String]) -> Vec<usize> {
     let keys = keys(items);
 
@@ -196,9 +262,18 @@ pub fn album_order(items: &[QueueItem], descending: bool, manual: &[String]) -> 
     }
 
     for g in &mut groups {
-        g.members.sort_by_key(|&i| {
+        g.members.sort_by_cached_key(|&i| {
             let it = &items[i];
-            (it.disc_no.unwrap_or(0), it.track_no.unwrap_or(0), i)
+            // Numbered tracks first, in number order; the unnumbered follow,
+            // by name. The name is the whole URI, lower-cased: within one
+            // record that differs only in the file name, and for a cue rip in
+            // the zero-padded track ordinal, which sorts as it counts.
+            (
+                it.disc_no.unwrap_or(0),
+                it.track_no.unwrap_or(u32::MAX),
+                it.uri.to_string().to_lowercase(),
+                i,
+            )
         });
     }
 
@@ -289,6 +364,123 @@ mod tests {
         q.disc_no = Some(disc);
         q.track_no = Some(track);
         q
+    }
+
+    /// `item`, filed in a folder.
+    fn filed(dir: &str, album: &str, artist: &str, track: u32) -> QueueItem {
+        let mut q = item(album, artist, Some(1970), 1, track);
+        q.uri = TrackUri::File {
+            rel_path: format!("{dir}/{track:02}.flac"),
+        };
+        q
+    }
+
+    #[test]
+    fn two_rips_of_one_record_are_two_records() {
+        let items = vec![
+            filed(
+                "Black Sabbath/1970 - Black Sabbath [Castle]",
+                "Black Sabbath",
+                "Black Sabbath",
+                1,
+            ),
+            filed(
+                "Black Sabbath/1970 - Black Sabbath [Castle]",
+                "Black Sabbath",
+                "Black Sabbath",
+                2,
+            ),
+            filed(
+                "Black Sabbath/Black Sabbath (2009 Remaster)",
+                "Black Sabbath",
+                "Black Sabbath",
+                1,
+            ),
+            filed(
+                "Black Sabbath/Black Sabbath (2009 Remaster)",
+                "Black Sabbath",
+                "Black Sabbath",
+                2,
+            ),
+        ];
+        let keys = keys(&items);
+        assert_eq!(keys[0], keys[1]);
+        assert_eq!(keys[2], keys[3]);
+        assert_ne!(keys[0], keys[2], "two folders, two records");
+        assert_eq!(
+            keys[0].as_ref().unwrap().version_label(),
+            Some("1970 - Black Sabbath [Castle]")
+        );
+        // And the order keeps each rip together rather than interleaving by
+        // track number.
+        let order = album_order(&items, false, &[]);
+        let dirs: Vec<&str> = order.iter().map(|&i| items[i].dir()).collect();
+        assert!(
+            dirs[0] == dirs[1] && dirs[2] == dirs[3] && dirs[1] != dirs[2],
+            "{dirs:?}"
+        );
+    }
+
+    #[test]
+    fn a_record_that_exists_once_is_keyed_without_its_folder() {
+        let items = vec![
+            filed("Angra/Holy Land", "Holy Land", "Angra", 1),
+            filed("Angra/Holy Land", "Holy Land", "Angra", 2),
+            filed("Angra/Fireworks", "Fireworks", "Angra", 1),
+        ];
+        for k in keys(&items).into_iter().flatten() {
+            assert_eq!(k.version(), "", "{k:?}");
+            assert_eq!(k.version_label(), None);
+        }
+    }
+
+    #[test]
+    fn disc_folders_do_not_split_a_set_into_rips() {
+        let items = vec![
+            filed(
+                "Blondie/Against The Odds/Disc 1",
+                "Against The Odds",
+                "Blondie",
+                1,
+            ),
+            filed(
+                "Blondie/Against The Odds/CD2",
+                "Against The Odds",
+                "Blondie",
+                1,
+            ),
+        ];
+        let keys = keys(&items);
+        assert_eq!(keys[0], keys[1]);
+        assert_eq!(keys[0].as_ref().unwrap().version(), "");
+    }
+
+    #[test]
+    fn unnumbered_tracks_follow_the_numbered_ones_by_file_name() {
+        let mut a = filed("X/Y", "Y", "X", 0);
+        a.track_no = None;
+        a.uri = TrackUri::File {
+            rel_path: "X/Y/b side.flac".into(),
+        };
+        let mut b = filed("X/Y", "Y", "X", 0);
+        b.track_no = None;
+        b.uri = TrackUri::File {
+            rel_path: "X/Y/a side.flac".into(),
+        };
+        let c = filed("X/Y", "Y", "X", 2);
+        let d = filed("X/Y", "Y", "X", 1);
+        let items = vec![a, b, c, d];
+        let order = album_order(&items, false, &[]);
+        let names: Vec<String> = order.iter().map(|&i| items[i].uri.to_string()).collect();
+        assert_eq!(
+            names,
+            [
+                "X/Y/01.flac",
+                "X/Y/02.flac",
+                "X/Y/a side.flac",
+                "X/Y/b side.flac"
+            ]
+        );
     }
 
     /// The album title of each item, in the order `album_order` gives them.

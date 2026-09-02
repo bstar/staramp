@@ -1019,11 +1019,20 @@ fn build_queue(
     // Otherwise: everything the index knows, in album order. The whole
     // library, not a slice of it: a cap of five thousand quietly dropped the
     // records past Q on a large collection, and nothing said so.
+    //
+    // Rips of one record stay together: the folder sorts before the disc and
+    // track, or seven copies of an album interleave track by track. The
+    // folder is the URI up to its last slash -- `rtrim` with the URI's own
+    // non-slash characters as the set strips the file name and stops at the
+    // slash, which is SQLite's way of spelling `dirname`. Tracks without a
+    // number come after the numbered ones, by name.
     let db = library::db::Db::open_readonly(index)?;
     let mut stmt = db.conn.prepare(&format!(
         "{META_SELECT}
          WHERE t.hidden = 0
-         ORDER BY t.album_artist, t.album, t.disc_no, t.track_no"
+         ORDER BY t.album_artist, t.album,
+                  rtrim(t.uri, replace(t.uri, '/', '')),
+                  t.disc_no, t.track_no IS NULL, t.track_no, t.uri"
     ))?;
     let rows = stmt.query_map([], read_meta)?;
     let items = rows

@@ -46,9 +46,15 @@ pub struct PlayerView<'a> {
 
 /// The transport button faces.
 ///
-/// Switchable because the good glyphs are not universally available. Every
-/// face in a set is the same width, so the buttons form an even row and each
-/// is the same size to click; `glyph_widths_are_uniform` holds that.
+/// Switchable because the good glyphs are not universally available. A face
+/// carries ink and nothing else -- no padding spaces. The faces in a set are
+/// therefore *not* all the same width, and do not need to be: the plate is a
+/// fixed size, so the buttons form an even row and are the same size to click
+/// whatever they hold, and the face is centred in it.
+///
+/// They used to be padded to a common width with a trailing space, which is
+/// what made `play` and `stop` sit hard against the left of their plates: the
+/// centring saw a two-cell face where only one cell had ink in it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Glyphs {
     pub prev: &'static str,
@@ -59,28 +65,33 @@ pub struct Glyphs {
 }
 
 impl Glyphs {
-    /// Geometric shapes and block elements, at the largest sizes the ranges
-    /// offer, because those are what a monospace font draws at cap height.
+    /// One cell per face, so every one of them centres exactly.
     ///
-    /// The media control pictographs (U+23EE and neighbours) and the "small"
-    /// and "medium" triangles are all drawn well inside the cell, so they came
-    /// out visibly smaller than the `SHUF` and `REP` labels beside them.
-    /// U+25B6 and U+25C0 are the full-size triangles, U+25AE and U+25A0 the
-    /// full-size bar and square.
+    /// The width is the whole design. A face centres in its plate only when
+    /// the two have the same parity, so a set of mixed one- and two-cell faces
+    /// cannot centre all of them at any plate width: this set used to pair the
+    /// triangles -- `prev` and `next` were two cells, `play` and `stop` one --
+    /// and those two sat half a cell left of centre with nothing to be done
+    /// about it. Uniform faces make the question go away.
     ///
-    /// U+25B6 and U+25C0 do carry an emoji presentation, which a font lacking
-    /// them as text can substitute double width. Pinning them with U+FE0E was
-    /// worse in practice: renderers disagree about how to lay a variation
-    /// selector out, and one put a blank cell between the two triangles of a
-    /// button. Any font that ships these as text -- which every terminal font
-    /// does -- never reaches the emoji fallback, and `ascii` is there for one
-    /// that does not.
+    /// U+00AB and U+00BB for the skips, which are Latin-1 and therefore in
+    /// every font that exists; U+25B6 and U+25A0 for play and stop, the
+    /// full-size triangle and square a monospace font draws at cap height.
+    ///
+    /// U+23F8 for pause is a deliberate exception, chosen on how it looks.
+    /// It carries **default emoji presentation**: `unicode-width` reports one
+    /// cell and a terminal is entitled to draw two, in colour, and a face a
+    /// cell wider than the layout believes shifts every button after it. It
+    /// renders as text in the terminals this was checked in, and `block` and
+    /// `ascii` are there for one where it does not. Nothing else in any set
+    /// may do this -- `no_face_risks_being_drawn_as_an_emoji` holds the line,
+    /// and names this one codepoint as the only exception.
     pub const UNICODE: Self = Self {
-        prev: "\u{25c0}\u{25c0}",
-        play: "\u{25b6} ",
-        pause: "\u{25ae}\u{25ae}",
-        stop: "\u{25a0} ",
-        next: "\u{25b6}\u{25b6}",
+        prev: "\u{00ab}",
+        play: "\u{25b6}",
+        pause: "\u{23f8}",
+        stop: "\u{25a0}",
+        next: "\u{00bb}",
     };
 
     /// Nerd Font private-use icons, from the Material Design set.
@@ -109,7 +120,7 @@ impl Glyphs {
     /// by the same font at the same scale as the text.
     pub const BLOCK: Self = Self {
         prev: "<<",
-        play: "> ",
+        play: ">",
         pause: "\u{258c}\u{258c}",
         stop: "\u{2588}\u{2588}",
         next: ">>",
@@ -118,18 +129,15 @@ impl Glyphs {
     /// For terminals and fonts that can manage neither.
     pub const ASCII: Self = Self {
         prev: "|<",
-        play: "> ",
+        play: ">",
         pause: "||",
         stop: "[]",
         next: ">|",
     };
 
-    /// The play face on its own, for somewhere only one cell wide.
-    ///
-    /// The transport pads its buttons to a common width so they form an even
-    /// row; a marker column has no such neighbours and wants the glyph alone.
+    /// The play face, for a marker column a single cell wide.
     pub fn play_mark(&self) -> &'static str {
-        self.play.trim_end()
+        self.play
     }
 
     pub fn parse(s: &str) -> Option<Self> {
@@ -150,8 +158,18 @@ impl Glyphs {
     }
 
     /// Cells each button occupies.
+    ///
+    /// Derived from the set's own widest face, so the padding is the same in
+    /// every set and the plate's parity follows the face's: `nerd`, whose
+    /// faces are one cell, gets an odd plate and centres them exactly, where a
+    /// fixed even width would have left every one of them half a cell out.
     pub fn button_width(&self) -> u16 {
         self.face_width_max() + BUTTON_PAD * 2
+    }
+
+    /// Rows each button occupies.
+    pub fn button_height(&self) -> u16 {
+        BUTTON_H
     }
 
     fn face_width_max(&self) -> u16 {
@@ -176,9 +194,76 @@ const SHUFFLE: &str = "SHUF";
 /// The buttons are drawn as plates rather than bare glyphs, because how large
 /// a glyph looks is the font's decision and not one a terminal program can
 /// override -- a font without the shape substitutes another font's, at that
-/// font's size. Padding is the one dimension staramp does control, and it
-/// makes the target bigger to hit as well as to see.
+/// font's size. The plate is the one dimension staramp does control.
 const BUTTON_PAD: u16 = 1;
+
+/// The plate's width for a two-cell face, in cells.
+///
+/// A cell is about twice as tall as it is wide -- 8 by 17 pixels in the font
+/// this was measured in -- so 4 cells is 32 pixels, and the plate is 34 tall
+/// (see [`BUTTON_H`]): square to within a pixel. Not the width itself, which
+/// [`Glyphs::button_width`] derives; this is what that comes to for the
+/// default set, and what the squareness rests on.
+const BUTTON_W: u16 = 4;
+
+/// The plate's height, in rows.
+///
+/// Three rows occupied, but nothing like three rows tall: the face has the
+/// middle one to itself and the outer two are only fractionally painted --
+/// see [`PLATE_EDGE`].
+///
+/// It has to be odd. A face is one row and can only be centred in an odd
+/// number of them, so the alternative was a two-row plate with every glyph
+/// half a row out.
+const BUTTON_H: u16 = 3;
+
+/// The cell proportions the plate is squared against.
+///
+/// A program cannot ask what size its terminal draws a cell, so this is the
+/// common case: about 8 by 17 pixels, a little over one to two. Fonts vary by
+/// a few percent either side of it and the plate is square across that range,
+/// which is as good as this can be made from inside.
+const CELL_W_PX: u16 = 8;
+const CELL_H_PX: u16 = 17;
+
+/// Eighths of each outer row to paint, so a plate `cells` wide comes out
+/// square.
+///
+/// This is the plate's real height control, and the reason its height does not
+/// follow from its row count. The block elements divide a cell into eighths,
+/// so the plate can stand at any of `CELL_H + 2 x (CELL_H x n/8)` pixels
+/// rather than only at whole rows -- and the row count merely has to be odd,
+/// so the face has a middle row to sit on.
+///
+/// Solving that for a height equal to the width gives
+/// `n = (cells x CELL_W - CELL_H) x 4 / CELL_H`. Three cells wants a quarter
+/// each side: 24 by 25.5. Whole rows would have been 51, and halves 34.
+const fn plate_edge(cells: u16) -> u16 {
+    let target = cells * CELL_W_PX;
+    if target <= CELL_H_PX {
+        return 0;
+    }
+    // Rounded, not truncated: a plate a sixteenth too short beats one an
+    // eighth too tall.
+    let n = ((target - CELL_H_PX) * 4 + CELL_H_PX / 2) / CELL_H_PX;
+    if n > 8 {
+        8
+    } else {
+        n
+    }
+}
+
+/// Lower *n* eighths of a cell, indexed by `n`.
+///
+/// The top of the plate is drawn with one of these -- plate colour over the
+/// panel -- and the bottom is *cut out* with its complement, panel colour over
+/// a plate background. Two directions because the block elements are not
+/// symmetric: every eighth exists downwards, but upwards there is only a half
+/// and a one-eighth, so the upper edge has to be the part that is left unpainted.
+const LOWER_EIGHTHS: [&str; 9] = [
+    " ", "\u{2581}", "\u{2582}", "\u{2583}", "\u{2584}", "\u{2585}", "\u{2586}", "\u{2587}",
+    "\u{2588}",
+];
 
 /// Cells a label occupies.
 ///
@@ -241,8 +326,10 @@ pub fn geometry(
             Constraint::Length(1),             // title
             Constraint::Length(1),             // album and format
             Constraint::Length(1),             // seek bar
-            Constraint::Length(1),             // a blank row, so the bar is not sitting
-            Constraint::Length(1),             // on top of the transport
+            // The transport. Its plates are three rows and the face sits on
+            // the middle one, so the blank row that used to separate this from
+            // the seek bar is now the top of the buttons themselves.
+            Constraint::Length(BUTTON_H),
         ])
         .split(inner);
     let top = Layout::default()
@@ -258,7 +345,7 @@ pub fn geometry(
         tech: rows[2],
         seek_row: rows[3],
         seek: seek_track(rows[3], position, duration),
-        controls: controls(rows[5], repeat, glyphs),
+        controls: controls(rows[4], repeat, glyphs),
     })
 }
 
@@ -304,7 +391,7 @@ const ANALYZER_ROWS: u16 = 4;
 
 /// Rows the panel body needs: the analyzer's, four single rows, and one blank
 /// between the seek bar and the transport.
-pub const BODY_ROWS: u16 = ANALYZER_ROWS + 5;
+pub const BODY_ROWS: u16 = ANALYZER_ROWS + 3 + BUTTON_H;
 
 /// The whole panel, border included.
 pub const PANEL_ROWS: u16 = BODY_ROWS + 2;
@@ -325,10 +412,16 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     // transport buttons have to stop short of it. They used to be drawn under
     // it and then painted over at narrow widths, which left a click landing on
     // a button nobody could see.
+    // Everything that is not a plate is a single row, and sits on the same
+    // row the faces do -- the middle of the three -- so the transport reads as
+    // one line of controls rather than a row of buttons with labels adrift
+    // above them.
+    let mid = row.y + row.height / 2;
+
     let vol_w = VOLUME_WIDTH;
     let volume = (row.width > vol_w + 8).then(|| Rect {
         x: row.x + row.width - vol_w - 6 + 4,
-        y: row.y,
+        y: mid,
         width: vol_w - 4,
         height: 1,
     });
@@ -341,11 +434,12 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     let mut x = row.x + 1;
     // A button that would not fit takes no room, matching how the renderer
     // skips it -- so the two stay in step at any panel width.
-    let take = |x: &mut u16, w: u16| -> Rect {
+    let take = |x: &mut u16, w: u16, h: u16| -> Rect {
+        let y = if h == 1 { mid } else { row.y };
         if *x + w > right {
-            return Rect::new((*x).min(right), row.y, 0, 1);
+            return Rect::new((*x).min(right), y, 0, h);
         }
-        let r = Rect::new(*x, row.y, w, 1);
+        let r = Rect::new(*x, y, w, h);
         *x += w + 1;
         r
     };
@@ -353,14 +447,15 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     // Widths come from the faces themselves, so a change of glyph cannot
     // leave the hit rects pointing at where a button used to be.
     let w = glyphs.button_width();
-    let prev = take(&mut x, w);
-    let play = take(&mut x, w);
-    let pause = take(&mut x, w);
-    let stop = take(&mut x, w);
-    let next = take(&mut x, w);
+    let h = glyphs.button_height();
+    let prev = take(&mut x, w, h);
+    let play = take(&mut x, w, h);
+    let pause = take(&mut x, w, h);
+    let stop = take(&mut x, w, h);
+    let next = take(&mut x, w, h);
     x += 1;
-    let shuffle = take(&mut x, face_width(SHUFFLE));
-    let rep = take(&mut x, face_width(repeat_label(repeat)));
+    let shuffle = take(&mut x, face_width(SHUFFLE), 1);
+    let rep = take(&mut x, face_width(repeat_label(repeat)), 1);
 
     Controls {
         row,
@@ -829,13 +924,35 @@ fn render_controls(
         } else {
             rgb(t.transport_button_bg)
         };
-        for dx in 0..r.width {
-            buf[(r.x + dx, r.y)]
-                .set_char(' ')
-                .set_style(Style::default().bg(plate));
+        // The middle row is solid; the outer two are half blocks facing it,
+        // so the plate stands two rows tall while the face still has a whole
+        // row of its own to be centred on. Their *background* is the panel's,
+        // not the plate's -- that is the half that is meant to disappear.
+        let mid = r.y + r.height / 2;
+        let behind = rgb(t.bg);
+        for dy in 0..r.height {
+            let y = r.y + dy;
+            let edge = plate_edge(r.width) as usize;
+            let (ch, style) = if y == mid {
+                (" ", Style::default().bg(plate))
+            } else if y < mid {
+                (LOWER_EIGHTHS[edge], Style::default().fg(plate).bg(behind))
+            } else {
+                // Cut out rather than drawn -- see `LOWER_EIGHTHS`.
+                (
+                    LOWER_EIGHTHS[8 - edge],
+                    Style::default().fg(behind).bg(plate),
+                )
+            };
+            for dx in 0..r.width {
+                buf[(r.x + dx, y)].set_symbol(ch).set_style(style);
+            }
         }
+        // Centred both ways: the plate's middle row, and the face's own width
+        // -- which is its ink, since a face carries no padding -- centred
+        // across the plate's.
         let inset = (r.width.saturating_sub(face_width(s))) / 2;
-        buf.set_string(r.x + inset, r.y, s, fg.bg(plate));
+        buf.set_string(r.x + inset, mid, s, fg.bg(plate));
     };
 
     let playing = state == PlayState::Playing;
@@ -1505,19 +1622,127 @@ mod tests {
         assert_eq!(Glyphs::default(), Glyphs::UNICODE);
     }
 
+    /// The plate is a fixed size, so the buttons are the same size to click
+    /// whatever they hold. The *faces* are deliberately not uniform any more.
     #[test]
     fn every_transport_button_is_the_same_size() {
         for set in Glyphs::ALL {
-            let f = set.face_width_max();
-            for face in set.faces() {
-                assert_eq!(face_width(face), f, "{face:?} is not {f} cells in {set:?}");
-            }
-            assert_eq!(
-                set.button_width(),
-                f + BUTTON_PAD * 2,
-                "the plate should pad the widest face in {set:?}"
+            assert_eq!(set.button_height(), BUTTON_H, "plate height in {set:?}");
+            // Two clear cells either side of the widest face, in every set.
+            let slack = set.button_width() - set.face_width_max();
+            assert_eq!(slack, BUTTON_PAD * 2, "padding in {set:?}");
+            // And the widest face lands dead centre, because the plate's
+            // parity follows it.
+            assert_eq!(slack % 2, 0, "{set:?} cannot centre its widest face");
+        }
+    }
+
+    /// The plate's real dimensions.
+    ///
+    /// A cell is roughly twice as tall as it is wide -- 8 by 17 pixels where
+    /// this was measured -- so the default set's three cells are 24 px across,
+    /// and a quarter-cell edge either side of the face's row makes it
+    /// 17 + 2 x 4.25 = 25.5 px tall. Square to within 6%.
+    ///
+    /// The height does not follow from the row count and cannot be read off
+    /// it: three occupied rows would be 51 px, and this stands at half that.
+    /// [`PLATE_EDGE`] is what sets it.
+    ///
+    /// Pinned because these are visual properties nothing else would catch.
+    /// The buttons drew as 32-by-17 lozenges for a long time, then as 16-by-17
+    /// plates with the glyph jammed against the edge, then as 48-by-51 slabs,
+    /// and every test passed throughout.
+    #[test]
+    fn the_plate_is_the_size_it_was_chosen_to_be() {
+        let px = |cells: u16| -> (f32, f32) {
+            let w = (cells * CELL_W_PX) as f32;
+            // Occupied rows are not height: only `plate_edge` eighths of each
+            // outer row are painted.
+            let h = CELL_H_PX as f32 * (1.0 + 2.0 * plate_edge(cells) as f32 / 8.0);
+            (w, h)
+        };
+
+        // The default set: three cells, a quarter each side.
+        assert_eq!(plate_edge(3), 2);
+        let (w, h) = px(3);
+        assert!(
+            (w - 24.0).abs() < 0.01 && (h - 25.5).abs() < 0.01,
+            "{w}x{h}"
+        );
+
+        // Every set is square, whatever width its faces need, because the
+        // edge is derived from that width.
+        for set in Glyphs::ALL {
+            let (w, h) = px(set.button_width());
+            let ratio = w / h;
+            assert!(
+                (0.9..=1.1).contains(&ratio),
+                "{set:?} stands {w}x{h} px, ratio {ratio:.2}"
             );
         }
+
+        assert_eq!(
+            Glyphs::UNICODE.button_width(),
+            3,
+            "three cells: one face plus padding"
+        );
+        // The two-cell sets need a wider plate, and at this height it is still
+        // within tolerance -- checked for every set in the loop above.
+        assert_eq!(Glyphs::BLOCK.button_width(), BUTTON_W);
+    }
+
+    /// What the uniform faces buy: every button, not merely the widest, sits
+    /// dead centre. A face centres only when it and the plate share parity, so
+    /// this holds exactly when a set's faces are all the same width.
+    #[test]
+    fn every_face_of_the_default_set_centres_exactly() {
+        for set in [Glyphs::UNICODE, Glyphs::NERD] {
+            let w = set.button_width();
+            for face in set.faces() {
+                let slack = w - face_width(face);
+                assert_eq!(
+                    slack % 2,
+                    0,
+                    "{face:?} cannot centre in a {w}-cell plate in {set:?}"
+                );
+            }
+        }
+    }
+
+    /// A face must never carry default emoji presentation, bar one.
+    ///
+    /// `unicode-width` reports one cell for the media control pictographs and
+    /// a terminal is entitled to draw two, in colour. A face a cell wider than
+    /// the layout believes shifts every button after it, and nothing else in
+    /// the suite would see it -- the widths all agree, on this machine.
+    ///
+    /// U+23F8 is allowed because it was chosen knowing this, and is named
+    /// rather than excluded by a wider range so that reaching for any of its
+    /// neighbours is still a test failure and a fresh decision.
+    #[test]
+    fn no_face_risks_being_drawn_as_an_emoji() {
+        // The pictograph run that carries Emoji_Presentation=Yes.
+        let risky = '\u{23e9}'..='\u{23fa}';
+        const ALLOWED: char = '\u{23f8}';
+        for set in Glyphs::ALL {
+            for face in set.faces() {
+                for ch in face.chars() {
+                    assert!(
+                        !risky.contains(&ch) || ch == ALLOWED,
+                        "{face:?} in {set:?} uses U+{:04X}, which has default \
+                         emoji presentation and may be drawn double width",
+                        ch as u32
+                    );
+                }
+            }
+        }
+    }
+
+    /// The whole point of the three-row plate: an odd height has a middle row,
+    /// so a one-row face is centred in it rather than half a row out.
+    #[test]
+    fn the_plate_has_a_middle_row_to_centre_the_face_on() {
+        assert_eq!(BUTTON_H % 2, 1, "an even-height plate cannot centre a row");
     }
 
     #[test]
@@ -1590,9 +1815,12 @@ mod tests {
 
             let g = geometry(area, 30.0, 300.0, RepeatMode::All, Glyphs::default())
                 .expect("panel has a body");
+            // The face sits on the plate's middle row, so that is the row to
+            // read it back from.
             let at = |r: Rect| -> String {
+                let y = r.y + r.height / 2;
                 (0..r.width)
-                    .map(|i| buf[(r.x + i, r.y)].symbol().to_string())
+                    .map(|i| buf[(r.x + i, y)].symbol().to_string())
                     .collect()
             };
             let c = &g.controls;
@@ -1623,11 +1851,14 @@ mod tests {
             // A control that does not fit gets a zero-width rect rather than
             // one sitting under the volume slider. Narrow panels run out of
             // room for the toggles before the transport.
+            //
+            // The transport is five three-cell plates and their gaps, 20
+            // cells, so the toggles need 54 columns to appear.
             for (rect, face) in [(c.shuffle, SHUFFLE), (c.repeat, "REP:ALL")] {
                 if rect.width > 0 {
                     assert_eq!(at(rect), face, "width {width}");
                 } else {
-                    assert!(width < 60, "{face} should fit at width {width}");
+                    assert!(width < 54, "{face} should fit at width {width}");
                 }
             }
 

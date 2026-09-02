@@ -66,11 +66,22 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 - `cargo test` no longer fails when a real instance is running. The session
   lease was taken on the configured socket path rather than the one under test,
   so every test that binds a socket contended with the developer's own player.
+- The transport buttons are square, and their faces are centred in them. They
+  were drawn as plates four cells by one -- 32 by 17 pixels, twice as wide as
+  tall -- and `play` and `stop` sat hard against the left edge, because the
+  faces were padded to a common width with a trailing space and the centring
+  saw two cells where only one had ink in it. The plate is now three cells by
+  a quarter-row either side of the face's own row, which is 24 by 25.5: square
+  to within 6%, with every face dead centre.
 
 ### Changed
 
 - `[output] mode = "fixed"` and `fixed_rate` are now read. They have been
   documented in the generated config since 0.1.0 and were never consulted.
+- The `unicode` transport faces are one cell each -- `«`, `▶`, `⏸`, `■`, `»` --
+  where they used to pair the triangles. A face centres in its plate only when
+  the two share parity, so a set of mixed one- and two-cell faces cannot centre
+  all of them at any plate width.
 
 ## [0.1.0] - 2026-09-01
 

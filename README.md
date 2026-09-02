@@ -645,7 +645,7 @@ them.
 
 | Setting             | Needs                                               | If it is missing                                  |
 | ------------------- | --------------------------------------------------- | ------------------------------------------------- |
-| `unicode` (default) | U+25B6, U+25C0, U+25AE, U+25A0 in the terminal font | drawn from a fallback font, smaller than the text |
+| `unicode` (default) | U+00AB, U+00BB, U+25B6, U+23F8, U+25A0 in the terminal font | drawn from a fallback font, smaller than the text |
 | `block`             | nothing beyond ASCII and block elements             | nothing to miss                                   |
 | `nerd`              | any Nerd Font, selected in the terminal             | boxes                                             |
 | `ascii`             | nothing                                             | nothing to miss                                   |

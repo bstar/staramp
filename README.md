@@ -275,6 +275,7 @@ program does.
 | `home`/`g`, `end`/`G` | first / last track      |
 | `enter`         | play what is selected         |
 | `f`             | order the playlist            |
+| `/`             | filter the playlist           |
 | `alt+up` / `alt+down` | move a whole record up or down |
 | `ctrl+s`        | save the playlist             |
 
@@ -286,6 +287,15 @@ program does.
 | `u`             | put them here                 |
 | `m`             | move them here                |
 | `del` / `D`     | remove them                   |
+
+`/` narrows the playlist to the rows that match what you type: every word has
+to be found somewhere in the artist, title, album, year or file path, in any
+order and any case. `enter` applies it, `esc` keeps whatever was in force, and
+`enter` on an empty box clears it. Pressing `/` again opens the box with the
+current words in it, so a filter is edited rather than retyped. It works from
+any panel and brings the playlist up. The music is not filtered -- a hidden
+track still plays when its turn comes -- only what the list shows, and the
+title says what it is showing.
 
 Tagging is how a queue gets rearranged in bulk: mark rows anywhere in the list,
 including across playlists, then copy, move or delete them in one go. While any

@@ -196,6 +196,70 @@ impl Rows {
         }
     }
 
+    /// These rows, less the tracks `visible` rules out.
+    ///
+    /// A filter hides a track the way a fold does: its row goes, the cursor
+    /// steps over it, and it plays regardless. A record none of whose tracks
+    /// match loses its heading too; one that keeps any says how many.
+    pub fn matching(self, visible: &[bool]) -> Rows {
+        let n = self.row_of.len();
+        let shown_of = |t: usize| visible.get(t).copied().unwrap_or(true);
+        // Which tracks each heading covers, folded or not.
+        let mut members: Vec<Vec<usize>> = vec![Vec::new(); self.rows.len()];
+        for t in 0..n {
+            if let Some(s) = self.section_of[t] {
+                members[s].push(t);
+            }
+        }
+
+        let mut rows: Vec<Row> = Vec::with_capacity(self.rows.len());
+        let mut row_of = vec![None; n];
+        let mut section_of = vec![None; n];
+        let mut shown = Vec::new();
+        for (i, row) in self.rows.iter().enumerate() {
+            match row {
+                Row::Track(t) if shown_of(*t) => {
+                    row_of[*t] = Some(rows.len());
+                    shown.push(*t);
+                    rows.push(Row::Track(*t));
+                }
+                Row::Track(_) => {}
+                Row::Section {
+                    fold,
+                    label,
+                    folded,
+                    playing,
+                    ..
+                } => {
+                    let kept: Vec<usize> = members[i]
+                        .iter()
+                        .copied()
+                        .filter(|&t| shown_of(t))
+                        .collect();
+                    if kept.is_empty() {
+                        continue;
+                    }
+                    for &t in &kept {
+                        section_of[t] = Some(rows.len());
+                    }
+                    rows.push(Row::Section {
+                        fold: fold.clone(),
+                        label: label.clone(),
+                        tracks: kept.len(),
+                        folded: *folded,
+                        playing: *playing,
+                    });
+                }
+            }
+        }
+        Rows {
+            rows,
+            row_of,
+            shown,
+            section_of,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.rows.len()
     }
@@ -473,6 +537,15 @@ impl<'a> Widget for PlaylistView<'a> {
             return;
         }
 
+        if total > 0 && self.rows.is_empty() {
+            buf.set_string(
+                inner.x + 2,
+                inner.y + inner.height / 2,
+                "nothing matches the filter — / to change it, enter on nothing to clear it",
+                Style::default().fg(rgb(t.empty_fg)),
+            );
+            return;
+        }
         if total == 0 {
             buf.set_string(
                 inner.x + 2,
@@ -1274,6 +1347,42 @@ mod render_tests {
             vec![(list.x, list.y)]
         );
         assert!(marker_cells(area, &rows, 0, None).is_empty());
+    }
+    #[test]
+    fn a_filter_drops_rows_and_the_headings_left_with_nothing_under_them() {
+        // Two records of two tracks, grouped; keep one track of the second.
+        let mut items: Vec<QueueItem> = Vec::new();
+        for (album, n) in [("Holy Land", 2), ("Rebirth", 2)] {
+            for k in 0..n {
+                let mut q = QueueItem::new(TrackUri::File {
+                    rel_path: format!("{album}/{k}.flac"),
+                });
+                q.album = Some(album.into());
+                q.track_no = Some(k as u32 + 1);
+                items.push(q);
+            }
+        }
+        let all = Rows::grouped(&items, &HashSet::new(), None);
+        assert_eq!(all.len(), 6, "two headings and four tracks");
+        let some = all.clone().matching(&[false, false, false, true]);
+        assert_eq!(some.len(), 2, "one heading and one track");
+        assert!(matches!(some.rows()[0], Row::Section { tracks: 1, .. }));
+        assert_eq!(some.rows()[1], Row::Track(3));
+        assert_eq!(some.row_of_track(3), Some(1));
+        assert_eq!(some.row_of_track(0), None, "hidden, like a folded track");
+        assert_eq!(some.section_row(3), Some(0));
+        assert_eq!(some.ends(), Some((3, 3)));
+        assert_eq!(
+            some.nearest_shown(0),
+            Some(3),
+            "the cursor lands on what is left"
+        );
+        // Nothing matching leaves no rows at all.
+        assert!(all.matching(&[false; 4]).is_empty());
+        // And a flat list narrows the same way.
+        let flat = Rows::flat(3).matching(&[true, false, true]);
+        assert_eq!(flat.rows(), &[Row::Track(0), Row::Track(2)]);
+        assert_eq!(flat.step(0, 1), 2, "the cursor steps over the hidden one");
     }
 }
 

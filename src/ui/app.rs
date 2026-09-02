@@ -701,6 +701,13 @@ pub struct App {
     adding: Option<(String, Vec<QueueItem>)>,
     /// A new playlist's name, while it is being typed.
     naming: Option<String>,
+    /// The words the playlist is narrowed to. Empty is everything.
+    filter: String,
+    /// The filter box, while it is open: what has been typed so far, seeded
+    /// with the filter in force so `/` again shows what is being matched.
+    filtering: Option<String>,
+    /// Bumped when the filter changes, so the rows rebuild.
+    filter_gen: u64,
     /// The queue has been changed and not written anywhere.
     ///
     /// Adding never touches a file. The playlist on disk changes only when it
@@ -787,7 +794,7 @@ pub struct App {
     /// frame drew.
     rows: playlist::Rows,
     /// The queue revision, grouping and fold state `rows` was built from.
-    rows_from: (u64, bool, u64, Option<usize>),
+    rows_from: (u64, bool, u64, Option<usize>, u64),
     /// Records folded shut, by album title. Kept by album rather than by
     /// position so a fold survives the order being reversed, the queue being
     /// reloaded, or the session being resumed tomorrow.
@@ -978,6 +985,53 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// Keys typed into the filter box.
+    ///
+    /// Enter takes what was typed as the filter -- nothing at all clears it
+    /// -- and Esc leaves the filter as it was. Raw keys, like the name box:
+    /// while words are being typed every letter is a letter.
+    fn filter_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let Some(text) = &mut self.filtering else {
+            return false;
+        };
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        match k.code {
+            KeyCode::Char('u') if ctrl => text.clear(),
+            KeyCode::Char(c) if !ctrl => text.push(c),
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            KeyCode::Esc => self.filtering = None,
+            KeyCode::Enter => {
+                let text = text.trim().to_string();
+                self.filtering = None;
+                if text != self.filter {
+                    self.filter = text;
+                    self.filter_gen += 1;
+                }
+                if self.filter.is_empty() {
+                    self.note("filter cleared".into());
+                } else {
+                    self.note(format!("filter: {}", self.filter));
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Open the filter box over the playlist, from wherever the focus is.
+    ///
+    /// Seeded with the filter in force, so pressing `/` again shows what the
+    /// list is being narrowed by and lets it be edited rather than retyped.
+    fn open_filter_box(&mut self) {
+        self.show_playlist = true;
+        self.focus = Focus::Playlist;
+        self.settings = None;
+        self.filtering = Some(self.filter.clone());
     }
 
     /// Keys typed into the search line, before any table sees them.
@@ -1352,6 +1406,9 @@ impl App {
             add_mode: None,
             adding: None,
             naming: None,
+            filter: String::new(),
+            filtering: None,
+            filter_gen: 0,
             queue_dirty: false,
             browse_model: None,
             last_area: Rect::default(),
@@ -1405,7 +1462,7 @@ impl App {
             // past the zero this starts from.
             items: Vec::new(),
             rows: playlist::Rows::default(),
-            rows_from: (0, false, 0, None),
+            rows_from: (0, false, 0, None, 0),
             folded: std::collections::HashSet::new(),
             fold_gen: 0,
             pending: std::collections::BTreeMap::new(),
@@ -2166,6 +2223,10 @@ impl App {
                         if self.naming.is_some() && self.name_type(k) {
                             continue;
                         }
+                        // So does the filter box, for the same reason.
+                        if self.filtering.is_some() && self.filter_type(k) {
+                            continue;
+                        }
                         // The search line is the only other thing that eats raw
                         // keys, and for the same reason as the resume prompt.
                         if self.library_type(k) {
@@ -2522,6 +2583,10 @@ impl App {
                 // every other overlay here behaves. Asking for the other one
                 // switches, which `open_filter` sorts out.
                 OpenFilter => return self.open_filter(),
+                FilterQueue => {
+                    self.library = None;
+                    return self.open_filter_box();
+                }
                 Quit => {
                     self.quit = true;
                     return;
@@ -2719,6 +2784,7 @@ impl App {
                 self.note(format!("repeat {next}"));
             }
             OpenFilter => self.open_filter(),
+            FilterQueue => self.open_filter_box(),
             MoveAlbumUp => self.move_album(-1),
             MoveAlbumDown => self.move_album(1),
             ToggleEqPanel => self.show_eq = !self.show_eq,
@@ -3711,6 +3777,22 @@ impl App {
 
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if let Some(text) = &self.filtering {
+            let rows = [settings::Row::setting(
+                "matching",
+                format!("{text}\u{2582}"),
+            )];
+            SettingsView {
+                theme: &self.theme,
+                heading: "FILTER",
+                title: "words found in the artist, title, album, year or path",
+                rows: &rows,
+                cursor: 0,
+                scroll: 0,
+            }
+            .render(area, buf);
+            return;
+        }
         if let Some(name) = &self.naming {
             let rows = [settings::Row::setting("name", format!("{name}\u{2582}"))];
             SettingsView {
@@ -3941,7 +4023,13 @@ impl App {
         drop(q);
         let grouped = self.session_grouped();
         let q = self.player.queue.lock().unwrap();
-        let from = (q.revision(), grouped, self.fold_gen, playing);
+        let from = (
+            q.revision(),
+            grouped,
+            self.fold_gen,
+            playing,
+            self.filter_gen,
+        );
         drop(q);
 
         // Rebuilt only when the queue, the grouping or a fold actually moved:
@@ -3968,6 +4056,10 @@ impl App {
                 true => playlist::Rows::grouped(&self.items, &self.folded, playing),
                 false => playlist::Rows::flat(self.items.len()),
             };
+            if !self.filter.trim().is_empty() {
+                let mask = crate::playlist::filter::mask(&self.items, &self.filter);
+                self.rows = std::mem::take(&mut self.rows).matching(&mask);
+            }
             self.rows_from = from;
             // A cursor inside a record that has just been folded away has to
             // come back out; there is nothing on screen for it to sit on.
@@ -3990,11 +4082,17 @@ impl App {
         // An asterisk, because adding never writes to disk and a playlist that
         // has been changed and not saved must say so -- otherwise the only way
         // to find out is to look for the tracks tomorrow and not find them.
-        let name = if self.queue_dirty {
+        let mut name = if self.queue_dirty {
             format!("{} *", self.loaded_name)
         } else {
             self.loaded_name.clone()
         };
+        // The filter in force is part of what the panel is showing, so it
+        // goes in the title beside the name rather than only in a note that
+        // scrolls away.
+        if !self.filter.trim().is_empty() {
+            name = format!("{name} \u{b7} /{}", self.filter.trim());
+        }
         // The tag set names tracks; the panel draws view positions. Translated
         // here rather than stored twice, so a reorder cannot leave the two
         // disagreeing about which row is marked.

@@ -50,6 +50,7 @@ pub enum Action {
     NarrowBars,
     PrevVisualizer,
     OpenFilter,
+    FilterQueue,
     OpenLibrary,
     LibraryLeft,
     LibraryRight,
@@ -330,6 +331,12 @@ pub const BINDINGS: &[Binding] = &[
         group: "playlist",
     },
     Binding {
+        action: Action::FilterQueue,
+        keys: "/",
+        label: "filter the playlist",
+        group: "playlist",
+    },
+    Binding {
         action: Action::MoveAlbumUp,
         keys: "alt+up",
         label: "record up",
@@ -581,6 +588,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('m'), false, _, false) => Action::MoveTagged,
         (Delete, ..) | (Char('D'), ..) => Action::RemoveTagged,
         (Char('f'), false, _, false) => Action::OpenFilter,
+        (Char('/'), false, _, false) => Action::FilterQueue,
         (Char('l'), false, _, false) => Action::OpenLibrary,
         (Char('+'), ..) | (Char('='), ..) => Action::WidenBars,
         (Char('-'), ..) | (Char('_'), ..) => Action::NarrowBars,
@@ -615,6 +623,7 @@ mod tests {
         use super::*;
         let plain = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
         assert_eq!(resolve(plain('d')), Some(Action::NextSeekStyle));
+        assert_eq!(resolve(plain('/')), Some(Action::FilterQueue));
         assert_eq!(resolve(plain('a')), Some(Action::ToggleAnimations));
         assert_eq!(resolve(plain('+')), Some(Action::WidenBars));
         assert_eq!(resolve(plain('=')), Some(Action::WidenBars));

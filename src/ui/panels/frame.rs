@@ -78,35 +78,26 @@ const CORNER_RUN_DOWN: u16 = 2;
 
 /// The four corners, each a different weight of the frame's grey, fading back
 /// into the border along both edges that meet there.
-/// How far a focused panel's corners are tinted toward the accent.
-///
-/// A tint applied *to* the corner's own colour rather than a different colour
-/// to mix toward, so the weight gradient below is untouched and only the hue
-/// moves. Small on purpose: enough to find at a glance, not enough to read as
-/// a different widget. The note above about focus being "noticeable, not
-/// shouted" is the bar.
-///
-/// The ceiling is set by the tightest theme rather than by taste. Nord's
-/// border, foreground and accent sit close together, so a tint that is barely
-/// visible in `cosmic` has the corner arriving at the accent there; 0.35
-/// fails `the_focus_lift_stays_subtle` on it and 0.28 clears it.
-const FOCUS_TINT: f64 = 0.28;
-
 pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme, focused: bool) {
     if area.width < 2 || area.height < 2 {
         return;
     }
-    // Focus lands on the corners rather than on the border, which is where
-    // this file's own note says it belongs. A border cannot carry it: two
-    // docked panels share an edge -- the player's floor is the playlist's
-    // ceiling -- so lighting one panel's frame lights half of its neighbour's
-    // and the seam reads as a step between two greys. A corner is
-    // unambiguously on one panel.
+    // Focus is carried by the border's colour, which this decoration inherits
+    // rather than adds to. `border_focused` is already tinted toward the
+    // accent, so building the corners from it gives them the hue for free and
+    // leaves this function doing the one job it had: a weight gradient that
+    // turns around the panel.
     //
-    // The lift is toward the accent and small. The run out of each corner
-    // still ends on the border's own grey, so a focused panel is a slightly
-    // warmer set of corners rather than a different kind of frame.
-    let tint_toward_accent = if focused { FOCUS_TINT } else { 0.0 };
+    // The alternative -- a grey border with only the corners tinted -- was
+    // tried and is too quiet to find. The cost of a coloured border is that
+    // two docked panels share an edge, so a focused panel's bottom line is
+    // also the top of whatever is below it.
+    // The border this decoration sits on. A focused panel draws a tinted
+    // frame, so the corners have to be built from *that* colour and fade back
+    // into it -- built from the unfocused grey they would end on a different
+    // colour from the line they decorate, and every run would finish with a
+    // visible step.
+    let base = if focused { t.border_focused } else { t.border };
     let (x0, y0) = (area.x, area.y);
     let (x1, y1) = (area.x + area.width - 1, area.y + area.height - 1);
 
@@ -125,7 +116,7 @@ pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme, focused: bool) {
         // accent is darker than its foreground (nord) that made the focused
         // corner *dimmer* than the unfocused one. Tinting the result moves
         // hue while leaving the gradient's weight alone.
-        let lit = t.border.mix(t.fg, weight).mix(t.accent, tint_toward_accent);
+        let lit = base.mix(t.fg, weight);
         tint(buf, area, cx, cy, lit, t);
 
         // Out along both edges, ending on the border's own grey so the run
@@ -133,12 +124,12 @@ pub fn render_corners(area: Rect, buf: &mut Buffer, t: &Theme, focused: bool) {
         for k in 1..=CORNER_RUN_ACROSS {
             let mix = k as f64 / (CORNER_RUN_ACROSS + 1) as f64;
             let x = (cx as i32 + dx * k as i32).max(0) as u16;
-            tint(buf, area, x, cy, lit.mix(t.border, mix), t);
+            tint(buf, area, x, cy, lit.mix(base, mix), t);
         }
         for k in 1..=CORNER_RUN_DOWN {
             let mix = k as f64 / (CORNER_RUN_DOWN + 1) as f64;
             let y = (cy as i32 + dy * k as i32).max(0) as u16;
-            tint(buf, area, cx, y, lit.mix(t.border, mix), t);
+            tint(buf, area, cx, y, lit.mix(base, mix), t);
         }
     }
 }
@@ -226,17 +217,21 @@ mod tests {
         }
     }
 
-    /// Noticeable, not shouted.
+    /// The gradient survives the tint.
+    ///
+    /// The corners' job is a weight gradient turning around the panel, and it
+    /// has to still be legible once they are built from a coloured border
+    /// rather than a grey one -- a focused panel whose four corners came out
+    /// the same shade would have lost the decoration to the focus mark.
     #[test]
-    fn the_focus_lift_stays_subtle() {
-        for name in ["cosmic", "catppuccin-mocha", "nord"] {
+    fn a_focused_panel_keeps_its_corner_gradient() {
+        for name in ["cosmic", "catppuccin-mocha", "nord", "gruvbox-dark"] {
             let theme = crate::theme::builtin::load(name).unwrap();
-            let lit = fg_at(&framed_focus(&theme, 40, 10, true), 0, 0);
-            // Still a frame. A corner that has arrived at the accent has
-            // stopped decorating the panel and started competing with it.
+            let buf = framed_focus(&theme, 40, 10, true);
+            let corners = [(0, 0), (39, 0), (39, 9), (0, 9)].map(|(x, y)| fg_at(&buf, x, y));
             assert!(
-                oklab_distance(lit, theme.accent) > 0.10,
-                "{name}: the focused corner has become the accent itself"
+                oklab_distance(corners[0], corners[2]) > 0.02,
+                "{name}: the brightest and dimmest corners are the same shade"
             );
         }
     }

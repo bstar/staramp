@@ -109,6 +109,14 @@ pub struct Theme {
 /// The contrast that matters on a selected row is between its text and its
 /// bar, not between its bar and the panel; a quieter bar keeps the row legible
 /// and stops the list looking like it has a hole burnt in it.
+/// How far a focused panel's border is tinted toward the accent.
+///
+/// Low, and with a contrast floor under it, because this colour is drawn on
+/// the seam between two docked panels as well as around the focused one --
+/// the focused panel's bottom edge is the top of whatever is below it. Loud
+/// enough to find, quiet enough that the shared edge does not read as a fault.
+const FOCUS_BORDER_TINT: f64 = 0.38;
+
 const SELECTION_DARKEN: f64 = 0.68;
 
 const WHITE: Rgb = Rgb::new(255, 255, 255);
@@ -213,15 +221,26 @@ impl Theme {
             .chrome
             .border
             .unwrap_or_else(|| bg.mix(fg, 0.22).ensure_contrast(bg, 1.45));
-        let border_focused = f
-            .chrome
-            .border_focused
-            // The same grey as an unfocused one. Two panels meet along a
-            // shared edge -- the player's floor is the playlist's ceiling --
-            // and a focused border made that seam a visible step between two
-            // greys. Focus is carried by the cursor row and the corners, which
-            // are on the panel rather than between two of them.
-            .unwrap_or(border);
+        // A tint toward the accent, and a ceiling on how far it can go.
+        //
+        // This was the same grey as an unfocused border for a while, because
+        // two panels meet along a shared edge -- the player's floor is the
+        // playlist's ceiling -- and lighting one panel's frame lights half of
+        // its neighbour's, so the seam becomes a step between two greys. That
+        // is still true and is the cost of this: a focused panel's bottom
+        // edge is also the top of whatever sits under it.
+        //
+        // It is drawn anyway because a focus mark that only touches the four
+        // corners is too quiet to find, which is the complaint that brought
+        // this back. The tint is kept low and capped so the frame still
+        // frames rather than competing with the content.
+        let border_focused = f.chrome.border_focused.unwrap_or_else(|| {
+            border
+                .mix(accent, FOCUS_BORDER_TINT)
+                // Enough of a step from the unfocused grey to read as a
+                // change, whatever the theme's accent happens to be.
+                .ensure_contrast(bg, 1.9)
+        });
 
         let vis_ramp: [Rgb; 16] = {
             let stops = f
@@ -460,33 +479,58 @@ mod tests {
                 "{}: focused border is {focused:.2}:1, too loud",
                 t.id
             );
-            // The same grey, focused or not. Panels share edges -- the
-            // player's floor is the playlist's ceiling -- and a focused
-            // border turned that shared line into a step between two greys.
-            // Focus is shown by the cursor row and by the corners, both of
-            // which are on a panel rather than between two of them.
-            assert_eq!(
+            // Different from the unfocused one, and visibly so: a focus
+            // mark confined to four corners is too quiet to find, which is
+            // what put the tint back. The cost is real and accepted -- two
+            // panels share an edge, so a focused panel's bottom border is
+            // also the top of whatever sits under it.
+            assert_ne!(
                 t.border, t.border_focused,
-                "{}: the focused border is a different grey",
+                "{}: the focused border is the same as the idle one",
                 t.id
             );
         }
     }
 
+    /// Not an assertion -- run with `--nocapture` to see the two borders.
     #[test]
-    fn borders_are_grey_rather_than_tinted_with_the_accent() {
-        // The frame is quiet by design; the corners carry the colour. A
-        // focused border used to mix in the accent, which put a second hue on
-        // the panel that fought the corner gradient.
+    fn preview_the_focus_borders() {
+        for name in [
+            "cosmic",
+            "catppuccin-mocha",
+            "nord",
+            "gruvbox-dark",
+            "tokyo-night",
+        ] {
+            let t = crate::theme::builtin::load(name).unwrap();
+            println!(
+                "{name:18} bg {}  idle {}  focused {}  accent {}",
+                t.bg.to_hex(),
+                t.border.to_hex(),
+                t.border_focused.to_hex(),
+                t.accent.to_hex()
+            );
+        }
+    }
+
+    #[test]
+    fn an_idle_border_is_grey_and_a_focused_one_is_tinted() {
+        // The idle frame is quiet by design. The focused one carries the
+        // theme's own hue, which is what makes it findable at a glance --
+        // a difference in weight alone reads as a rendering artefact rather
+        // than as a state.
         for name in ["cosmic", "catppuccin-mocha", "nord", "tokyo-night"] {
             let t = crate::theme::builtin::load(name).unwrap();
-            for (what, c) in [("idle", t.border), ("focused", t.border_focused)] {
-                let (lo, hi) = (c.r.min(c.g).min(c.b) as i32, c.r.max(c.g).max(c.b) as i32);
-                assert!(
-                    hi - lo <= 28,
-                    "{name}: the {what} border is tinted, not grey: {c:?}"
-                );
-            }
+            let spread = |c: Rgb| c.r.max(c.g).max(c.b) as i32 - c.r.min(c.g).min(c.b) as i32;
+            assert!(
+                spread(t.border) <= 28,
+                "{name}: the idle border is tinted, not grey: {:?}",
+                t.border
+            );
+            assert!(
+                spread(t.border_focused) > spread(t.border),
+                "{name}: the focused border carries no more hue than the idle one"
+            );
         }
     }
 

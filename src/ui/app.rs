@@ -4039,6 +4039,7 @@ impl App {
             let mark = crate::ui::graphics::Picture::PlayMark;
             if let Some(p) = self.graphics.picture(mark, rect, fg, bg, bg) {
                 ratatui_image::Image::new(p).render(rect, buf);
+                crate::ui::graphics::mend_unit_placeholder(buf, x, y);
             }
         }
     }

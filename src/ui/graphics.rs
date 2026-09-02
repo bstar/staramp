@@ -418,6 +418,35 @@ impl Graphics {
     }
 }
 
+/// Repair the cursor dance the kitty renderer leaves in a one-cell image.
+///
+/// The library writes a whole image row into its first cell: save the
+/// cursor, the placeholders, restore, then move right by the width less one
+/// and down by the height less one, so ratatui's idea of where the cursor is
+/// holds. For a single cell both moves are zero, and a zero parameter to
+/// those controls means one -- ECMA-48, and every terminal follows it -- so
+/// the cursor ends a row too low. ratatui then prints the rest of the line
+/// where it believes the cursor to be, which is one row down: the playing
+/// row's text appeared twice, once on the row below. Wider images are fine
+/// because the next drawn cell is never adjacent and ratatui moves to it
+/// explicitly.
+///
+/// Fixed by rewriting the two zero moves as the one forward step ratatui
+/// expects. Only that exact tail is touched, so a library that stops
+/// emitting it is left alone.
+pub fn mend_unit_placeholder(buf: &mut ratatui::buffer::Buffer, x: u16, y: u16) {
+    const BAD: &str = "\x1b[0C\x1b[0B";
+    const GOOD: &str = "\x1b[1C";
+    let Some(cell) = buf.cell_mut((x, y)) else {
+        return;
+    };
+    let symbol = cell.symbol();
+    if let Some(head) = symbol.strip_suffix(BAD) {
+        let mended = format!("{head}{GOOD}");
+        cell.set_symbol(&mended);
+    }
+}
+
 /// A cell's size in pixels, from the window's size in both cells and pixels.
 ///
 /// `None` when either is unknown: a terminal that does not report pixels
@@ -597,5 +626,22 @@ mod tests {
         assert_eq!((c.width, c.height), (8, 17));
         assert!(cell_size(100, 50, 0, 0).is_none(), "no pixels reported");
         assert!(cell_size(0, 0, 800, 850).is_none(), "no cells reported");
+    }
+
+    #[test]
+    fn a_one_cell_placeholder_ends_with_a_single_step_right() {
+        use ratatui::buffer::Buffer;
+        let mut buf = Buffer::empty(Rect::new(0, 0, 4, 2));
+        // What the library writes for a 1x1 image, minus the placeholder
+        // body, which is not what is being tested.
+        buf[(1, 0)].set_symbol("\x1b[s\u{10EEEE}\x1b[u\x1b[0C\x1b[0B");
+        mend_unit_placeholder(&mut buf, 1, 0);
+        assert_eq!(buf[(1, 0)].symbol(), "\x1b[s\u{10EEEE}\x1b[u\x1b[1C");
+        // A wider image's tail, and an ordinary cell, are left alone.
+        buf[(2, 0)].set_symbol("\x1b[u\x1b[3C\x1b[2B");
+        mend_unit_placeholder(&mut buf, 2, 0);
+        assert_eq!(buf[(2, 0)].symbol(), "\x1b[u\x1b[3C\x1b[2B");
+        mend_unit_placeholder(&mut buf, 3, 0);
+        assert_eq!(buf[(3, 0)].symbol(), " ");
     }
 }

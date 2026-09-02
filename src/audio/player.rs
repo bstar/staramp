@@ -168,7 +168,7 @@ impl Player {
         &self.vfs
     }
 
-    pub fn new(vfs: Arc<Vfs>) -> Result<Self> {
+    pub fn new(vfs: Arc<Vfs>, fixed_rate: Option<u32>) -> Result<Self> {
         let for_handle = Arc::clone(&vfs);
         let (tx, rx) = bounded(64);
         let state = Arc::new(PlayerState::new());
@@ -189,7 +189,7 @@ impl Player {
             thread::Builder::new()
                 .name("staramp-player".into())
                 .spawn(move || {
-                    run(vfs, rx, state, eq, queue, volume, tap, rg);
+                    run(vfs, rx, state, eq, queue, volume, tap, rg, fixed_rate);
                 })?
         };
 
@@ -309,12 +309,18 @@ fn run(
     volume: Arc<Mutex<f32>>,
     tap: Arc<Tap>,
     rg: Arc<arc_swap::ArcSwap<(RgMode, f32, bool)>>,
+    fixed_rate: Option<u32>,
 ) {
     // The decode thread's own read-only handle, as the art worker has its own
     // and for the same reason: a handle already open turns a vanished index
     // into an error rather than a hang, and nothing here can wait on the UI.
     // Best-effort -- without it, cue tracks are opened by reading their sheet.
-    let index = crate::paths::index_file()
+    //
+    // Through the vfs, not `paths::index_file`: for a remote library the local
+    // index describes a different library entirely, and cue track boundaries
+    // read out of it would be wrong where they were not simply missing.
+    let index = vfs
+        .index_path()
         .ok()
         .and_then(|p| crate::library::db::Db::open_readonly(&p).ok());
 
@@ -399,6 +405,7 @@ fn run(
                             &mut eq_state,
                             &tap,
                             &mut cue,
+                            fixed_rate,
                         );
                     }
                 }
@@ -421,6 +428,7 @@ fn run(
                                 &mut eq_state,
                                 &tap,
                                 &mut cue,
+                                fixed_rate,
                             )
                         }
                         None => {
@@ -447,6 +455,7 @@ fn run(
                             &mut eq_state,
                             &tap,
                             &mut cue,
+                            fixed_rate,
                         );
                     }
                 }
@@ -561,6 +570,7 @@ fn run(
                                         &mut eq_state,
                                         &tap,
                                         &mut cue,
+                                        fixed_rate,
                                     );
                                 }
                             }
@@ -686,6 +696,7 @@ fn open_track(
     eq_state: &mut EqState,
     tap: &Arc<Tap>,
     cue: &mut Option<source::CueAlbum>,
+    fixed_rate: Option<u32>,
 ) {
     let opened = match source::open(vfs, index, uri) {
         Ok(o) => o,
@@ -698,10 +709,47 @@ fn open_track(
     };
     // Kept so the next track of the same album needs no disk.
     *cue = opened.album.clone();
-    let spec = opened.decoder.spec();
+    // What the file holds, which is what the UI reports about the track.
+    let src_spec = opened.decoder.spec();
+
+    // What the device will take. Asked before the ring is built, because the
+    // ring is sized in the device's frames and a stream the device would not
+    // accept has to be converted on the way in.
+    let plan = match super::output::plan(&src_spec, fixed_rate) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("cannot choose an output format: {e}");
+            *decoder = None;
+            return;
+        }
+    };
+    let spec = plan.out_spec(&src_spec);
+
+    let mut dec = opened.decoder;
+    if plan.needs_adapting(&src_spec) {
+        tracing::info!(
+            "adapting {} Hz {}ch -> {} Hz {}ch for {}",
+            src_spec.sample_rate,
+            src_spec.channels,
+            spec.sample_rate,
+            spec.channels,
+            plan.device_name
+        );
+        match super::decode::adapt::Adapting::new(dec, spec) {
+            Ok(a) => dec = Box::new(a),
+            Err(e) => {
+                tracing::error!("cannot adapt the stream to the device: {e}");
+                *decoder = None;
+                return;
+            }
+        }
+    }
 
     // Rebuild the output only when the shape of the audio actually changed.
     // Within an album that is essentially never, so track changes stay gapless.
+    // Compared against the *device's* shape rather than the file's, so two
+    // tracks that differ only in a rate the device was going to convert away
+    // now share one stream instead of tearing it down between them.
     let needs_new_stream = stream
         .as_ref()
         .map(|s| needs_rebuild(s.sample_rate, s.channels, &spec))
@@ -712,8 +760,7 @@ fn open_track(
         let (producer, consumer) = ring::create(spec.sample_rate, spec.channels);
         let source_done = Arc::new(AtomicBool::new(false));
         match Output::open(
-            spec.sample_rate,
-            spec.channels,
+            plan,
             consumer,
             Arc::clone(&source_done),
             Arc::clone(tap),
@@ -727,7 +774,7 @@ fn open_track(
             Ok(output) => {
                 state
                     .bit_perfect
-                    .store(output.rate_mode.is_bit_perfect(), Ordering::Relaxed);
+                    .store(output.bit_perfect, Ordering::Relaxed);
                 *stream = Some(Stream {
                     output,
                     producer,
@@ -749,26 +796,28 @@ fn open_track(
         eq_state.reset();
     }
 
+    // The file's own shape, not the device's: this describes the track, and a
+    // 48 kHz file is still a 48 kHz file on a device that would only take 44.1.
+    // Whether it reached the device untouched is `state.bit_perfect`.
     state
         .sample_rate
-        .store(spec.sample_rate as u64, Ordering::Relaxed);
+        .store(src_spec.sample_rate as u64, Ordering::Relaxed);
     state
         .channels
-        .store(spec.channels as u64, Ordering::Relaxed);
+        .store(src_spec.channels as u64, Ordering::Relaxed);
     state
         .bit_depth
-        .store(spec.bit_depth.unwrap_or(0) as u64, Ordering::Relaxed);
-    state.bitrate_kbps.store(
-        opened.decoder.bitrate_kbps().unwrap_or(0) as u64,
-        Ordering::Relaxed,
-    );
+        .store(src_spec.bit_depth.unwrap_or(0) as u64, Ordering::Relaxed);
     state
-        .codec
-        .store(Arc::new(opened.decoder.codec().to_string()));
-    state.duration_frames.store(
-        opened.decoder.total_frames().unwrap_or(0),
-        Ordering::Relaxed,
-    );
+        .bitrate_kbps
+        .store(dec.bitrate_kbps().unwrap_or(0) as u64, Ordering::Relaxed);
+    state.codec.store(Arc::new(dec.codec().to_string()));
+    // From the adapted decoder, so it is counted in the same frames as the
+    // position -- which the callback reports, and the callback only ever sees
+    // the device's.
+    state
+        .duration_frames
+        .store(dec.total_frames().unwrap_or(0), Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
     state.playing.store(true, Ordering::Relaxed);
     state.paused.store(false, Ordering::Relaxed);
@@ -783,7 +832,7 @@ fn open_track(
         }
     }
 
-    *decoder = Some(opened.decoder);
+    *decoder = Some(dec);
 }
 
 /// Does moving to a track with this spec require tearing down the output?

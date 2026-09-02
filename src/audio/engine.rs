@@ -55,7 +55,12 @@ pub struct Playback {
     stop: Arc<AtomicBool>,
     decoded_frames: Arc<AtomicU64>,
     decoder: JoinHandle<Result<()>>,
+    /// The shape the device is running at. Positions and `total_frames` are
+    /// counted in these frames, because the callback is what reports them.
     pub spec: StreamSpec,
+    /// The shape the file holds, which is what describes the track. Equal to
+    /// `spec` unless the device would not take it.
+    pub src_spec: StreamSpec,
     pub total_frames: Option<u64>,
     /// Where playback began, so reported positions are absolute in the file.
     start_frame: u64,
@@ -68,14 +73,14 @@ pub struct Playback {
 impl Playback {
     /// Open a file, start the output, and begin decoding into it.
     pub fn start(path: &Path) -> Result<Self> {
-        Self::start_at(path, 0.0)
+        Self::start_at(path, 0.0, None)
     }
 
     /// As `start`, beginning `start_secs` into the file.
     ///
     /// The seek happens before the decode thread takes ownership, which keeps
     /// mid-playback seeking (a command-bus concern) out of this phase entirely.
-    pub fn start_at(path: &Path, start_secs: f64) -> Result<Self> {
+    pub fn start_at(path: &Path, start_secs: f64, fixed_rate: Option<u32>) -> Result<Self> {
         // A path that ends in `<something>.cue/trackNNNN` is a virtual track,
         // not a file. Parsing it here means the CLI and the playlist layer
         // address tracks the same way.
@@ -85,7 +90,26 @@ impl Playback {
         let vfs = Vfs::local("");
         let opened = source::open(&vfs, None, &uri)?;
         let mut dec = opened.decoder;
-        let spec = dec.spec();
+        let src_spec = dec.spec();
+
+        // The device decides the shape first: everything below is either sized
+        // in its frames (the ring) or counted in them (`start_frame`, which the
+        // position is measured from), so wrapping after any of it would leave
+        // those in the file's domain and the clock running at the wrong rate.
+        let plan = super::output::plan(&src_spec, fixed_rate)?;
+        let spec = plan.out_spec(&src_spec);
+        if plan.needs_adapting(&src_spec) {
+            tracing::info!(
+                "adapting {} Hz {}ch -> {} Hz {}ch for {}",
+                src_spec.sample_rate,
+                src_spec.channels,
+                spec.sample_rate,
+                spec.channels,
+                plan.device_name
+            );
+            dec = Box::new(super::decode::adapt::Adapting::new(dec, spec)?);
+        }
+
         let total_frames = dec.total_frames();
 
         let mut start_frame = 0u64;
@@ -150,8 +174,7 @@ impl Playback {
 
         // `staramp play` has no visualizer, so its tap is a stub.
         let output = Output::open(
-            spec.sample_rate,
-            spec.channels,
+            plan,
             consumer,
             Arc::clone(&source_done),
             Arc::new(crate::audio::tap::Tap::new(2)),
@@ -166,6 +189,7 @@ impl Playback {
             decoded_frames,
             decoder,
             spec,
+            src_spec,
             total_frames,
             start_frame,
             description: opened.virtual_track.as_ref().and_then(|t| t.title.clone()),
@@ -197,6 +221,11 @@ impl Playback {
 
     pub fn rate_mode(&self) -> RateMode {
         self.output.rate_mode
+    }
+
+    /// The file's channel count, when the device would not take it.
+    pub fn remixed_from(&self) -> Option<u16> {
+        self.output.remixed_from
     }
 
     pub fn device_name(&self) -> &str {

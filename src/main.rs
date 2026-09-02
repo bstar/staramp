@@ -384,28 +384,48 @@ fn cmd_decode(
 }
 
 fn cmd_play(input: PathBuf, start: Option<f64>) -> Result<()> {
-    let playback = Playback::start_at(&input, start.unwrap_or(0.0))?;
+    let fixed_rate = config::Config::load()
+        .unwrap_or_default()
+        .output
+        .fixed_rate();
+    let playback = Playback::start_at(&input, start.unwrap_or(0.0), fixed_rate)?;
 
     let spec = playback.spec;
+    let src = playback.src_spec;
     println!("{}", input.display());
     println!(
         "  {} Hz · {} ch · {} · device \"{}\"",
-        spec.sample_rate,
-        spec.channels,
-        match spec.bit_depth {
+        src.sample_rate,
+        src.channels,
+        match src.bit_depth {
             Some(b) => format!("{b}-bit"),
             None => "float".into(),
         },
         playback.device_name(),
     );
-    match playback.rate_mode() {
-        RateMode::Native => println!(
-            "  output {} Hz · bit-perfect (device took the file's own rate)",
-            playback.output_rate()
-        ),
-        RateMode::Resampled { from, to } => {
-            println!("  output {to} Hz · NOT bit-perfect (device refused {from} Hz)")
-        }
+    // Both halves of the shape, because either can cost bit-perfect playback
+    // and saying "bit-perfect" while the channels were remixed is exactly the
+    // lie this indicator exists not to tell.
+    let mut refused = Vec::new();
+    if let RateMode::Resampled { from, .. } = playback.rate_mode() {
+        refused.push(format!("{from} Hz"));
+    }
+    if let Some(from) = playback.remixed_from() {
+        refused.push(format!("{from}-channel output"));
+    }
+    if refused.is_empty() {
+        println!(
+            "  output {} Hz · {} ch · bit-perfect (device took the file's own shape)",
+            playback.output_rate(),
+            spec.channels,
+        );
+    } else {
+        println!(
+            "  output {} Hz · {} ch · NOT bit-perfect (device refused {}, converting)",
+            playback.output_rate(),
+            spec.channels,
+            refused.join(" and "),
+        );
     }
 
     let total = playback
@@ -1237,7 +1257,7 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
     // exactly one can then win the lease. The loser asks again, by which time
     // the winner is listening.
     let joined = mirror::Mirror::connect().or_else(|| {
-        if ipc::claim_session() {
+        if ipc::socket_path().is_ok_and(|p| ipc::claim_session(&p)) {
             None
         } else {
             mirror::Mirror::connect()

@@ -34,6 +34,92 @@ impl RateMode {
     }
 }
 
+/// The device, and the shape it agreed to take.
+///
+/// Decided *before* the ring is built rather than inside [`Output::open`],
+/// because everything upstream depends on the answer: the ring is sized in the
+/// device's frames, and a stream the device would not take at its own rate has
+/// to be converted on the way in. Asking the device last -- which is what this
+/// used to do -- meant the answer arrived after every decision that needed it,
+/// and a rate the device had refused was simply played at the wrong speed.
+pub struct Plan {
+    device: cpal::Device,
+    pub device_name: String,
+    /// What the device will actually run at.
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub rate_mode: RateMode,
+    /// The source's channel count, when the device would not take it. A
+    /// stereo-only device is the normal cause; CoreAudio offers only the
+    /// counts the hardware physically has, so a mono file has nowhere to go.
+    pub remixed_from: Option<u16>,
+}
+
+impl Plan {
+    /// The shape a decoder has to produce for this device.
+    pub fn out_spec(
+        &self,
+        src: &crate::audio::decode::StreamSpec,
+    ) -> crate::audio::decode::StreamSpec {
+        crate::audio::decode::StreamSpec {
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            bit_depth: src.bit_depth,
+        }
+    }
+
+    /// True when the samples reach the device exactly as the file holds them.
+    ///
+    /// Both halves matter: a rate the device took is not bit-perfect if the
+    /// channels had to be remixed to get there.
+    pub fn is_bit_perfect(&self) -> bool {
+        self.rate_mode.is_bit_perfect() && self.remixed_from.is_none()
+    }
+
+    /// Whether a decoder producing `src` needs converting first.
+    pub fn needs_adapting(&self, src: &crate::audio::decode::StreamSpec) -> bool {
+        src.sample_rate != self.sample_rate || src.channels != self.channels
+    }
+}
+
+/// Choose the device and the format it will run at, for a stream of `spec`.
+///
+/// `fixed_rate` is `[output] mode = "fixed"`: pin the device to one rate and
+/// convert everything to it, instead of following each file. It costs
+/// bit-perfect playback and buys never rebuilding the stream at a track
+/// boundary -- worth having where the device only offers one rate anyway.
+pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) -> Result<Plan> {
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .ok_or_else(|| anyhow!("no default output device"))?;
+    let device_name = device.name().unwrap_or_else(|_| "<unknown>".into());
+
+    let wanted = fixed_rate.unwrap_or(spec.sample_rate);
+    let (sample_rate, channels) = choose_format(&device, wanted, spec.channels)?;
+
+    // Measured against the *file*, not against what was asked for: pinning the
+    // device to 48 kHz and getting it is still a conversion for a 44.1 kHz
+    // track, and the indicator has to say so.
+    let rate_mode = if sample_rate == spec.sample_rate {
+        RateMode::Native
+    } else {
+        RateMode::Resampled {
+            from: spec.sample_rate,
+            to: sample_rate,
+        }
+    };
+
+    Ok(Plan {
+        device,
+        device_name,
+        sample_rate,
+        channels,
+        rate_mode,
+        remixed_from: (channels != spec.channels).then_some(spec.channels),
+    })
+}
+
 /// State the callback publishes and everyone else reads.
 pub struct OutputState {
     /// Frames handed to the device. The authority on playback position.
@@ -61,6 +147,11 @@ pub struct Output {
     stream: cpal::Stream,
     pub state: Arc<OutputState>,
     pub rate_mode: RateMode,
+    /// Rate *and* channels reached the device untouched. Narrower than
+    /// `rate_mode.is_bit_perfect()`, which only knows about the rate.
+    pub bit_perfect: bool,
+    /// The file's channel count, when the device would not take it.
+    pub remixed_from: Option<u16>,
     pub device_name: String,
     pub sample_rate: u32,
     pub channels: u16,
@@ -84,24 +175,25 @@ impl Output {
     /// it cannot prefill -- its decoder is on another thread that has not been
     /// asked for anything yet.
     pub fn open(
-        sample_rate: u32,
-        channels: u16,
+        plan: Plan,
         mut consumer: Consumer<f32>,
         source_done: Arc<AtomicBool>,
         tap: Arc<Tap>,
         start_paused: bool,
     ) -> Result<Self> {
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| anyhow!("no default output device"))?;
-        let device_name = device.name().unwrap_or_else(|_| "<unknown>".into());
-
-        let (chosen_rate, rate_mode) = choose_rate(&device, sample_rate, channels)?;
+        let bit_perfect = plan.is_bit_perfect();
+        let Plan {
+            device,
+            device_name,
+            sample_rate,
+            channels,
+            rate_mode,
+            remixed_from,
+        } = plan;
 
         let config = StreamConfig {
             channels,
-            sample_rate: SampleRate(chosen_rate),
+            sample_rate: SampleRate(sample_rate),
             buffer_size: cpal::BufferSize::Default,
         };
 
@@ -164,8 +256,10 @@ impl Output {
             stream,
             state,
             rate_mode,
+            bit_perfect,
+            remixed_from,
             device_name,
-            sample_rate: chosen_rate,
+            sample_rate,
             channels,
         })
     }
@@ -183,19 +277,40 @@ impl Output {
     }
 }
 
-/// Pick the output rate, preferring the file's own.
-fn choose_rate(device: &cpal::Device, wanted: u32, channels: u16) -> Result<(u32, RateMode)> {
-    let supported: Vec<_> = device
+/// Pick the output format, preferring the file's own rate and channel count.
+///
+/// Channels first, because they decide which configs the rate can be chosen
+/// from. A device that cannot do the file's channel count is not an error: a
+/// CoreAudio device advertises only the counts the hardware physically has, so
+/// every mono file on a Mac would otherwise refuse to play. Pick the closest
+/// count the device does offer and let the caller convert.
+fn choose_format(device: &cpal::Device, wanted: u32, wanted_channels: u16) -> Result<(u32, u16)> {
+    let all: Vec<_> = device
         .supported_output_configs()
         .context("querying device output configs")?
-        .filter(|c| c.channels() == channels)
         .collect();
 
-    if supported.is_empty() {
-        return Err(anyhow!(
-            "device supports no {channels}-channel output configuration"
-        ));
+    if all.is_empty() {
+        return Err(anyhow!("device reports no output configuration at all"));
     }
+
+    // The file's own count where it exists; otherwise the fewest that is at
+    // least as many, so mono lands on stereo rather than on 7.1.
+    let channels = if all.iter().any(|c| c.channels() == wanted_channels) {
+        wanted_channels
+    } else {
+        all.iter()
+            .map(|c| c.channels())
+            .filter(|&c| c > wanted_channels)
+            .min()
+            .or_else(|| all.iter().map(|c| c.channels()).max())
+            .ok_or_else(|| anyhow!("device offers no usable channel count"))?
+    };
+
+    let supported: Vec<_> = all
+        .into_iter()
+        .filter(|c| c.channels() == channels)
+        .collect();
 
     let accepts = |rate: u32| {
         supported
@@ -204,7 +319,7 @@ fn choose_rate(device: &cpal::Device, wanted: u32, channels: u16) -> Result<(u32
     };
 
     if accepts(wanted) {
-        return Ok((wanted, RateMode::Native));
+        return Ok((wanted, channels));
     }
 
     // Stay in the same family: a 44.1 kHz-derived file resampled to 48 kHz is a
@@ -216,24 +331,11 @@ fn choose_rate(device: &cpal::Device, wanted: u32, channels: u16) -> Result<(u32
     };
     for &candidate in family {
         if accepts(candidate) {
-            return Ok((
-                candidate,
-                RateMode::Resampled {
-                    from: wanted,
-                    to: candidate,
-                },
-            ));
+            return Ok((candidate, channels));
         }
     }
 
-    let fallback = supported[0].max_sample_rate().0;
-    Ok((
-        fallback,
-        RateMode::Resampled {
-            from: wanted,
-            to: fallback,
-        },
-    ))
+    Ok((supported[0].max_sample_rate().0, channels))
 }
 
 /// Describe the device's buffer-size range, for diagnostics.

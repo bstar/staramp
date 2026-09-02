@@ -5,6 +5,7 @@
 //! currency between symphonia's typed `AudioBufferRef` variants and libavcodec's
 //! planar output.
 
+pub mod adapt;
 pub mod libav;
 pub mod slice;
 pub mod symphonia;

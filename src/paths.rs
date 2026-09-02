@@ -93,12 +93,17 @@ pub fn runtime_dir() -> Result<PathBuf> {
 
 /// The longest an `ssh` ControlPath may be.
 ///
-/// `sun_path` holds 108 bytes, but OpenSSH binds the control socket at
-/// `"<path>.<16 random chars>"` and only then renames it into place, so the
-/// name that actually has to fit is seventeen bytes longer than the one we
-/// choose. Getting this wrong makes `ssh` abort with a truncation error that
-/// says nothing about which path was too long.
-const CONTROL_PATH_MAX: usize = 108 - 18;
+/// `sun_path` holds 108 bytes on Linux and 104 on macOS, and OpenSSH binds the
+/// control socket at `"<path>.<16 random chars>"` and only then renames it into
+/// place, so the name that actually has to fit is seventeen bytes longer than
+/// the one we choose. Getting this wrong makes `ssh` abort with a truncation
+/// error that says nothing about which path was too long.
+///
+/// Checked against the smaller of the two for the same reason [`crate::ipc`]
+/// checks `SUN_PATH_MAX` that way: a path that works on one platform and
+/// silently fails on the other is worse than one that is twenty bytes tighter
+/// than it strictly needs to be on Linux.
+const CONTROL_PATH_MAX: usize = 104 - 18;
 
 /// Where the multiplexed `ssh` connection to `alias` is reached.
 ///

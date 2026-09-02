@@ -42,6 +42,35 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   between several windows was racy: two instances started together could both
   conclude they were the leader and fight over the audio device. A `flock`
   makes it atomic.
+- A device that could not do the file's sample rate played it at the wrong
+  speed. The mismatch was detected and reported — the indicator said
+  "resampled" — but nothing resampled: the ring was filled at the file's rate
+  and drained at the device's, so a 48 kHz track on a 44.1 kHz-only device ran
+  8.4% slow and a semitone and a half flat. The conversion now actually
+  happens, on the way into the ring. Follow-the-file is unchanged, so anything
+  the device can take is still bit-perfect and no conversion is involved.
+
+  Invisible on a typical Linux desktop, where cpal opens ALSA's `default` and
+  its `plug` layer advertises every rate and converts underneath. It bites
+  wherever the device is reached directly: CoreAudio always, and any `hw:`
+  device or plugless `.asoundrc` on Linux.
+- A file with fewer channels than the device offers no longer refuses to play.
+  CoreAudio advertises only the channel counts the hardware physically has, so
+  every mono file on a Mac failed with "device supports no 1-channel output
+  configuration". Mono is now copied across the device's channels at unity
+  gain, matching what `plug` and CoreAudio's own up-mix do — not swresample's
+  power-preserving matrix, which would have played mono 3 dB quieter on macOS
+  than on Linux.
+- The bit-perfect indicator accounts for the channel count as well as the rate.
+  A remixed mono file reported itself bit-perfect.
+- `cargo test` no longer fails when a real instance is running. The session
+  lease was taken on the configured socket path rather than the one under test,
+  so every test that binds a socket contended with the developer's own player.
+
+### Changed
+
+- `[output] mode = "fixed"` and `fixed_rate` are now read. They have been
+  documented in the generated config since 0.1.0 and were never consulted.
 
 ## [0.1.0] - 2026-09-01
 

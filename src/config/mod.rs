@@ -322,6 +322,16 @@ impl Fx {
     }
 }
 
+impl Output {
+    /// The rate to pin the device to, or `None` to follow each file.
+    ///
+    /// Anything other than `fixed` follows the file, including a typo: a
+    /// misspelled mode should not silently cost bit-perfect playback.
+    pub fn fixed_rate(&self) -> Option<u32> {
+        (self.mode.eq_ignore_ascii_case("fixed") && self.fixed_rate > 0).then_some(self.fixed_rate)
+    }
+}
+
 impl Default for Output {
     fn default() -> Self {
         Self {

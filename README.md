@@ -216,10 +216,12 @@ cargo build --release
 ```
 
 If the build stops in `ffmpeg-sys-next`, it is bindgen looking for libclang.
-The Command Line Tools always carry one:
+The active Apple toolchain always carries one, and `xcrun` is what knows where
+-- with full Xcode installed it is under `Toolchains/XcodeDefault`, not the
+`usr/lib` beside `xcode-select -p`:
 
 ```sh
-export LIBCLANG_PATH="$(xcode-select -p)/usr/lib"
+export LIBCLANG_PATH="$(dirname "$(xcrun --find clang)")/../lib"
 ```
 
 No ALSA and no D-Bus: output goes through CoreAudio, and MPRIS is compiled out

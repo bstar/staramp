@@ -48,17 +48,43 @@ const SUN_PATH_MAX: usize = 104;
 /// releases it the instant the holder dies, `SIGKILL` included, so there is
 /// never a stale lock to reason about. Held for the life of the process.
 #[cfg(target_os = "linux")]
-pub fn claim_session() -> bool {
+pub fn claim_session(_path: &std::path::Path) -> bool {
     true
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn claim_session() -> bool {
-    static LEASE: std::sync::OnceLock<Option<std::fs::File>> = std::sync::OnceLock::new();
+pub fn claim_session(path: &std::path::Path) -> bool {
+    let lock = path.with_extension("lock");
+    let Ok(mut held) = leases().lock() else {
+        return false;
+    };
+    // Idempotent per session: `cmd_tui` claims the lease and `listen` asks
+    // again on the way to binding, and the second question has to get the same
+    // answer as the first.
+    if held.contains_key(&lock) {
+        return true;
+    }
+    match take_lock(&lock) {
+        Some(f) => {
+            held.insert(lock, f);
+            true
+        }
+        None => false,
+    }
+}
 
-    LEASE
-        .get_or_init(|| take_lock(&socket_path().ok()?.with_extension("lock")))
-        .is_some()
+/// Leases this process holds, by lock path.
+///
+/// Keyed on the path rather than kept as one process-wide lease, because the
+/// socket path is a parameter: `spawn_at` exists so that tests can each have
+/// their own, and a lease pinned to the *real* `socket_path` made every one of
+/// them contend with whatever instance the developer happened to be running.
+#[cfg(not(target_os = "linux"))]
+fn leases() -> &'static std::sync::Mutex<std::collections::HashMap<PathBuf, std::fs::File>> {
+    static LEASES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<PathBuf, std::fs::File>>,
+    > = std::sync::OnceLock::new();
+    LEASES.get_or_init(Default::default)
 }
 
 /// Take an exclusive, non-blocking `flock`, creating the file if needed.
@@ -148,21 +174,59 @@ pub fn listen(path: &std::path::Path) -> std::io::Result<UnixListener> {
 
         // The lease, not the bind, is the election here. Without it the unlink
         // below is a race: see `claim_session`.
-        if !claim_session() {
+        if !claim_session(path) {
             return Err(Error::new(
                 ErrorKind::AddrInUse,
                 "another instance leads this session",
             ));
         }
 
-        // Holding the lease, any socket still on disk is certainly stale --
-        // its owner is dead, or we would not have the lock.
+        // The lease answers "does another *process* lead?", and it is
+        // deliberately idempotent -- `cmd_tui` takes it before `spawn` asks
+        // for it again -- so it cannot also answer "have we already bound this
+        // one ourselves?". Both questions have to be asked, because the unlink
+        // below would otherwise delete a socket this process is still serving
+        // on and leave two listeners each believing they lead. On Linux the
+        // abstract bind refuses that by itself; here nothing does.
+        if !claim_path(path) {
+            return Err(Error::new(
+                ErrorKind::AddrInUse,
+                "this process already serves that session",
+            ));
+        }
+
+        // Holding the lease and the path, any socket still on disk is
+        // certainly stale -- its owner is dead, or we would not have the lock.
         let _ = std::fs::remove_file(path);
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        UnixListener::bind(path)
+        UnixListener::bind(path).inspect_err(|_| release_path(path))
     }
+}
+
+/// Record that this process serves `path`, or report that it already does.
+///
+/// Separate from [`claim_session`] because the two answer different questions;
+/// see the call site. Only the sockets actually bound are tracked, so a failed
+/// bind releases its claim and a later attempt is free to retry.
+#[cfg(not(target_os = "linux"))]
+fn claim_path(path: &std::path::Path) -> bool {
+    bound().lock().is_ok_and(|mut b| b.insert(path.into()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn release_path(path: &std::path::Path) {
+    if let Ok(mut b) = bound().lock() {
+        b.remove(path);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn bound() -> &'static std::sync::Mutex<std::collections::HashSet<PathBuf>> {
+    static BOUND: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<PathBuf>>> =
+        std::sync::OnceLock::new();
+    BOUND.get_or_init(Default::default)
 }
 
 /// Connect to a session at `path`, if one is listening.
@@ -926,6 +990,8 @@ mod tests {
         stop.store(true, Ordering::Relaxed);
     }
 
+    // `abstract_name` only exists on Linux, so neither does the test for it.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_name_a_session_binds_fits_in_a_socket_and_follows_the_path() {
         // A socket name has 108 bytes to live in, and a runtime directory can

@@ -354,7 +354,7 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     // arithmetic left three unused cells past the readout that nobody could
     // see were unused.
     let volume = (row.width > VOLUME_WIDTH + 8).then(|| Rect {
-        x: row.x + row.width - VOLUME_READOUT - VOLUME_SLIDER,
+        x: row.x + row.width - VOLUME_MARGIN - VOLUME_READOUT - VOLUME_SLIDER,
         y: mid,
         width: VOLUME_SLIDER,
         height: 1,
@@ -416,6 +416,13 @@ pub const VOLUME_SLIDER: u16 = 10;
 /// A space and three digits: ` 100`.
 const VOLUME_READOUT: u16 = 4;
 
+/// Blank columns between the readout and the panel's right border.
+///
+/// One, the same as the seek row's clock above it, so the two right edges
+/// line up. Without it `100` sits against the frame and reads as though it
+/// has been clipped.
+const VOLUME_MARGIN: u16 = 1;
+
 /// How far the quiet end of the fill is pulled toward the panel behind it.
 ///
 /// Subtle on purpose. Enough that the bar is visibly brighter at full than at
@@ -439,8 +446,9 @@ const VOLUME_MIN_CONTRAST: f64 = 1.8;
 const VOLUME_FULL: char = '\u{25ac}';
 const VOLUME_TRACK: char = '\u{25ad}';
 
-/// Total cells the volume control occupies, label and readout included.
-const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT;
+/// Total cells the volume control occupies, label, readout and margin
+/// included.
+const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT + VOLUME_MARGIN;
 
 impl<'a> Widget for PlayerView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -1463,6 +1471,34 @@ mod tests {
         // only moves when a whole tenth is crossed.
         assert_eq!(volume_cells(0.50), volume_cells(0.53));
         assert_ne!(volume_cells(0.50), volume_cells(0.56));
+    }
+
+    /// The volume and the clock above it end in the same column.
+    #[test]
+    fn the_volume_clears_the_border_like_the_seek_row_does() {
+        for width in [60u16, 80, 120, 200] {
+            let area = Rect::new(0, 0, width, PANEL_ROWS);
+            let g = geometry(area, 30.0, 300.0, RepeatMode::All, Glyphs::default()).unwrap();
+            let Some(v) = g.controls.volume else { continue };
+
+            // Where the readout ends, and where the panel's inner area does.
+            let readout_end = v.x + v.width + VOLUME_READOUT;
+            let inner_end = g.inner.x + g.inner.width;
+            assert_eq!(
+                inner_end - readout_end,
+                VOLUME_MARGIN,
+                "width {width}: the readout is {} from the border, wanted {VOLUME_MARGIN}",
+                inner_end - readout_end
+            );
+
+            // The seek row's right clock keeps the same gap, so the two right
+            // edges line up rather than being a column out.
+            let clock_end = g.seek_row.x + g.seek_row.width - 1;
+            assert_eq!(
+                clock_end, readout_end,
+                "width {width}: the clock and the readout end in different columns"
+            );
+        }
     }
 
     #[test]

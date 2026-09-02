@@ -248,6 +248,50 @@ fn bar_fraction(bar: Rect, x: u16) -> f64 {
 /// Unlike a seek bar this reads the cell's *trailing* edge, because a slider
 /// cell is either lit or not: clicking the last cell has to mean full, and
 /// clicking the first has to mean one step rather than zero.
+/// What the mouse moves the volume by.
+///
+/// Five percent: the slider is ten cells and draws in eighths, so this is
+/// exactly half a cell, and every position the mouse can ask for is one the
+/// bar can actually draw.
+const VOLUME_STEP: f32 = 0.05;
+
+/// What the keyboard moves it by. Finer, because a key can be held and asked
+/// for a level the mouse would have to be pixel-accurate to reach.
+const KEY_VOLUME_STEP: f32 = 0.01;
+
+/// Round `v` to the nearest multiple of `step`.
+///
+/// For the pointer, which names an absolute position: the nearest level it
+/// could have meant.
+fn snap(v: f32, step: f32) -> f32 {
+    if step <= 0.0 {
+        return v.clamp(0.0, 1.0);
+    }
+    ((v / step).round() * step).clamp(0.0, 1.0)
+}
+
+/// Move `v` to the next multiple of `delta` in that direction.
+///
+/// For a key or a wheel, which name a direction rather than a place. Not
+/// `snap(v + delta)`: from 37% that would round 32% down to 30%, a seven
+/// point drop for one press. Stepping to the next position on the grid gives
+/// 35%, and from a value already on the grid it moves a whole step rather
+/// than standing still.
+fn step_toward(v: f32, delta: f32) -> f32 {
+    let step = delta.abs();
+    if step <= 0.0 {
+        return v.clamp(0.0, 1.0);
+    }
+    // The nudge keeps a value already on the grid from rounding to itself.
+    let n = v / step;
+    let next = if delta > 0.0 {
+        (n + 1e-4).floor() + 1.0
+    } else {
+        (n - 1e-4).ceil() - 1.0
+    };
+    (next * step).clamp(0.0, 1.0)
+}
+
 fn slider_fraction(v: Rect, x: u16) -> f32 {
     if v.width == 0 {
         return 0.0;
@@ -396,8 +440,9 @@ fn codec_label(codec: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bar_fraction, clamp_padding, codec_label, hit, indicator_width, slider_fraction,
-        status_indicators, track_line, MIN_HEIGHT, MIN_WIDTH,
+        bar_fraction, clamp_padding, codec_label, hit, indicator_width, slider_fraction, snap,
+        status_indicators, step_toward, track_line, KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH,
+        VOLUME_STEP,
     };
     use super::{resume_playlist_path, PlaylistEntry};
     use crate::playlist::queue::RepeatMode;
@@ -533,6 +578,65 @@ mod tests {
         // Out of range in either direction is clamped rather than wrapping.
         assert_eq!(bar_fraction(bar, 0), 0.0);
         assert_eq!(bar_fraction(bar, 500), 1.0);
+    }
+
+    #[test]
+    fn the_mouse_moves_the_volume_in_twentieths() {
+        // Five percent a step, so a drag across the ten-cell slider offers
+        // exactly the twenty-one levels it can draw and no others.
+        for step in 0..=20 {
+            let want = step as f32 * VOLUME_STEP;
+            assert!(
+                (snap(want, VOLUME_STEP) - want).abs() < 1e-6,
+                "{want} is not on the grid it came from"
+            );
+        }
+        // Anything between two steps goes to the nearer one.
+        assert!((snap(0.37, VOLUME_STEP) - 0.35).abs() < 1e-6);
+        assert!((snap(0.38, VOLUME_STEP) - 0.40).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_keyboard_is_five_times_finer_than_the_mouse() {
+        // The point of having two: a key reaches levels the pointer would
+        // have to be sub-cell accurate to ask for.
+        const { assert!(KEY_VOLUME_STEP < VOLUME_STEP) };
+        assert!((VOLUME_STEP / KEY_VOLUME_STEP - 5.0).abs() < 1e-6);
+        assert!((snap(0.37, KEY_VOLUME_STEP) - 0.37).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_coarse_step_lands_on_its_own_grid() {
+        // A volume left at 37% by the keyboard and then nudged by the wheel
+        // goes to the next multiple of five, either way. `snap(v + delta)`
+        // would send it down to 30% instead -- a seven point drop for one
+        // press, because 32% rounds down.
+        assert!((step_toward(0.37, VOLUME_STEP) - 0.40).abs() < 1e-6);
+        assert!((step_toward(0.37, -VOLUME_STEP) - 0.35).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_step_from_the_grid_moves_a_whole_step() {
+        // The failure mode of rounding toward the nearest: at 40% exactly, a
+        // press would round back to 40% and the control would appear stuck.
+        assert!((step_toward(0.40, VOLUME_STEP) - 0.45).abs() < 1e-6);
+        assert!((step_toward(0.40, -VOLUME_STEP) - 0.35).abs() < 1e-6);
+        assert!((step_toward(0.37, KEY_VOLUME_STEP) - 0.38).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stepping_stops_at_the_ends() {
+        assert_eq!(step_toward(1.0, VOLUME_STEP), 1.0);
+        assert_eq!(step_toward(0.0, -VOLUME_STEP), 0.0);
+        assert_eq!(step_toward(0.42, 0.0), 0.42);
+    }
+
+    #[test]
+    fn snapping_never_leaves_the_range() {
+        assert_eq!(snap(1.04, VOLUME_STEP), 1.0);
+        assert_eq!(snap(-0.2, VOLUME_STEP), 0.0);
+        // A zero step is a caller's mistake, not a divide by zero.
+        assert_eq!(snap(0.42, 0.0), 0.42);
     }
 
     #[test]
@@ -2878,8 +2982,8 @@ impl App {
             SeekBack => self.seek_by(-5.0),
             SeekForwardBig => self.seek_by(30.0),
             SeekBackBig => self.seek_by(-30.0),
-            VolumeUp => self.nudge_volume(0.05),
-            VolumeDown => self.nudge_volume(-0.05),
+            VolumeUp => self.nudge_volume(KEY_VOLUME_STEP),
+            VolumeDown => self.nudge_volume(-KEY_VOLUME_STEP),
             ToggleShuffle => {
                 // Asked for as a value, not as a flip: two windows toggling at
                 // once race each other into disagreeing.
@@ -3309,7 +3413,7 @@ impl App {
                 if let Some(g) = &g {
                     // Over a control, the wheel adjusts that control.
                     if g.controls.volume.is_some_and(|v| hit(v, x, y)) {
-                        return self.nudge_volume(if up { 0.05 } else { -0.05 });
+                        return self.nudge_volume(if up { VOLUME_STEP } else { -VOLUME_STEP });
                     }
                     if hit(g.seek_row, x, y) {
                         return self.seek_by(if up { 5.0 } else { -5.0 });
@@ -3695,11 +3799,18 @@ impl App {
         if v.width == 0 {
             return;
         }
-        self.set_volume(slider_fraction(v, x));
+        // Snapped, so a drag steps rather than sliding: a bar drawn in half
+        // cells cannot show more than twenty positions, and a pointer that
+        // reports levels between them makes the fill stutter as it moves.
+        self.set_volume(snap(slider_fraction(v, x), VOLUME_STEP));
     }
 
     fn nudge_volume(&mut self, delta: f32) {
-        let v = (self.player.volume() + delta).clamp(0.0, 1.0);
+        // To the next position on the step's own grid, so a volume left at
+        // 37% by the keyboard is moved to 40% or 35% by the wheel rather than
+        // to 42% -- the coarser control should not inherit the finer one's
+        // offset and stay off-grid for ever.
+        let v = step_toward(self.player.volume(), delta);
         self.set_volume(v);
     }
 

@@ -349,17 +349,19 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     // above them.
     let mid = row.y + row.height / 2;
 
-    let vol_w = VOLUME_WIDTH;
-    let volume = (row.width > vol_w + 8).then(|| Rect {
-        x: row.x + row.width - vol_w - 6 + 4,
+    // Right-aligned, and laid out from the right edge inward: readout, then
+    // slider, then label. Spelled out rather than derived, because the old
+    // arithmetic left three unused cells past the readout that nobody could
+    // see were unused.
+    let volume = (row.width > VOLUME_WIDTH + 8).then(|| Rect {
+        x: row.x + row.width - VOLUME_READOUT - VOLUME_SLIDER,
         y: mid,
-        width: vol_w - 4,
+        width: VOLUME_SLIDER,
         height: 1,
     });
 
     let right = match volume {
-        // `VOL ` sits four cells left of the slider.
-        Some(v) => v.x - 4,
+        Some(v) => v.x - VOLUME_LABEL,
         None => row.x + row.width,
     };
     let mut x = row.x + 1;
@@ -401,8 +403,21 @@ fn controls(row: Rect, repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     }
 }
 
+/// The `VOL ` label.
+const VOLUME_LABEL: u16 = 4;
+
+/// The slider itself.
+///
+/// Ten cells, so that a mouse step of 5% is exactly half a cell and lands on
+/// a block the eighths can draw. Any other width puts the mouse between two
+/// drawable positions and the bar stutters as it is dragged.
+const VOLUME_SLIDER: u16 = 10;
+
+/// A space and three digits: ` 100`.
+const VOLUME_READOUT: u16 = 4;
+
 /// Total cells the volume control occupies, label and readout included.
-const VOLUME_WIDTH: u16 = 12;
+const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT;
 
 impl<'a> Widget for PlayerView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -947,39 +962,54 @@ fn render_controls(
 
     // Volume, right-aligned.
     if let Some(v) = c.volume {
-        buf.set_string(v.x - 4, v.y, "VOL ", Style::default().fg(rgb(t.dim)));
-        // Quarter-cell precision from the shade ramp, on top of the ramp's own
-        // gradient: the leading cell holds a lighter shade than its position
-        // calls for when the level falls between two cells.
-        let steps = SHADES.len() as i32;
-        let filled = (volume * v.width as f32 * steps as f32).round() as i32;
+        buf.set_string(
+            v.x - VOLUME_LABEL,
+            v.y,
+            "VOL ",
+            Style::default().fg(rgb(t.dim)),
+        );
+
+        // One shape and one colour. This used to draw four different shade
+        // characters, chosen by position, over a colour that also changed
+        // across the bar -- two gradients at once, which read as noise rather
+        // than as a level, and made it impossible to see where the fill
+        // actually ended.
+        //
+        // Eighths, the same as the seek bar in `blocks`: the two sliders now
+        // agree, and a level between cells shows as a partial block rather
+        // than as a lighter shade of a full one.
+        let eighths = (volume.clamp(0.0, 1.0) * v.width as f32 * 8.0).round() as u32;
+        let filled = if volume <= 0.0 {
+            t.volume_mute_fg
+        } else {
+            t.volume_filled_fg
+        };
         for i in 0..v.width {
-            let along = i as f32 / (v.width - 1).max(1) as f32;
-            let step = (filled - i as i32 * steps).clamp(0, steps);
+            let step = eighths.saturating_sub(i as u32 * 8).min(8) as usize;
             let (ch, colour) = if step == 0 {
-                (SHADES[0], t.volume_track_fg)
+                (EIGHTHS_WIDE[0], t.volume_track_fg)
             } else {
-                // Density by position, so the bar reads as a ramp rather than
-                // a block -- the shading gradient a BBS would have drawn, and
-                // the only gradient two colours to a cell can carry. A cell
-                // only partly reached is held below its position's density.
-                // Capped by how much of this cell the level has reached, so
-                // the leading cell steps up through the shades as it fills.
-                let reached = fill_shade(along);
-                let ch = SHADES[reached.min(step as usize).max(1)];
-                let colour = t
-                    .volume_filled_fg
-                    .mix(t.volume_thumb_fg, (along * 0.5) as f64);
-                (ch, colour)
+                (EIGHTHS_WIDE[step], filled)
             };
             buf[(v.x + i, v.y)]
                 .set_char(ch)
                 .set_style(Style::default().fg(rgb(colour)));
         }
+
+        // The track behind the bar, so an empty slider is a groove rather than
+        // a gap. Drawn as the background of the cells the fill has not reached.
+        for i in 0..v.width {
+            let cell = &mut buf[(v.x + i, v.y)];
+            if cell.symbol() == " " {
+                cell.set_char('\u{2500}')
+                    .set_style(Style::default().fg(rgb(t.volume_track_fg)));
+            }
+        }
+
         buf.set_string(
             v.x + v.width,
             v.y,
-            format!("{:>3}", (volume * 100.0).round() as u32),
+            format!("{:>4}", (volume * 100.0).round() as u32),
             Style::default().fg(rgb(t.dim)),
         );
     }
@@ -1230,42 +1260,93 @@ mod tests {
     }
 
     #[test]
-    fn the_volume_ramp_gets_denser_toward_full() {
-        // The 1990s shading gradient: two colours per cell is all a terminal
-        // offers, so density is the gradient.
-        let full = volume_cells(1.0);
-        let weight = |c: char| SHADES.iter().position(|s| *s == c).unwrap_or(0);
-        let first = weight(full.chars().next().unwrap());
-        let last = weight(full.chars().last().unwrap());
-        assert!(last > first, "the ramp does not build: {full:?}");
-        // Monotonic: no cell lighter than the one before it.
-        let mut prev = 0;
-        for c in full.chars() {
-            let w = weight(c);
-            assert!(w >= prev, "the ramp dips: {full:?}");
-            prev = w;
-        }
-    }
-
-    #[test]
-    fn an_unset_volume_cell_is_the_lightest_shade() {
-        // The same dithered block throughout, so the unfilled part reads as
-        // the track rather than as a different widget.
-        let quiet = volume_cells(0.0);
+    fn the_volume_fills_from_the_left_in_one_shape() {
+        // One character and one colour, unlike the ramp this replaced: that
+        // one drew four different shades chosen by position, over a colour
+        // that also changed across the bar, and the end of the fill was
+        // impossible to find.
+        let half = volume_cells(0.5);
+        let cells: Vec<char> = half.chars().collect();
+        assert_eq!(cells.len(), VOLUME_SLIDER as usize);
+        // Left half solid, right half track, and nothing in between.
         assert!(
-            quiet.chars().all(|c| c == SHADES[0]),
-            "silence is not all track: {quiet:?}"
+            cells[..5].iter().all(|c| *c == EIGHTHS_WIDE[8]),
+            "the filled half is not solid: {half:?}"
+        );
+        assert!(
+            cells[5..].iter().all(|c| *c != EIGHTHS_WIDE[8]),
+            "the empty half is not empty: {half:?}"
         );
     }
 
     #[test]
+    fn an_empty_slider_is_a_groove_rather_than_a_gap() {
+        // Drawn, not blank: an empty control that vanishes looks broken.
+        let quiet = volume_cells(0.0);
+        assert!(
+            quiet.chars().all(|c| c == '\u{2500}'),
+            "silence is not all track: {quiet:?}"
+        );
+        assert_eq!(
+            volume_cells(1.0)
+                .chars()
+                .filter(|c| *c == '\u{2500}')
+                .count(),
+            0
+        );
+    }
+
+    /// The reason the slider is ten cells wide.
+    #[test]
+    fn every_mouse_step_lands_on_a_drawable_block() {
+        // Five percent of ten cells is half a cell, which the eighths draw
+        // exactly. At any other width a mouse step falls between two blocks
+        // and the bar stutters as it is dragged.
+        let mut seen = std::collections::HashSet::new();
+        for step in 0..=20 {
+            let cells = volume_cells(step as f32 * 0.05);
+            assert!(
+                seen.insert(cells.clone()),
+                "two mouse steps draw the same bar: {cells:?}"
+            );
+        }
+    }
+
+    #[test]
     fn the_volume_resolves_below_a_whole_cell() {
-        // Four shades per cell, so an eight-cell slider carries 32 steps.
+        // Eight steps per cell, so a keyboard nudge of one percent is visible
+        // well before the cell it is in fills.
         assert_ne!(
             volume_cells(0.50),
             volume_cells(0.53),
             "a sub-cell change drew nothing new"
         );
+    }
+
+    #[test]
+    fn the_readout_leaves_a_space_before_the_number() {
+        // `██100` ran the number into the bar. Three digits and a space, so
+        // the column does not move between 9%, 99% and 100%.
+        let theme = crate::theme::builtin::load("cosmic").unwrap();
+        let area = Rect::new(0, 0, 80, PANEL_ROWS);
+        let mut buf = Buffer::empty(area);
+        let g = geometry(area, 0.0, 300.0, RepeatMode::Off, Glyphs::default()).unwrap();
+        render_controls(
+            &g.controls,
+            &mut buf,
+            &theme,
+            PlayState::Playing,
+            1.0,
+            false,
+            RepeatMode::Off,
+            0,
+            Glyphs::default(),
+        );
+        let v = g.controls.volume.unwrap();
+        let readout: String = (0..VOLUME_READOUT)
+            .map(|i| buf[(v.x + v.width + i, v.y)].symbol().to_string())
+            .collect();
+        assert_eq!(readout, " 100");
     }
 
     #[test]

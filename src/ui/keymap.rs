@@ -30,7 +30,7 @@ pub enum Action {
     ChooseCover,
     RetryCover,
     TogglePlaylistPanel,
-    ToggleScrobblerPanel,
+    ToggleHistoryPanel,
     OpenPlaylistPicker,
     ToggleEqEnabled,
     NextEqPreset,
@@ -46,7 +46,7 @@ pub enum Action {
     FocusPlaylist,
     FocusEqualizer,
     FocusAlbum,
-    FocusScrobbler,
+    FocusHistory,
     OpenPanelSettings,
     CursorUpBig,
     CursorDownBig,
@@ -444,7 +444,7 @@ pub const BINDINGS: &[Binding] = &[
         group: "windows",
     },
     Binding {
-        action: Action::ToggleScrobblerPanel,
+        action: Action::ToggleHistoryPanel,
         keys: "alt+s",
         label: "listening history",
         group: "windows",
@@ -617,7 +617,7 @@ pub enum Module {
     Playlist,
     Equalizer,
     Album,
-    Scrobbler,
+    History,
 }
 
 /// The focused panel's own bindings, tried before [`resolve`].
@@ -644,11 +644,11 @@ pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
         Module::Playlist => playlist(k),
         Module::Equalizer => equalizer(k),
         Module::Album => album(k),
-        Module::Scrobbler => scrobbler(k),
+        Module::History => history(k),
     }
 }
 
-fn scrobbler(k: KeyEvent) -> Option<Action> {
+fn history(k: KeyEvent) -> Option<Action> {
     use KeyCode::*;
     (!k.modifiers
         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
@@ -796,7 +796,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('t'), _, _, true) => Action::NextTheme,
         (Char('p'), false, _, false) => Action::TogglePlaylistPanel,
         (Char('e'), _, _, true) => Action::OpenPlaylistPicker,
-        (Char('s'), _, _, true) => Action::ToggleScrobblerPanel,
+        (Char('s'), _, _, true) => Action::ToggleHistoryPanel,
         (Tab, ..) => Action::FocusNext,
         (BackTab, ..) => Action::FocusPrev,
         // Straight to a panel, opening it if it is shut. Alt because the bare
@@ -806,7 +806,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('2'), false, _, true) => Action::FocusPlaylist,
         (Char('3'), false, _, true) => Action::FocusEqualizer,
         (Char('4'), false, _, true) => Action::FocusAlbum,
-        (Char('5'), false, _, true) => Action::FocusScrobbler,
+        (Char('5'), false, _, true) => Action::FocusHistory,
 
         (Up, false, _, true) => Action::MoveAlbumUp,
         (Down, false, _, true) => Action::MoveAlbumDown,

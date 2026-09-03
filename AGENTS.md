@@ -47,7 +47,9 @@ belong in the mode-0600 `credentials.toml`, never in the ordinary config.
 Panel visibility is presentation, never service state. Closing the history
 panel must not stop a provider enabled under `[scrobble]`, and closing the EQ
 panel must not bypass an EQ enabled under `[eq]`. `ui.show_scrobbler` and
-`ui.show_equalizer` only remember whether those panels are drawn.
+`ui.show_equalizer` only remember whether those panels are drawn. The former
+name is retained for config and shared-view compatibility; the user-facing
+module and the Rust UI panel are named History.
 
 ## Building on macOS
 

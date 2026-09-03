@@ -323,6 +323,10 @@ where they do not scroll away with the list.
 | `alt+1` … `alt+5` | focus player, album, equalizer, playlist, history |
 | `tab`           | next pane                     |
 
+When History has focus, `j`/`k`, the arrow keys, page keys, and `home`/`end`
+scroll the recent-listen log instead of moving the playlist cursor. The panel
+shows five listens at a time and retains the latest 100 for navigation.
+
 | Equalizer, appearance, general |                    |
 | ------------------------------ | ------------------ |
 | `e`                            | equalizer on or off |
@@ -409,7 +413,7 @@ knobs:
 | `[ui] buttons`                 | transport buttons: `auto` for pictures where the terminal can, `text` for ASCII. `o` toggles     |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the window                                                         |
 | `[ui] show_equalizer`          | show the EQ panel; visibility does not enable or bypass the EQ                                   |
-| `[ui] show_scrobbler`          | show listening history; visibility does not enable or disable network scrobbling                 |
+| `[ui] show_scrobbler`          | show History; legacy key name retained for compatibility, and unrelated to network service state |
 | `[art] fetch`                  | look covers up on the Cover Art Archive when the files have none. **Off** unless you turn it on  |
 | `[output] mode`                | `"native"` for bit-perfect, `"fixed"` to pin the rate                                            |
 | `[cue] pregap`                 | which track a pregap belongs to                                                                  |

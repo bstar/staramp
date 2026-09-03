@@ -979,7 +979,9 @@ fn publish(store: &Store, enabled: [bool; 2], out: &Arc<Mutex<Snapshot>>) {
         .collect();
     let snap = Snapshot {
         providers,
-        recent: store.recent(5).unwrap_or_default(),
+        // Five are visible at once; retain enough in the lightweight snapshot
+        // for the History module to be useful as a scrollable recent log.
+        recent: store.recent(100).unwrap_or_default(),
         pending: store.pending_count(),
     };
     if let Ok(mut held) = out.lock() {

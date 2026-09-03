@@ -65,7 +65,7 @@ struct Regions {
     player: Rect,
     album: Option<Rect>,
     equalizer: Option<Rect>,
-    scrobbler: Option<Rect>,
+    history: Option<Rect>,
     playlist: Option<Rect>,
     status: Rect,
 }
@@ -287,7 +287,7 @@ fn focus_name(f: Focus) -> &'static str {
         Focus::Player => "player",
         Focus::Album => "album",
         Focus::Equalizer => "equalizer",
-        Focus::Scrobbler => "scrobbler",
+        Focus::History => "history",
         Focus::Playlist => "playlist",
     }
 }
@@ -344,6 +344,11 @@ fn on_off(v: bool) -> &'static str {
 
 fn hit(r: Rect, x: u16, y: u16) -> bool {
     x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+}
+
+fn shifted_history_offset(at: usize, delta: i32, len: usize) -> usize {
+    let last = len.saturating_sub(crate::ui::panels::history::VISIBLE_ROWS) as i64;
+    (at as i64 + delta as i64).clamp(0, last) as usize
 }
 
 /// Two clicks closer together than this, on the same cell, are a double click.
@@ -487,8 +492,8 @@ fn codec_label(codec: &str) -> String {
 mod tests {
     use super::{
         bar_fraction, clamp_padding, codec_label, equalizer_enabled, hit, indicator_width,
-        network_scrobblers, slider_fraction, snap, status_indicators, step_toward, track_line,
-        KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH, VOLUME_STEP,
+        network_scrobblers, shifted_history_offset, slider_fraction, snap, status_indicators,
+        step_toward, track_line, KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH, VOLUME_STEP,
     };
     use super::{resume_playlist_path, PlaylistEntry};
     use crate::playlist::queue::RepeatMode;
@@ -543,6 +548,15 @@ mod tests {
         cfg.ui.show_equalizer = true;
         assert_eq!(network_scrobblers(&cfg), [true, true]);
         assert!(equalizer_enabled(&cfg));
+    }
+
+    #[test]
+    fn history_scrolling_stops_at_both_ends() {
+        assert_eq!(shifted_history_offset(0, -1, 20), 0);
+        assert_eq!(shifted_history_offset(0, 1, 20), 1);
+        assert_eq!(shifted_history_offset(1, 10, 20), 11);
+        assert_eq!(shifted_history_offset(14, 10, 20), 15);
+        assert_eq!(shifted_history_offset(3, 1, 5), 0);
     }
 
     #[test]
@@ -810,7 +824,7 @@ enum Focus {
     Player,
     Album,
     Equalizer,
-    Scrobbler,
+    History,
     Playlist,
 }
 
@@ -820,7 +834,7 @@ impl From<Focus> for keymap::Module {
             Focus::Player => keymap::Module::Player,
             Focus::Album => keymap::Module::Album,
             Focus::Equalizer => keymap::Module::Equalizer,
-            Focus::Scrobbler => keymap::Module::Scrobbler,
+            Focus::History => keymap::Module::History,
             Focus::Playlist => keymap::Module::Playlist,
         }
     }
@@ -912,7 +926,9 @@ struct Panels {
     eq: bool,
     album: bool,
     playlist: bool,
-    scrobbler: bool,
+    history: bool,
+    /// First recent listen shown in the five-row History viewport.
+    history_scroll: usize,
     help: bool,
     picker: bool,
     focus: Focus,
@@ -1908,7 +1924,8 @@ impl App {
                 eq: cfg.ui.show_equalizer,
                 album: cfg.ui.show_album,
                 playlist: cfg.ui.show_playlist,
-                scrobbler: cfg.ui.show_scrobbler,
+                history: cfg.ui.show_scrobbler,
+                history_scroll: 0,
                 help: false,
                 picker: false,
                 focus: if cfg.ui.show_playlist {
@@ -2141,7 +2158,7 @@ impl App {
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
-            show_scrobbler: self.panels.scrobbler,
+            show_scrobbler: self.panels.history,
             revision: 0,
         }
     }
@@ -2161,7 +2178,7 @@ impl App {
         self.panels.album = v.show_album;
         self.panels.eq = v.show_equalizer;
         self.panels.playlist = v.show_playlist;
-        self.panels.scrobbler = v.show_scrobbler;
+        self.panels.history = v.show_scrobbler;
         if !v.cursor.is_empty() {
             let wanted = crate::playlist::uri::TrackUri::parse(&v.cursor);
             let q = self.player.queue.lock().unwrap();
@@ -2787,7 +2804,7 @@ impl App {
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
-            show_scrobbler: self.panels.scrobbler,
+            show_scrobbler: self.panels.history,
             lastfm: self
                 .activity
                 .snapshot()
@@ -3354,11 +3371,11 @@ impl App {
                     self.panels.focus = Focus::Player;
                 }
             }
-            ToggleScrobblerPanel => {
-                self.panels.scrobbler = !self.panels.scrobbler;
-                if self.panels.scrobbler {
-                    self.panels.focus = Focus::Scrobbler;
-                } else if self.panels.focus == Focus::Scrobbler {
+            ToggleHistoryPanel => {
+                self.panels.history = !self.panels.history;
+                if self.panels.history {
+                    self.panels.focus = Focus::History;
+                } else if self.panels.focus == Focus::History {
                     self.panels.focus = Focus::Player;
                 }
             }
@@ -3447,12 +3464,16 @@ impl App {
                 self.look.theme = t;
             }
             FocusNext => self.move_focus(1),
+            CursorUp if self.panels.focus == Focus::History => self.move_history(-1),
             CursorUp => self.move_cursor(-1),
+            CursorDown if self.panels.focus == Focus::History => self.move_history(1),
             CursorDown => self.move_cursor(1),
             // The shifted arrows, which the playlist module claims. Ten rows
             // rather than a screenful: `PageUp` is still there for that, and
             // the point of the pair is a predictable multiple of the bare key.
+            CursorUpBig if self.panels.focus == Focus::History => self.move_history(-10),
             CursorUpBig => self.move_cursor(-10),
+            CursorDownBig if self.panels.focus == Focus::History => self.move_history(10),
             CursorDownBig => self.move_cursor(10),
 
             EqBandPrev => self.move_eq_band(-1),
@@ -3467,11 +3488,15 @@ impl App {
             FocusPlaylist => self.focus_module(Focus::Playlist),
             FocusEqualizer => self.focus_module(Focus::Equalizer),
             FocusAlbum => self.focus_module(Focus::Album),
-            FocusScrobbler => self.focus_module(Focus::Scrobbler),
+            FocusHistory => self.focus_module(Focus::History),
             OpenPanelSettings => self.open_settings(self.panels.focus),
+            PageUp if self.panels.focus == Focus::History => self.move_history(-10),
             PageUp => self.move_cursor(-10),
+            PageDown if self.panels.focus == Focus::History => self.move_history(10),
             PageDown => self.move_cursor(10),
+            Home if self.panels.focus == Focus::History => self.history_to_end(false),
             Home => self.cursor_to_end(false),
+            End if self.panels.focus == Focus::History => self.history_to_end(true),
             End => self.cursor_to_end(true),
             Activate => self.play_track_at_cursor(),
         }
@@ -3569,6 +3594,24 @@ impl App {
             self.queue.rows.step(self.queue.cursor, delta)
         };
         self.set_cursor(next);
+    }
+
+    /// Move the five-row History viewport through the retained recent log.
+    fn move_history(&mut self, delta: i32) {
+        let len = self.activity.snapshot().recent.len();
+        self.panels.history_scroll = shifted_history_offset(self.panels.history_scroll, delta, len);
+    }
+
+    fn history_to_end(&mut self, oldest: bool) {
+        self.panels.history_scroll = if oldest {
+            self.activity
+                .snapshot()
+                .recent
+                .len()
+                .saturating_sub(crate::ui::panels::history::VISIBLE_ROWS)
+        } else {
+            0
+        };
     }
 
     /// The first or last track on show, for `home` and `end`.
@@ -3784,9 +3827,10 @@ impl App {
                         return;
                     }
                 }
-                if let Some(rect) = r.scrobbler {
+                if let Some(rect) = r.history {
                     if hit(rect, x, y) {
-                        return;
+                        self.panels.focus = Focus::History;
+                        return self.move_history(if up { -3 } else { 3 });
                     }
                 }
                 // Otherwise it scrolls the list, which is what a wheel is for.
@@ -3896,20 +3940,18 @@ impl App {
                         return self.equalizer_click(rect, x, y);
                     }
                 }
-                if let Some(rect) = r.scrobbler {
+                if let Some(rect) = r.history {
                     match header::hit(rect, header::PLAIN, x, y) {
                         Some(header::Item::Close) => {
-                            self.panels.scrobbler = false;
+                            self.panels.history = false;
                             self.panels.focus = Focus::Player;
-                            return self.note("scrobbler closed — alt+s to bring it back".into());
+                            return self.note("history closed — alt+s to bring it back".into());
                         }
-                        Some(header::Item::Settings) => {
-                            return self.open_settings(Focus::Scrobbler)
-                        }
+                        Some(header::Item::Settings) => return self.open_settings(Focus::History),
                         _ => {}
                     }
                     if hit(rect, x, y) {
-                        self.panels.focus = Focus::Scrobbler;
+                        self.panels.focus = Focus::History;
                         return;
                     }
                 }
@@ -3968,7 +4010,7 @@ impl App {
         Focus::Player,
         Focus::Album,
         Focus::Equalizer,
-        Focus::Scrobbler,
+        Focus::History,
         Focus::Playlist,
     ];
 
@@ -3980,7 +4022,7 @@ impl App {
             Focus::Player => true,
             Focus::Album => self.panels.album,
             Focus::Equalizer => self.panels.eq,
-            Focus::Scrobbler => self.panels.scrobbler,
+            Focus::History => self.panels.history,
             Focus::Playlist => self.panels.playlist,
         }
     }
@@ -4016,7 +4058,7 @@ impl App {
             Focus::Player => {}
             Focus::Album => self.panels.album = true,
             Focus::Equalizer => self.panels.eq = true,
-            Focus::Scrobbler => self.panels.scrobbler = true,
+            Focus::History => self.panels.history = true,
             Focus::Playlist => self.panels.playlist = true,
         }
         self.panels.focus = f;
@@ -4339,15 +4381,15 @@ impl App {
         } else {
             0
         };
-        let scrobbler_h = if self.panels.scrobbler {
-            crate::ui::panels::scrobbler::PANEL_ROWS
+        let history_h = if self.panels.history {
+            crate::ui::panels::history::PANEL_ROWS
         } else {
             0
         };
         let status_h = 1u16;
         let playlist_h = area
             .height
-            .saturating_sub(player_h + album_h + eq_h + scrobbler_h + status_h);
+            .saturating_sub(player_h + album_h + eq_h + history_h + status_h);
         // Two of its rows are border and one is the header, so three rows is
         // a panel with nothing in it.
         let show_playlist = self.panels.playlist && playlist_h >= 4;
@@ -4359,8 +4401,8 @@ impl App {
         if self.panels.eq {
             constraints.push(Constraint::Length(eq_h));
         }
-        if self.panels.scrobbler {
-            constraints.push(Constraint::Length(scrobbler_h));
+        if self.panels.history {
+            constraints.push(Constraint::Length(history_h));
         }
         if show_playlist {
             constraints.push(Constraint::Length(playlist_h));
@@ -4387,7 +4429,7 @@ impl App {
             idx += 1;
             r
         });
-        let scrobbler = self.panels.scrobbler.then(|| {
+        let history = self.panels.history.then(|| {
             let r = rows[idx];
             idx += 1;
             r
@@ -4403,7 +4445,7 @@ impl App {
             player,
             album,
             equalizer,
-            scrobbler,
+            history,
             playlist,
             status: rows[idx],
         })
@@ -4486,11 +4528,12 @@ impl App {
             .render(rect, buf);
         }
 
-        if let Some(rect) = r.scrobbler {
-            crate::ui::panels::scrobbler::ScrobblerView {
+        if let Some(rect) = r.history {
+            crate::ui::panels::history::HistoryView {
                 theme: &self.look.theme,
                 snapshot: &self.activity.snapshot(),
-                focused: self.panels.focus == Focus::Scrobbler,
+                focused: self.panels.focus == Focus::History,
+                scroll: self.panels.history_scroll,
             }
             .render(rect, buf);
         }
@@ -5140,7 +5183,7 @@ impl App {
                     (Row::action("reset the bands"), Setting::EqReset),
                 ],
             ),
-            Focus::Scrobbler => {
+            Focus::History => {
                 let snap = self.activity.snapshot();
                 let mut rows = Vec::new();
                 if let Some(provider) = snap
@@ -5174,7 +5217,7 @@ impl App {
                         Setting::AuthListenbrainz,
                     ),
                 ]);
-                ("scrobbling and local history".into(), rows)
+                ("listening history and scrobbling".into(), rows)
             }
             // The transport has no header and so cannot get here.
             Focus::Player => (String::new(), Vec::new()),

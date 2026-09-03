@@ -1,4 +1,4 @@
-//! Compact local-history and network-scrobbler panel.
+//! Compact listening-history panel with network-delivery status.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -11,15 +11,18 @@ use crate::theme::color::Rgb;
 use crate::theme::resolve::Theme;
 
 pub const PANEL_ROWS: u16 = 8;
+pub const VISIBLE_ROWS: usize = 5;
 
 fn rgb(c: Rgb) -> Color {
     Color::Rgb(c.r, c.g, c.b)
 }
 
-pub struct ScrobblerView<'a> {
+pub struct HistoryView<'a> {
     pub theme: &'a Theme,
     pub snapshot: &'a Snapshot,
     pub focused: bool,
+    /// First recent listen shown; zero is the newest.
+    pub scroll: usize,
 }
 
 fn provider_summary(snapshot: &Snapshot) -> String {
@@ -45,7 +48,7 @@ fn provider_summary(snapshot: &Snapshot) -> String {
     }
 }
 
-impl Widget for ScrobblerView<'_> {
+impl Widget for HistoryView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
         let block = Block::default()
@@ -57,7 +60,7 @@ impl Widget for ScrobblerView<'_> {
                 t.border
             })))
             .title(Span::styled(
-                "═ SCROBBLER ",
+                "═ HISTORY ",
                 Style::default().fg(rgb(t.header_fg)),
             ))
             .style(Style::default().bg(rgb(t.panel_bg)));
@@ -86,7 +89,14 @@ impl Widget for ScrobblerView<'_> {
             return;
         }
 
-        for (i, row) in self.snapshot.recent.iter().take(5).enumerate() {
+        for (i, row) in self
+            .snapshot
+            .recent
+            .iter()
+            .skip(self.scroll)
+            .take(VISIBLE_ROWS)
+            .enumerate()
+        {
             let y = inner.y + i as u16;
             if y >= inner.y + inner.height {
                 break;

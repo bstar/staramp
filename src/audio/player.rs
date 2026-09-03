@@ -16,7 +16,7 @@ use arc_swap::ArcSwap;
 use crossbeam_channel::{bounded, Receiver, Sender};
 
 use super::decode::Decoder;
-use super::dsp::eq::{EqHandle, EqSettings, EqState};
+use super::dsp::eq::{EqHandle, EqState};
 use super::dsp::gain::{ReplayGain, RgMode};
 use super::output::Output;
 use super::ring;
@@ -229,8 +229,13 @@ impl Player {
         }
     }
 
-    pub fn set_eq(&self, settings: EqSettings) {
-        self.eq.store(settings);
+    pub fn set_eq_profile(
+        &self,
+        enabled: bool,
+        profile: crate::audio::dsp::apo::Profile,
+        sample_rate: u32,
+    ) {
+        self.eq.store_profile(enabled, profile, sample_rate);
     }
 
     pub fn current_item(&self) -> Option<QueueItem> {
@@ -402,6 +407,7 @@ fn run(
                             &mut decoder,
                             &mut stream,
                             &state,
+                            &eq,
                             &mut eq_state,
                             &tap,
                             &mut cue,
@@ -425,6 +431,7 @@ fn run(
                                 &mut decoder,
                                 &mut stream,
                                 &state,
+                                &eq,
                                 &mut eq_state,
                                 &tap,
                                 &mut cue,
@@ -452,6 +459,7 @@ fn run(
                             &mut decoder,
                             &mut stream,
                             &state,
+                            &eq,
                             &mut eq_state,
                             &tap,
                             &mut cue,
@@ -567,6 +575,7 @@ fn run(
                                         &mut decoder,
                                         &mut stream,
                                         &state,
+                                        &eq,
                                         &mut eq_state,
                                         &tap,
                                         &mut cue,
@@ -693,6 +702,7 @@ fn open_track(
     decoder: &mut Option<Box<dyn Decoder>>,
     stream: &mut Option<Stream>,
     state: &Arc<PlayerState>,
+    eq: &EqHandle,
     eq_state: &mut EqState,
     tap: &Arc<Tap>,
     cue: &mut Option<source::CueAlbum>,
@@ -724,6 +734,7 @@ fn open_track(
         }
     };
     let spec = plan.out_spec(&src_spec);
+    eq.rebuild(spec.sample_rate);
 
     let mut dec = opened.decoder;
     if plan.needs_adapting(&src_spec) {

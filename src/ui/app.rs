@@ -15,7 +15,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
 
-use crate::audio::dsp::eq::{self, EqSettings};
+use crate::audio::dsp::eq;
 use crate::audio::player::{Command, PlayState, Player};
 use crate::config::edit::Value;
 use crate::fx::reactive::{reactive_dt, OnsetDetector};
@@ -100,6 +100,23 @@ enum Setting {
     EqEnabled,
     EqPreset,
     EqReset,
+    EqImport,
+    EqExport,
+    EqNewProfile,
+    EqDuplicateProfile,
+    EqRenameProfile,
+    EqDeleteProfile,
+    EqStageEnabled,
+    EqType,
+    EqChannels,
+    EqFrequency,
+    EqGain,
+    EqWidth,
+    EqAdd,
+    EqDuplicate,
+    EqMoveUp,
+    EqMoveDown,
+    EqRemove,
     GroupOrder,
     GroupDirection,
     ClearAlbumOrder,
@@ -239,8 +256,6 @@ impl Remembered {
 enum Drag {
     Seek,
     Volume,
-    /// Sliding one EQ band up and down.
-    EqBand(usize),
 }
 
 /// Where along a bar a click at `x` falls, 0 to 1.
@@ -846,28 +861,80 @@ impl From<Focus> for keymap::Module {
 /// equalizer panel and the gain publisher ever read, and nothing else in the
 /// app needs to know they exist.
 struct EqState {
-    gains: [f32; 10],
-    preamp: f32,
     enabled: bool,
-    /// Index into `eq::PRESETS`, not a name -- the panel cycles through them
-    /// by position and the name is only wanted when the setting is written.
-    preset: usize,
-    /// Which band the keyboard is on.
-    band: usize,
+    profiles: Vec<crate::audio::dsp::apo::Profile>,
+    profile: usize,
+    /// Which ordered processing stage the keyboard is on.
+    stage: usize,
+    scroll: usize,
 }
 
 impl EqState {
     fn from_config(cfg: &crate::config::Config) -> Self {
-        Self {
-            gains: cfg.eq.band_gains(),
-            preamp: cfg.eq.preamp,
-            enabled: equalizer_enabled(cfg),
-            preset: eq::PRESETS
+        let mut profiles = eq::PRESETS
+            .iter()
+            .map(|p| crate::audio::dsp::apo::Profile::legacy(p.name, 0.0, &p.gains))
+            .collect::<Vec<_>>();
+        for profile in crate::audio::dsp::apo::managed_profiles() {
+            if let Some(at) = profiles
                 .iter()
-                .position(|p| p.name.eq_ignore_ascii_case(&cfg.eq.preset))
-                .unwrap_or(0),
-            band: 0,
+                .position(|p| p.name.eq_ignore_ascii_case(&profile.name))
+            {
+                profiles[at] = profile;
+            } else {
+                profiles.push(profile);
+            }
         }
+        let mut profile = profiles
+            .iter()
+            .position(|p| p.name.eq_ignore_ascii_case(&cfg.eq.preset))
+            .unwrap_or(0);
+        // Old hand-adjusted ten-band settings are a real profile, even when
+        // they happened to start from a named built-in preset.
+        if profile < eq::PRESETS.len()
+            && (cfg.eq.preamp != 0.0 || cfg.eq.band_gains() != eq::PRESETS[profile].gains)
+        {
+            profiles.push(crate::audio::dsp::apo::Profile::legacy(
+                "Legacy custom",
+                cfg.eq.preamp,
+                &cfg.eq.band_gains(),
+            ));
+            profile = profiles.len() - 1;
+        }
+        Self {
+            enabled: equalizer_enabled(cfg),
+            profiles,
+            profile,
+            stage: 0,
+            scroll: 0,
+        }
+    }
+
+    fn active(&self) -> &crate::audio::dsp::apo::Profile {
+        &self.profiles[self.profile]
+    }
+    fn active_mut(&mut self) -> &mut crate::audio::dsp::apo::Profile {
+        &mut self.profiles[self.profile]
+    }
+
+    fn legacy_values(&self) -> (f32, [f32; 10]) {
+        use crate::audio::dsp::apo::Filter;
+        let mut preamp = 0.0;
+        let mut gains = [0.0; 10];
+        for stage in &self.active().stages {
+            match &stage.filter {
+                Filter::Preamp { gain_db } => preamp += *gain_db as f32,
+                Filter::Biquad {
+                    frequency, gain_db, ..
+                } => {
+                    if let Some(at) = eq::BANDS.iter().position(|f| f == frequency) {
+                        gains[at] = *gain_db as f32;
+                    }
+                }
+                _ => return (0.0, [0.0; 10]),
+            }
+        }
+        (preamp, gains)
     }
 }
 
@@ -1021,6 +1088,21 @@ enum AuthInput {
     Listenbrainz(String),
 }
 
+#[derive(Clone, Copy)]
+enum EqField {
+    Frequency,
+    Gain,
+    Width,
+    GraphicPoints,
+    IirCoefficients,
+    RenameProfile,
+}
+
+struct EqInput {
+    field: EqField,
+    value: String,
+}
+
 /// What the user is part-way through typing, holding or dragging.
 ///
 /// All of it is transient: every field is empty when nothing is being edited,
@@ -1030,6 +1112,8 @@ enum AuthInput {
 struct Editing {
     /// Provider credentials being pasted without leaving the TUI.
     auth: Option<AuthInput>,
+    /// Exact numeric entry for the selected parametric stage.
+    eq_value: Option<EqInput>,
     /// What `space` does, once it has been asked.
     ///
     /// Remembered per loaded playlist for as long as the browser stays open, so
@@ -1170,6 +1254,8 @@ struct Overlays {
     resume: Option<Session>,
     /// The library browser, when it is open. Per window, not shared.
     library: Option<crate::ui::panels::library::Library>,
+    /// Filesystem view used for APO import and export.
+    files: Option<crate::ui::panels::files::Browser>,
     /// Held across opens: building it costs ~290 ms and nothing invalidates it
     /// until the index is rescanned.
     browse: Option<Arc<crate::library::browse::Model>>,
@@ -1306,6 +1392,86 @@ impl App {
             }
             Err(e) => self.note(format!("cannot read the index: {e}")),
         }
+    }
+
+    fn open_eq_files(&mut self, purpose: crate::ui::panels::files::Purpose) {
+        let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+        self.over.files = Some(crate::ui::panels::files::Browser::new(purpose, directory));
+    }
+
+    /// Raw filesystem-browser keys. Like the music library, this view owns
+    /// navigation while it is open and leaves global playback keys alone only
+    /// after it closes.
+    fn file_browser_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        use crate::ui::panels::files::Purpose;
+        use crossterm::event::KeyCode;
+        let Some(browser) = &mut self.over.files else {
+            return false;
+        };
+        match key.code {
+            KeyCode::Esc => {
+                self.over.files = None;
+            }
+            KeyCode::Char('j') | KeyCode::Down => browser.move_by(1),
+            KeyCode::Char('k') | KeyCode::Up => browser.move_by(-1),
+            KeyCode::PageDown => browser.move_by(10),
+            KeyCode::PageUp => browser.move_by(-10),
+            KeyCode::Char('h') | KeyCode::Left | KeyCode::Backspace => browser.parent(),
+            KeyCode::Char('l') | KeyCode::Right | KeyCode::Enter => {
+                if browser.enter_directory() {
+                    return true;
+                }
+                if browser.purpose == Purpose::ImportEq {
+                    let selected = browser.selected_file().map(std::path::Path::to_path_buf);
+                    let Some(path) = selected else { return true };
+                    match crate::audio::dsp::apo::Profile::parse_file(&path) {
+                        Ok(profile) => {
+                            if let Err(error) = profile.save_managed() {
+                                self.note(format!("could not import EQ: {error}"));
+                                return true;
+                            }
+                            if let Some(at) = self
+                                .eq
+                                .profiles
+                                .iter()
+                                .position(|p| p.name.eq_ignore_ascii_case(&profile.name))
+                            {
+                                self.eq.profiles[at] = profile;
+                                self.eq.profile = at;
+                            } else {
+                                self.eq.profiles.push(profile);
+                                self.eq.profile = self.eq.profiles.len() - 1;
+                            }
+                            self.eq.stage = 0;
+                            self.eq.scroll = 0;
+                            self.eq.enabled = true;
+                            self.over.files = None;
+                            self.apply_eq();
+                            self.note(format!("imported EQ profile {}", self.eq.active().name));
+                        }
+                        Err(error) => self.note(format!("could not import EQ: {error:#}")),
+                    }
+                }
+            }
+            KeyCode::Char('s') if browser.purpose == Purpose::ExportEq => {
+                let filename = format!("{}.txt", self.eq.active().name.replace(['/', '\\'], "_"));
+                let path = browser.directory.join(filename);
+                if path.exists() && browser.confirm.as_ref() != Some(&path) {
+                    browser.confirm = Some(path);
+                    self.note("file exists — press s again to overwrite".into());
+                    return true;
+                }
+                match std::fs::write(&path, self.eq.active().to_apo()) {
+                    Ok(()) => {
+                        self.over.files = None;
+                        self.note(format!("exported EQ to {}", path.display()));
+                    }
+                    Err(error) => self.note(format!("could not export EQ: {error}")),
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// Keys typed into the new-playlist name box.
@@ -2730,6 +2896,12 @@ impl App {
                         if self.edit.auth.is_some() && self.auth_type(k) {
                             continue;
                         }
+                        if self.eq_value_type(k) {
+                            continue;
+                        }
+                        if self.file_browser_key(k) {
+                            continue;
+                        }
                         // Naming a playlist eats keys ahead of everything, so
                         // `l` in a playlist name does not open the browser.
                         if self.edit.naming.is_some() && self.name_type(k) {
@@ -2774,6 +2946,7 @@ impl App {
                     // cell size the button images were built for.
                     Event::Resize(..) => self.graphics.remeasure(),
                     Event::Paste(text) if self.auth_paste(&text) => {}
+                    Event::Paste(text) if self.eq_value_paste(&text) => {}
                     _ => {}
                 }
             }
@@ -2795,6 +2968,7 @@ impl App {
         let q = self.player.queue.lock().unwrap();
         let (shuffle, repeat) = (q.shuffled(), q.repeat().to_string().to_lowercase());
         drop(q);
+        let (eq_preamp, eq_gains) = self.eq.legacy_values();
         Remembered {
             theme: self.look.ids[self.look.index].clone(),
             volume: self.player.volume(),
@@ -2831,9 +3005,9 @@ impl App {
             shuffle,
             repeat,
             eq_enabled: self.eq.enabled,
-            eq_preset: eq::PRESETS[self.eq.preset].name.to_string(),
-            eq_preamp: self.eq.preamp,
-            eq_gains: self.eq.gains,
+            eq_preset: self.eq.active().name.clone(),
+            eq_preamp,
+            eq_gains,
         }
     }
 
@@ -3478,10 +3652,44 @@ impl App {
 
             EqBandPrev => self.move_eq_band(-1),
             EqBandNext => self.move_eq_band(1),
-            EqGainUp => self.nudge_eq_band(self.eq.band, EQ_STEP_DB),
-            EqGainDown => self.nudge_eq_band(self.eq.band, -EQ_STEP_DB),
-            EqGainUpBig => self.nudge_eq_band(self.eq.band, EQ_STEP_DB * 10.0),
-            EqGainDownBig => self.nudge_eq_band(self.eq.band, -EQ_STEP_DB * 10.0),
+            EqGainUp => self.nudge_eq_stage(EQ_STEP_DB as f64),
+            EqGainDown => self.nudge_eq_stage(-EQ_STEP_DB as f64),
+            EqGainUpBig => self.nudge_eq_stage((EQ_STEP_DB * 10.0) as f64),
+            EqGainDownBig => self.nudge_eq_stage(-(EQ_STEP_DB * 10.0) as f64),
+            EqToggleStage => {
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
+                    stage.enabled = !stage.enabled;
+                    self.finish_eq_edit();
+                }
+            }
+            EqAddStage => {
+                use crate::audio::dsp::apo::{BiquadKind, ChannelMask, Filter, Stage, Width};
+                self.eq.active_mut().stages.push(Stage {
+                    enabled: true,
+                    channels: ChannelMask::ALL,
+                    filter: Filter::Biquad {
+                        kind: BiquadKind::Peaking,
+                        frequency: 1000.0,
+                        gain_db: 0.0,
+                        width: Width::Q(1.0),
+                        corner_frequency: false,
+                    },
+                });
+                self.eq.stage = self.eq.active().stages.len() - 1;
+                self.finish_eq_edit();
+            }
+            EqRemoveStage => {
+                let at = self.eq.stage;
+                if at < self.eq.active().stages.len() {
+                    self.eq.active_mut().stages.remove(at);
+                    self.eq.stage = self
+                        .eq
+                        .stage
+                        .min(self.eq.active().stages.len().saturating_sub(1));
+                    self.finish_eq_edit();
+                }
+            }
 
             FocusPrev => self.move_focus(-1),
             FocusPlayer => self.focus_module(Focus::Player),
@@ -3514,27 +3722,40 @@ impl App {
     }
 
     fn step_preset(&mut self, delta: i32) {
-        let n = eq::PRESETS.len() as i32;
-        self.eq.preset = (((self.eq.preset as i32 + delta) % n + n) % n) as usize;
-        self.eq.gains = eq::PRESETS[self.eq.preset].gains;
+        let n = self.eq.profiles.len() as i32;
+        self.eq.profile = (((self.eq.profile as i32 + delta) % n + n) % n) as usize;
+        self.eq.stage = self
+            .eq
+            .stage
+            .min(self.eq.active().stages.len().saturating_sub(1));
         self.eq.enabled = true;
         self.apply_eq();
-        self.note(format!("eq: {}", eq::PRESETS[self.eq.preset].name));
+        self.note(format!("eq: {}", self.eq.active().name));
     }
 
     fn apply_eq(&self) {
+        if let Some(mirror) = &self.session.link {
+            #[derive(serde::Serialize)]
+            struct Request<'a> {
+                enabled: bool,
+                profile: &'a crate::audio::dsp::apo::Profile,
+            }
+            if let Ok(request) = serde_json::to_string(&Request {
+                enabled: self.eq.enabled,
+                profile: self.eq.active(),
+            }) {
+                mirror.send(&format!("set-eq {request}"));
+            }
+            return;
+        }
         let rate = self
             .player
             .state
             .sample_rate
             .load(std::sync::atomic::Ordering::Relaxed)
             .max(8_000) as u32;
-        self.player.set_eq(EqSettings::build(
-            self.eq.enabled,
-            self.eq.preamp,
-            &self.eq.gains,
-            rate,
-        ));
+        self.player
+            .set_eq_profile(self.eq.enabled, self.eq.active().clone(), rate);
     }
 
     /// Play whatever the cursor is on.
@@ -3763,6 +3984,9 @@ impl App {
         if self.over.chooser.is_some() {
             return;
         }
+        if self.over.files.is_some() {
+            return;
+        }
         if self.panels.picker {
             return self.picker_mouse(m, r.area);
         }
@@ -3774,11 +3998,6 @@ impl App {
             MouseEventKind::Drag(MouseButton::Left) => match self.edit.drag {
                 Some(Drag::Seek) => self.seek_to_x(&r, x),
                 Some(Drag::Volume) => self.volume_at_x(&r, x),
-                Some(Drag::EqBand(b)) => {
-                    if let Some(rect) = r.equalizer {
-                        self.set_eq_band(rect, b, y);
-                    }
-                }
                 None => {}
             },
             MouseEventKind::Up(MouseButton::Left) => self.edit.drag = None,
@@ -3817,13 +4036,8 @@ impl App {
                 }
                 if let Some(rect) = r.equalizer {
                     if hit(rect, x, y) {
-                        if let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name)
-                        {
-                            if let Some(b) = g.band_at(x) {
-                                let step = if up { 1.0 } else { -1.0 };
-                                return self.nudge_eq_band(b, step);
-                            }
-                        }
+                        self.panels.focus = Focus::Equalizer;
+                        self.move_eq_band(if up { -1 } else { 1 });
                         return;
                     }
                 }
@@ -3971,7 +4185,7 @@ impl App {
 
     fn equalizer_click(&mut self, rect: Rect, x: u16, y: u16) {
         self.panels.focus = Focus::Equalizer;
-        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name) else {
+        let Some(g) = equalizer::geometry(rect, &self.eq.active().name) else {
             return;
         };
         if hit(g.toggle, x, y) {
@@ -3983,22 +4197,14 @@ impl App {
         if hit(g.preset_next, x, y) {
             return self.handle(Action::NextEqPreset);
         }
-        if hit(g.sliders, x, y) {
-            if let Some(b) = g.band_at(x) {
-                self.eq.band = b;
-                self.edit.drag = Some(Drag::EqBand(b));
-                self.set_eq_band(rect, b, y);
+        if hit(g.rows, x, y) {
+            let scroll =
+                equalizer::clamp_scroll(self.eq.stage, self.eq.scroll, g.rows.height as usize);
+            let row = scroll + y.saturating_sub(g.rows.y) as usize;
+            if row < self.eq.active().stages.len() {
+                self.eq.stage = row;
             }
         }
-    }
-
-    fn set_eq_band(&mut self, rect: Rect, band: usize, y: u16) {
-        let Some(g) = equalizer::geometry(rect, eq::PRESETS[self.eq.preset].name) else {
-            return;
-        };
-        self.eq.gains[band] = g.gain_at(y);
-        self.eq.enabled = true;
-        self.apply_eq();
     }
 
     /// The docked panels, in the order focus walks them.
@@ -4071,25 +4277,253 @@ impl App {
     /// axis, and running off 16 kHz back to 60 Hz is a jump across the whole
     /// spectrum for one keypress.
     fn move_eq_band(&mut self, step: i32) {
-        let last = eq::BAND_LABELS.len() as i32 - 1;
-        let next = (self.eq.band as i32 + step).clamp(0, last) as usize;
-        if next != self.eq.band {
-            self.eq.band = next;
-        }
-        self.note(format!(
-            "{} {:+.0} dB",
-            eq::BAND_LABELS[self.eq.band],
-            self.eq.gains[self.eq.band]
-        ));
+        let last = self.eq.active().stages.len().saturating_sub(1) as i32;
+        self.eq.stage = (self.eq.stage as i32 + step).clamp(0, last) as usize;
+        // The docked panel has four filter rows at its normal height. Keep the
+        // stored viewport in sync so drawing and mouse hit-testing share the
+        // same coordinate system.
+        self.eq.scroll = equalizer::clamp_scroll(self.eq.stage, self.eq.scroll, 4);
+        self.note(format!("eq stage {}", self.eq.stage + 1));
     }
 
-    fn nudge_eq_band(&mut self, band: usize, delta: f32) {
-        let g = (self.eq.gains[band] + delta).clamp(-eq::MAX_GAIN_DB, eq::MAX_GAIN_DB);
-        self.eq.gains[band] = g;
-        self.eq.band = band;
+    fn nudge_eq_stage(&mut self, delta: f64) {
+        use crate::audio::dsp::apo::Filter;
+        let stage = self.eq.stage;
+        let mut changed = false;
+        if let Some(row) = self.eq.active_mut().stages.get_mut(stage) {
+            match &mut row.filter {
+                Filter::Preamp { gain_db } | Filter::Biquad { gain_db, .. } => {
+                    *gain_db = (*gain_db + delta).clamp(-120.0, 120.0);
+                    changed = true;
+                }
+                Filter::GraphicEq { points } => {
+                    for (_, gain) in points {
+                        *gain = (*gain + delta).clamp(-120.0, 120.0);
+                    }
+                    changed = true;
+                }
+                Filter::Iir { .. } => {}
+            }
+        }
+        if !changed {
+            return self.note("open settings to edit this stage's exact values".into());
+        }
+        self.eq.enabled = true;
+        let _ = self.eq.active().save_managed();
+        self.apply_eq();
+        self.note(format!("eq stage {} gain {delta:+.0} dB", stage + 1));
+    }
+
+    fn begin_eq_value(&mut self, field: EqField) {
+        use crate::audio::dsp::apo::{Filter, Width};
+        if matches!(field, EqField::RenameProfile) {
+            let value = self.eq.active().name.clone();
+            self.over.settings = None;
+            self.edit.eq_value = Some(EqInput { field, value });
+            return;
+        }
+        let Some(stage) = self.eq.active().stages.get(self.eq.stage) else {
+            return;
+        };
+        let value = match (&stage.filter, field) {
+            (Filter::Preamp { gain_db }, EqField::Gain) => gain_db.to_string(),
+            (Filter::Biquad { frequency, .. }, EqField::Frequency) => frequency.to_string(),
+            (Filter::Biquad { gain_db, .. }, EqField::Gain) => gain_db.to_string(),
+            (Filter::Biquad { width, .. }, EqField::Width) => match width {
+                Width::Q(v) | Width::Bandwidth(v) | Width::Slope(v) => v.to_string(),
+            },
+            (Filter::GraphicEq { points }, EqField::GraphicPoints) => points
+                .iter()
+                .map(|(f, g)| format!("{f} {g}"))
+                .collect::<Vec<_>>()
+                .join("; "),
+            (
+                Filter::Iir {
+                    numerator,
+                    denominator,
+                },
+                EqField::IirCoefficients,
+            ) => numerator
+                .iter()
+                .chain(denominator)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return,
+        };
+        self.over.settings = None;
+        self.edit.eq_value = Some(EqInput { field, value });
+    }
+
+    fn eq_value_type(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let Some(input) = &mut self.edit.eq_value else {
+            return false;
+        };
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        match key.code {
+            KeyCode::Esc => self.edit.eq_value = None,
+            KeyCode::Char('u') if ctrl => input.value.clear(),
+            KeyCode::Char(c) if !ctrl && matches!(input.field, EqField::RenameProfile) => {
+                input.value.push(c)
+            }
+            KeyCode::Char(c) if !ctrl && (c.is_ascii_digit() || ".+-eE; ".contains(c)) => {
+                input.value.push(c)
+            }
+            KeyCode::Backspace => {
+                input.value.pop();
+            }
+            KeyCode::Enter => {
+                let field = input.field;
+                let text = input.value.trim().to_string();
+                self.edit.eq_value = None;
+                if matches!(field, EqField::RenameProfile) {
+                    if text.is_empty() || text == "." || text == ".." || text.contains(['/', '\\'])
+                    {
+                        self.note("profile name must be a plain file name".into());
+                        return true;
+                    }
+                    if self.eq.profiles.iter().enumerate().any(|(index, profile)| {
+                        index != self.eq.profile && profile.name.eq_ignore_ascii_case(&text)
+                    }) {
+                        self.note("an EQ profile already has that name".into());
+                        return true;
+                    }
+                    let old = self.eq.active().managed_path().ok();
+                    let mut renamed = self.eq.active().clone();
+                    renamed.name = text;
+                    let new_path = renamed.managed_path().ok();
+                    if new_path.as_ref().is_some_and(|new| {
+                        new.exists() && old.as_ref().is_none_or(|old| old != new)
+                    }) {
+                        self.note("an EQ profile file already has that name".into());
+                        return true;
+                    }
+                    match renamed.save_managed() {
+                        Ok(new) => {
+                            if let Some(old) = old.filter(|old| *old != new) {
+                                let _ = std::fs::remove_file(old);
+                            }
+                            self.eq.profiles[self.eq.profile] = renamed;
+                            self.apply_eq();
+                            self.note(format!("renamed EQ profile {}", self.eq.active().name));
+                        }
+                        Err(error) => self.note(format!("could not rename EQ profile: {error}")),
+                    }
+                    return true;
+                }
+                let value = text.parse::<f64>().unwrap_or(f64::NAN);
+                if matches!(field, EqField::Frequency | EqField::Gain | EqField::Width)
+                    && !value.is_finite()
+                {
+                    self.note("that is not a number".into());
+                    return true;
+                }
+                if matches!(field, EqField::Frequency | EqField::Width) && value <= 0.0 {
+                    self.note("frequency and Q/bandwidth must be positive".into());
+                    return true;
+                }
+                use crate::audio::dsp::apo::{Filter, Width};
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
+                    match (&mut stage.filter, field) {
+                        (Filter::Preamp { gain_db }, EqField::Gain) => *gain_db = value,
+                        (Filter::Biquad { frequency, .. }, EqField::Frequency) => {
+                            *frequency = value
+                        }
+                        (Filter::Biquad { gain_db, .. }, EqField::Gain) => *gain_db = value,
+                        (Filter::Biquad { width, .. }, EqField::Width) => match width {
+                            Width::Q(v) | Width::Bandwidth(v) | Width::Slope(v) => *v = value,
+                        },
+                        (Filter::GraphicEq { points }, EqField::GraphicPoints) => {
+                            let parsed = text
+                                .split(';')
+                                .filter(|s| !s.trim().is_empty())
+                                .map(|pair| {
+                                    pair.split_whitespace()
+                                        .map(str::parse::<f64>)
+                                        .collect::<Result<Vec<_>, _>>()
+                                })
+                                .collect::<Result<Vec<_>, _>>();
+                            let Ok(values) = parsed else {
+                                self.note("GraphicEQ needs `frequency gain; ...` pairs".into());
+                                return true;
+                            };
+                            if values.len() < 2
+                                || values.iter().any(|p| {
+                                    p.len() != 2
+                                        || p[0] <= 0.0
+                                        || !p[0].is_finite()
+                                        || !p[1].is_finite()
+                                })
+                            {
+                                self.note("GraphicEQ needs at least two valid points".into());
+                                return true;
+                            }
+                            let mut edited =
+                                values.into_iter().map(|p| (p[0], p[1])).collect::<Vec<_>>();
+                            edited.sort_by(|a, b| a.0.total_cmp(&b.0));
+                            if edited.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+                                self.note("GraphicEQ frequencies must be unique".into());
+                                return true;
+                            }
+                            *points = edited;
+                        }
+                        (
+                            Filter::Iir {
+                                numerator,
+                                denominator,
+                            },
+                            EqField::IirCoefficients,
+                        ) => {
+                            let parsed = text
+                                .split_whitespace()
+                                .map(str::parse::<f64>)
+                                .collect::<Result<Vec<_>, _>>();
+                            let Ok(values) = parsed else {
+                                self.note("IIR coefficients must all be numbers".into());
+                                return true;
+                            };
+                            if values.len() < 4
+                                || values.len() % 2 != 0
+                                || values[values.len() / 2] == 0.0
+                                || values.iter().any(|v| !v.is_finite())
+                            {
+                                self.note(
+                                    "IIR needs equal b/a coefficient lists and nonzero a0".into(),
+                                );
+                                return true;
+                            }
+                            let half = values.len() / 2;
+                            *numerator = values[..half].to_vec();
+                            *denominator = values[half..].to_vec();
+                        }
+                        _ => {}
+                    }
+                }
+                self.finish_eq_edit();
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn eq_value_paste(&mut self, pasted: &str) -> bool {
+        let Some(input) = &mut self.edit.eq_value else {
+            return false;
+        };
+        input.value.push_str(pasted.trim());
+        true
+    }
+
+    fn finish_eq_edit(&mut self) {
+        match self.eq.active().save_managed() {
+            Ok(_) => self.note(format!("saved EQ profile {}", self.eq.active().name)),
+            Err(error) => self.note(format!("EQ changed, but could not save it: {error}")),
+        }
         self.eq.enabled = true;
         self.apply_eq();
-        self.note(format!("{} {g:+.0} dB", eq::BAND_LABELS[band]));
+        self.refresh_settings();
     }
 
     fn player_geometry(&self, r: &Regions) -> Option<player::Geometry> {
@@ -4491,6 +4925,20 @@ impl App {
             self.draw_overlays(area, buf);
             return;
         }
+        if let Some(files) = &self.over.files {
+            let browse = Rect {
+                height: area.height.saturating_sub(r.status.height),
+                ..area
+            };
+            crate::ui::panels::files::FileView {
+                theme: &self.look.theme,
+                browser: files,
+                save_name: &self.eq.active().name,
+            }
+            .render(browse, buf);
+            self.draw_status(r.status, buf);
+            return;
+        }
 
         // The fluid mode draws one bar per column, so the analysis has to
         // know how wide the panel is. Taking it here means a resize costs one
@@ -4518,11 +4966,10 @@ impl App {
         if let Some(rect) = r.equalizer {
             EqView {
                 theme: &self.look.theme,
-                gains: self.eq.gains,
-                preamp: self.eq.preamp,
+                profile: self.eq.active(),
                 enabled: self.eq.enabled,
-                preset: eq::PRESETS[self.eq.preset].name,
-                focused_band: self.eq.band,
+                selected: self.eq.stage,
+                scroll: self.eq.scroll,
                 focused: self.panels.focus == Focus::Equalizer,
             }
             .render(rect, buf);
@@ -4589,6 +5036,27 @@ impl App {
 
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if let Some(input) = &self.edit.eq_value {
+            let label = match input.field {
+                EqField::Frequency => "frequency (Hz)",
+                EqField::Gain => "gain (dB)",
+                EqField::Width => "Q / bandwidth / slope",
+                EqField::GraphicPoints => "frequency gain; ...",
+                EqField::IirCoefficients => "b0..bn a0..an",
+                EqField::RenameProfile => "profile name",
+            };
+            let rows = [settings::Row::setting(label, format!("{}▂", input.value))];
+            settings::SettingsView {
+                theme: &self.look.theme,
+                heading: "EXACT VALUE",
+                title: "type a number · enter apply · esc cancel",
+                rows: &rows,
+                cursor: 0,
+                scroll: 0,
+            }
+            .render(area, buf);
+            return;
+        }
         if let Some(auth) = &self.edit.auth {
             let (heading, title, rows) = match auth {
                 AuthInput::LastfmKey(value) => (
@@ -5169,20 +5637,111 @@ impl App {
                     ],
                 )
             }
-            Focus::Equalizer => (
-                "equalizer".into(),
-                vec![
+            Focus::Equalizer => {
+                use crate::audio::dsp::apo::{Filter, Width};
+                let mut rows = vec![
                     (
                         Row::setting("enabled", on_off(self.eq.enabled)),
                         Setting::EqEnabled,
                     ),
                     (
-                        Row::setting("preset", eq::PRESETS[self.eq.preset].name),
+                        Row::setting("profile", &self.eq.active().name),
                         Setting::EqPreset,
                     ),
-                    (Row::action("reset the bands"), Setting::EqReset),
-                ],
-            ),
+                    (Row::action("new profile"), Setting::EqNewProfile),
+                    (
+                        Row::action("duplicate profile"),
+                        Setting::EqDuplicateProfile,
+                    ),
+                    (Row::action("rename profile…"), Setting::EqRenameProfile),
+                    (
+                        Row::action("delete managed profile"),
+                        Setting::EqDeleteProfile,
+                    ),
+                ];
+                if let Some(stage) = self.eq.active().stages.get(self.eq.stage) {
+                    let kind = match &stage.filter {
+                        Filter::Preamp { .. } => "preamp",
+                        Filter::Biquad { kind, .. } => match kind {
+                            crate::audio::dsp::apo::BiquadKind::Peaking => "peaking",
+                            crate::audio::dsp::apo::BiquadKind::LowPass => "low pass",
+                            crate::audio::dsp::apo::BiquadKind::HighPass => "high pass",
+                            crate::audio::dsp::apo::BiquadKind::BandPass => "band pass",
+                            crate::audio::dsp::apo::BiquadKind::LowShelf => "low shelf",
+                            crate::audio::dsp::apo::BiquadKind::HighShelf => "high shelf",
+                            crate::audio::dsp::apo::BiquadKind::Notch => "notch",
+                            crate::audio::dsp::apo::BiquadKind::AllPass => "all pass",
+                        },
+                        Filter::GraphicEq { .. } => "GraphicEQ",
+                        Filter::Iir { .. } => "custom IIR",
+                    };
+                    let channels = match stage.channels.0 {
+                        u64::MAX => "all".into(),
+                        1 => "left".into(),
+                        2 => "right".into(),
+                        mask => format!("mask {mask:#x}"),
+                    };
+                    rows.push((
+                        Row::setting("stage", on_off(stage.enabled)),
+                        Setting::EqStageEnabled,
+                    ));
+                    rows.push((Row::setting("type", kind), Setting::EqType));
+                    rows.push((Row::setting("channels", channels), Setting::EqChannels));
+                    match &stage.filter {
+                        Filter::Preamp { gain_db } => rows.push((
+                            Row::action(format!("gain {gain_db:+} dB…")),
+                            Setting::EqGain,
+                        )),
+                        Filter::Biquad {
+                            frequency,
+                            gain_db,
+                            width,
+                            ..
+                        } => {
+                            rows.push((
+                                Row::action(format!("frequency {frequency} Hz…")),
+                                Setting::EqFrequency,
+                            ));
+                            rows.push((
+                                Row::action(format!("gain {gain_db:+} dB…")),
+                                Setting::EqGain,
+                            ));
+                            let value = match width {
+                                Width::Q(v) | Width::Bandwidth(v) | Width::Slope(v) => *v,
+                            };
+                            rows.push((
+                                Row::action(format!("Q / bandwidth / slope {value}…")),
+                                Setting::EqWidth,
+                            ));
+                        }
+                        Filter::GraphicEq { points } => rows.push((
+                            Row::action(format!("edit {} GraphicEQ points…", points.len())),
+                            Setting::EqWidth,
+                        )),
+                        Filter::Iir { numerator, .. } => rows.push((
+                            Row::action(format!(
+                                "edit order {} coefficients…",
+                                numerator.len() - 1
+                            )),
+                            Setting::EqWidth,
+                        )),
+                    }
+                    rows.push((
+                        Row::action("duplicate selected stage"),
+                        Setting::EqDuplicate,
+                    ));
+                    rows.push((Row::action("move selected stage up"), Setting::EqMoveUp));
+                    rows.push((Row::action("move selected stage down"), Setting::EqMoveDown));
+                    rows.push((Row::action("remove selected stage"), Setting::EqRemove));
+                }
+                rows.extend([
+                    (Row::action("add peaking filter"), Setting::EqAdd),
+                    (Row::action("reset profile"), Setting::EqReset),
+                    (Row::action("import APO profile…"), Setting::EqImport),
+                    (Row::action("export APO profile…"), Setting::EqExport),
+                ]);
+                ("equalizer".into(), rows)
+            }
             Focus::History => {
                 let snap = self.activity.snapshot();
                 let mut rows = Vec::new();
@@ -5741,12 +6300,235 @@ impl App {
             }
             Setting::EqEnabled => self.handle(Action::ToggleEqEnabled),
             Setting::EqPreset => self.handle(Action::NextEqPreset),
-            Setting::EqReset => {
-                self.eq.gains = [0.0; 10];
-                self.eq.preamp = 0.0;
-                self.eq.preset = 0;
+            Setting::EqNewProfile => {
+                use crate::audio::dsp::apo::Profile;
+                let mut number = 1;
+                let name = loop {
+                    let candidate = format!("New profile {number}");
+                    if !self
+                        .eq
+                        .profiles
+                        .iter()
+                        .any(|profile| profile.name.eq_ignore_ascii_case(&candidate))
+                    {
+                        break candidate;
+                    }
+                    number += 1;
+                };
+                let profile = Profile::legacy(name, 0.0, &[0.0; 10]);
+                self.eq.profiles.push(profile);
+                self.eq.profile = self.eq.profiles.len() - 1;
+                self.eq.stage = 0;
+                self.finish_eq_edit();
+            }
+            Setting::EqDuplicateProfile => {
+                let mut profile = self.eq.active().clone();
+                let base = format!("{} copy", profile.name);
+                let mut number = 1;
+                profile.name = loop {
+                    let candidate = if number == 1 {
+                        base.clone()
+                    } else {
+                        format!("{base} {number}")
+                    };
+                    if !self
+                        .eq
+                        .profiles
+                        .iter()
+                        .any(|existing| existing.name.eq_ignore_ascii_case(&candidate))
+                    {
+                        break candidate;
+                    }
+                    number += 1;
+                };
+                self.eq.profiles.push(profile);
+                self.eq.profile = self.eq.profiles.len() - 1;
+                self.finish_eq_edit();
+            }
+            Setting::EqRenameProfile => {
+                self.begin_eq_value(EqField::RenameProfile);
+                return;
+            }
+            Setting::EqDeleteProfile => {
+                let active = self.eq.active().clone();
+                let Ok(path) = active.managed_path() else {
+                    return self.note("that profile cannot be deleted".into());
+                };
+                if !path.exists() {
+                    return self.note("bundled profiles cannot be deleted".into());
+                }
+                if let Err(error) = std::fs::remove_file(&path) {
+                    return self.note(format!("could not delete EQ profile: {error}"));
+                }
+                if let Some(preset) = eq::PRESETS
+                    .iter()
+                    .find(|preset| preset.name.eq_ignore_ascii_case(&active.name))
+                {
+                    self.eq.profiles[self.eq.profile] =
+                        crate::audio::dsp::apo::Profile::legacy(preset.name, 0.0, &preset.gains);
+                } else {
+                    self.eq.profiles.remove(self.eq.profile);
+                    self.eq.profile = self.eq.profile.min(self.eq.profiles.len() - 1);
+                }
+                self.eq.stage = 0;
                 self.apply_eq();
-                self.note("eq: bands reset".into());
+                self.note(format!("deleted EQ profile {}", active.name));
+            }
+            Setting::EqReset => {
+                self.eq.profile = 0;
+                self.eq.stage = 0;
+                self.eq.scroll = 0;
+                self.apply_eq();
+                self.note("eq: Flat".into());
+            }
+            Setting::EqImport => {
+                self.over.settings = None;
+                self.open_eq_files(crate::ui::panels::files::Purpose::ImportEq);
+                return;
+            }
+            Setting::EqExport => {
+                self.over.settings = None;
+                self.open_eq_files(crate::ui::panels::files::Purpose::ExportEq);
+                return;
+            }
+            Setting::EqStageEnabled => {
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
+                    stage.enabled = !stage.enabled;
+                }
+                self.finish_eq_edit();
+            }
+            Setting::EqType => {
+                use crate::audio::dsp::apo::{BiquadKind as K, Filter, Width};
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
+                    stage.filter = match &stage.filter {
+                        Filter::Preamp { .. } => Filter::Biquad {
+                            kind: K::Peaking,
+                            frequency: 1000.0,
+                            gain_db: 0.0,
+                            width: Width::Q(1.0),
+                            corner_frequency: false,
+                        },
+                        Filter::Biquad { kind, .. } => {
+                            let next = match kind {
+                                K::Peaking => Some(K::LowPass),
+                                K::LowPass => Some(K::HighPass),
+                                K::HighPass => Some(K::BandPass),
+                                K::BandPass => Some(K::LowShelf),
+                                K::LowShelf => Some(K::HighShelf),
+                                K::HighShelf => Some(K::Notch),
+                                K::Notch => Some(K::AllPass),
+                                K::AllPass => None,
+                            };
+                            match next {
+                                Some(kind) => Filter::Biquad {
+                                    kind,
+                                    frequency: 1000.0,
+                                    gain_db: 0.0,
+                                    width: Width::Q(1.0),
+                                    corner_frequency: false,
+                                },
+                                None => Filter::GraphicEq {
+                                    points: vec![(20.0, 0.0), (20_000.0, 0.0)],
+                                },
+                            }
+                        }
+                        Filter::GraphicEq { .. } => Filter::Iir {
+                            numerator: vec![1.0, 0.0],
+                            denominator: vec![1.0, 0.0],
+                        },
+                        Filter::Iir { .. } => Filter::Preamp { gain_db: 0.0 },
+                    };
+                }
+                self.finish_eq_edit();
+            }
+            Setting::EqChannels => {
+                use crate::audio::dsp::apo::ChannelMask;
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
+                    stage.channels = match stage.channels.0 {
+                        u64::MAX => ChannelMask(1),
+                        1 => ChannelMask(2),
+                        _ => ChannelMask::ALL,
+                    };
+                }
+                self.finish_eq_edit();
+            }
+            Setting::EqFrequency => {
+                self.begin_eq_value(EqField::Frequency);
+                return;
+            }
+            Setting::EqGain => {
+                self.begin_eq_value(EqField::Gain);
+                return;
+            }
+            Setting::EqWidth => {
+                use crate::audio::dsp::apo::Filter;
+                let field = match self
+                    .eq
+                    .active()
+                    .stages
+                    .get(self.eq.stage)
+                    .map(|s| &s.filter)
+                {
+                    Some(Filter::GraphicEq { .. }) => EqField::GraphicPoints,
+                    Some(Filter::Iir { .. }) => EqField::IirCoefficients,
+                    _ => EqField::Width,
+                };
+                self.begin_eq_value(field);
+                return;
+            }
+            Setting::EqAdd => {
+                use crate::audio::dsp::apo::{BiquadKind, ChannelMask, Filter, Stage, Width};
+                self.eq.active_mut().stages.push(Stage {
+                    enabled: true,
+                    channels: ChannelMask::ALL,
+                    filter: Filter::Biquad {
+                        kind: BiquadKind::Peaking,
+                        frequency: 1000.0,
+                        gain_db: 0.0,
+                        width: Width::Q(1.0),
+                        corner_frequency: false,
+                    },
+                });
+                self.eq.stage = self.eq.active().stages.len() - 1;
+                self.finish_eq_edit();
+            }
+            Setting::EqDuplicate => {
+                let at = self.eq.stage;
+                if let Some(stage) = self.eq.active().stages.get(at).cloned() {
+                    self.eq.active_mut().stages.insert(at + 1, stage);
+                    self.eq.stage = at + 1;
+                    self.finish_eq_edit();
+                }
+            }
+            Setting::EqMoveUp => {
+                let at = self.eq.stage;
+                if at > 0 {
+                    self.eq.active_mut().stages.swap(at, at - 1);
+                    self.eq.stage -= 1;
+                    self.finish_eq_edit();
+                }
+            }
+            Setting::EqMoveDown => {
+                let at = self.eq.stage;
+                if at + 1 < self.eq.active().stages.len() {
+                    self.eq.active_mut().stages.swap(at, at + 1);
+                    self.eq.stage += 1;
+                    self.finish_eq_edit();
+                }
+            }
+            Setting::EqRemove => {
+                let at = self.eq.stage;
+                if at < self.eq.active().stages.len() {
+                    self.eq.active_mut().stages.remove(at);
+                }
+                self.eq.stage = self
+                    .eq
+                    .stage
+                    .min(self.eq.active().stages.len().saturating_sub(1));
+                self.finish_eq_edit();
             }
             Setting::Lastfm => self.toggle_scrobbler(crate::activity::Provider::Lastfm),
             Setting::Listenbrainz => self.toggle_scrobbler(crate::activity::Provider::Listenbrainz),

@@ -119,7 +119,7 @@ work against real data, and the player runs.
 | Visualizer           | **done**: seven modes plus off, cycled with `w` and `W`                                               |
 | Session resume       | **done**: offers to pick up where you left off                                                        |
 | Album art            | **done**: embedded, folder, `Covers/`, and the Cover Art Archive; kitty graphics where there are any  |
-| Equalizer            | **done**: 10 bands, presets, live                                                                     |
+| Equalizer            | **done**: ordered parametric filters, APO import/export, f64 DSP, managed profiles                    |
 | ReplayGain           | **partial**: tags are read and applied; no EBU R128 scanner yet, so 31,700 tracks carry no gain to use |
 | Smart playlists      | **partial**: the query language and its SQL compiler work from the CLI; no rule builder in the TUI    |
 | Listening history    | **done**: permanent local plays/skips, available to smart playlists                                    |
@@ -339,6 +339,13 @@ shows five listens at a time and retains the latest 100 for navigation.
 | `?` / `F1`                     | help               |
 | `q`                            | quit               |
 
+With the Equalizer focused, `j`/`k` or up/down select a filter, left/right
+adjust its gain, `shift` makes that a 10 dB step, `enter` bypasses the selected
+filter, `a` adds a peaking filter, and `d` removes one. Open the panel's
+`settings` menu for exact pasted values, filter type and channel selection,
+reordering and duplication, managed-profile creation/rename/delete, or APO
+import/export.
+
 `esc` never quits. Terminals encode `alt`+key as escape followed by the key, so
 binding `esc` to quit would put every `alt` binding one dropped byte away from
 closing the player.
@@ -363,8 +370,8 @@ The pointer works everywhere the keyboard does.
 | player    | right click anywhere       | play or pause                   |
 | equalizer | click `[ON ]`              | enable or bypass                |
 | equalizer | click the chevrons         | change preset                   |
-| equalizer | click or drag a band       | set its gain                    |
-| equalizer | wheel over a band          | 1 dB                            |
+| equalizer | click a filter              | select it                       |
+| equalizer | wheel over a filter         | gain by 1 dB                    |
 | album     | click the cover            | next candidate cover            |
 | album     | click `retry`              | look the cover up again         |
 | overlays  | click outside              | close the picker                |
@@ -421,7 +428,7 @@ knobs:
 | `[vis] gain_db`                | shifts the analyzer range if your music sits quiet or loud                                       |
 | `[vis] smoothing`              | how long the `fluid` mode's bars take to fall, 0 to 1. Lower snaps to the music                  |
 | `[vis] bar_width` / `bar_gap`  | cells per bar, and columns between bars                                                          |
-| `[eq] enabled` / `preset`      | 10-band equalizer                                                                                |
+| `[eq] enabled` / `preset`      | enable the equalizer and select a built-in or managed profile                                     |
 | `[replaygain] mode`            | `off` (default), `track`, or `album`. See [ReplayGain](#replaygain)                              |
 | `[scrobble] lastfm`            | submit eligible tagged listens to Last.fm; off by default                                       |
 | `[scrobble] listenbrainz`      | submit eligible tagged listens to ListenBrainz; off by default                                  |
@@ -430,6 +437,28 @@ knobs:
 Settings changed from inside the player are written back here. The write is a
 line edit rather than a re-serialisation, so comments, ordering and any key
 star/amp does not know about survive it byte for byte.
+
+## Equalizer and APO profiles
+
+The Equalizer is an ordered processing chain, similar to the EQ portion of
+EasyEffects. It supports preamp stages, peaking, low/high-pass, band-pass,
+low/high-shelf, notch and all-pass biquads, GraphicEQ curves, custom IIR
+coefficients, and per-stage channel selection. Processing stays in `f64`
+throughout the chain and converts to `f32` only at the audio-output boundary.
+Coefficients are rebuilt for the output device's actual sample rate.
+
+The import browser accepts Equalizer APO `.txt` and `.apo` profiles. Supported
+commands are `Preamp`, standard `Filter` forms, custom `IIR`, `GraphicEQ`,
+`Channel`, and recursive `Include`. Device routing, mixers, delays,
+convolution, and other non-EQ APO commands are rejected with a file and line
+number instead of being silently ignored. Export writes a portable APO file;
+imports are transactional, so an invalid file never partly replaces the live
+profile.
+
+Edited and imported profiles are kept under `equalizers/`. EQ processing is
+independent of panel visibility: `alt+g` only shows or hides the controls.
+The same is true when several star/amp windows share a session—the window that
+owns audio receives and applies EQ changes from follower windows.
 
 ## Listening history and scrobbling
 
@@ -604,6 +633,7 @@ up, moved, or deleted by moving one folder:
 ├── index.sqlite       the library index
 ├── activity.sqlite    permanent plays, skips and pending scrobbles
 ├── playlists/         .m3u files, read and written in place
+├── equalizers/        managed and imported Equalizer APO profiles
 ├── themes/            your own themes, and imported Winamp skins
 └── cache/             album art, logs. Safe to delete
 ```

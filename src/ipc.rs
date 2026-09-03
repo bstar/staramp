@@ -365,6 +365,23 @@ fn handle_with_activity(
             activity.set_enabled(provider, on);
             "ok".into()
         }
+        "set-eq" => {
+            #[derive(serde::Deserialize)]
+            struct Request {
+                enabled: bool,
+                profile: crate::audio::dsp::apo::Profile,
+            }
+            let request: Request = match rest.map(serde_json::from_str) {
+                Some(Ok(request)) => request,
+                _ => return "error: set-eq needs a JSON profile request".into(),
+            };
+            if let Err(error) = request.profile.validate() {
+                return format!("error: invalid EQ profile: {error}");
+            }
+            let rate = player.state.sample_rate.load(Ordering::Relaxed).max(8_000) as u32;
+            player.set_eq_profile(request.enabled, request.profile, rate);
+            "ok".into()
+        }
         "shuffle-now" => match player.shuffle_now() {
             Some(_) => "ok".into(),
             None => "error: nothing to shuffle".into(),
@@ -954,6 +971,25 @@ mod tests {
         assert_eq!(ask(&client, r#"set-queue ["A/one.flac"]"#), "1");
         assert_eq!(ask(&client, r#"enqueue ["A/one.flac"]"#), "0");
         stop.store(true, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn a_follower_can_publish_the_eq_to_the_audio_owner() {
+        let player = Player::detached();
+        let profile = crate::audio::dsp::apo::Profile::legacy("remote", -3.0, &[0.0; 10]);
+        let request = serde_json::json!({ "enabled": true, "profile": profile });
+        assert_eq!(
+            handle(
+                &player,
+                &crate::view::shared(),
+                &format!("set-eq {request}")
+            ),
+            "ok"
+        );
+        assert!(!player.eq.load().is_transparent());
+
+        let invalid = r#"set-eq {"enabled":true,"profile":{"name":"bad","stages":[{"enabled":true,"channels":18446744073709551615,"filter":{"Iir":{"numerator":[],"denominator":[]}}}]}}"#;
+        assert!(handle(&player, &crate::view::shared(), invalid).starts_with("error:"));
     }
 
     /// A row edit from a window that follows the session.

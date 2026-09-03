@@ -7,6 +7,13 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **Parametric equalizer and Equalizer APO profiles.** The old fixed ten-band
+  control is now an ordered, per-channel filter chain with exact-value editing,
+  bypass, duplicate and reorder controls. It imports and exports EQ-focused APO
+  profiles (`Preamp`, standard filters, IIR, GraphicEQ, Channel and Include),
+  stores managed profiles under `equalizers/`, recompiles against the real
+  device rate, and processes the chain in f64. Panel visibility remains purely
+  visual, including in windows following another session owner.
 - **Remote libraries over SSH.** `staramp remote <host>` plays a library that
   lives on another machine. Nothing is installed or left running there: one
   supervised `ssh` connection is opened and the files are read through its

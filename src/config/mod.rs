@@ -450,6 +450,9 @@ lastfm = false
 listenbrainz = false
 
 [eq]
+# The profile may be one of the bundled curves or a managed APO profile under
+# equalizers/. This controls processing; [ui] show_equalizer only controls the
+# panel's visibility.
 enabled = false
 preset = "Flat"
 

@@ -77,6 +77,11 @@ pub fn themes_dir() -> Result<PathBuf> {
     Ok(config_dir()?.join("themes"))
 }
 
+/// Editable Equalizer APO profiles managed by the player.
+pub fn equalizer_dir() -> Result<PathBuf> {
+    Ok(config_dir()?.join("equalizers"))
+}
+
 /// Album art thumbnails and logs. Safe to delete.
 pub fn cache_dir() -> Result<PathBuf> {
     Ok(base_dir()?.join("cache"))
@@ -223,6 +228,7 @@ mod tests {
         assert!(config_file().unwrap().starts_with(&base));
         assert!(index_file().unwrap().starts_with(&base));
         assert!(playlist_dir().unwrap().starts_with(&base));
+        assert!(equalizer_dir().unwrap().starts_with(&base));
         assert!(themes_dir().unwrap().starts_with(&base));
         assert!(cache_dir().unwrap().starts_with(&base));
     }

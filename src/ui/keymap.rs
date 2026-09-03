@@ -41,6 +41,9 @@ pub enum Action {
     EqGainDown,
     EqGainUpBig,
     EqGainDownBig,
+    EqToggleStage,
+    EqAddStage,
+    EqRemoveStage,
     FocusPrev,
     FocusPlayer,
     FocusPlaylist,
@@ -697,11 +700,7 @@ fn playlist(k: KeyEvent) -> Option<Action> {
     })
 }
 
-/// Band selection and gain.
-///
-/// The band is on the arrows rather than on `h`/`l` because `l` opens the
-/// library; the gain is on the arrows because a gain is a value and `hjkl`
-/// does not touch values.
+/// Stage selection and gain for the ordered parametric chain.
 fn equalizer(k: KeyEvent) -> Option<Action> {
     use KeyCode::*;
     if k.modifiers
@@ -711,12 +710,15 @@ fn equalizer(k: KeyEvent) -> Option<Action> {
     }
     let shift = k.modifiers.contains(KeyModifiers::SHIFT);
     Some(match (k.code, shift) {
-        (Left, _) => Action::EqBandPrev,
-        (Right, _) => Action::EqBandNext,
-        (Up, false) => Action::EqGainUp,
-        (Down, false) => Action::EqGainDown,
-        (Up, true) => Action::EqGainUpBig,
-        (Down, true) => Action::EqGainDownBig,
+        (Up | Char('k'), _) => Action::EqBandPrev,
+        (Down | Char('j'), _) => Action::EqBandNext,
+        (Right, false) => Action::EqGainUp,
+        (Left, false) => Action::EqGainDown,
+        (Right, true) => Action::EqGainUpBig,
+        (Left, true) => Action::EqGainDownBig,
+        (Enter, _) => Action::EqToggleStage,
+        (Char('a'), _) => Action::EqAddStage,
+        (Char('d'), _) => Action::EqRemoveStage,
         _ => return None,
     })
 }
@@ -947,10 +949,14 @@ mod tests {
     /// is most likely to break -- reaching for `j`/`k` as "down/up" on a gain
     /// is the obvious thing to do and the wrong thing to do.
     #[test]
-    fn no_module_binds_hjkl() {
+    fn only_list_editors_bind_vertical_hjkl() {
         for m in MODULES {
             for c in ['h', 'j', 'k', 'l'] {
                 let got = module(m, ev(KeyCode::Char(c), KeyModifiers::NONE));
+                if m == Module::Equalizer && matches!(c, 'j' | 'k') {
+                    assert!(matches!(got, Some(Action::EqBandNext | Action::EqBandPrev)));
+                    continue;
+                }
                 assert!(
                     got.is_none(),
                     "{m:?} claims {c:?} as {got:?}; hjkl navigates and the \
@@ -995,21 +1001,21 @@ mod tests {
             shifted(Module::Playlist, KeyCode::Down),
             Some(Action::CursorDownBig)
         );
-        assert_eq!(bare(Module::Equalizer, KeyCode::Up), Some(Action::EqGainUp));
         assert_eq!(
-            shifted(Module::Equalizer, KeyCode::Up),
+            bare(Module::Equalizer, KeyCode::Right),
+            Some(Action::EqGainUp)
+        );
+        assert_eq!(
+            shifted(Module::Equalizer, KeyCode::Right),
             Some(Action::EqGainUpBig)
         );
     }
 
     /// The equalizer is the module where both rules bite at once.
     #[test]
-    fn the_equalizer_puts_bands_on_the_arrows_not_on_hl() {
-        // Selecting a band is navigation, so it would be `h`/`l` -- except
-        // `l` opens the library, and taking that away from a panel you would
-        // reach for it from is the worse trade.
+    fn the_equalizer_is_an_ordered_vertical_list() {
         assert_eq!(
-            module(Module::Equalizer, ev(KeyCode::Left, KeyModifiers::NONE)),
+            module(Module::Equalizer, ev(KeyCode::Up, KeyModifiers::NONE)),
             Some(Action::EqBandPrev)
         );
         assert_eq!(
@@ -1019,8 +1025,7 @@ mod tests {
         );
     }
 
-    /// The playlist keeps `j`/`k` through the global table rather than
-    /// claiming them, so they work from every panel and not just this one.
+    /// Vertical list modules may claim `j`/`k`; elsewhere they remain global.
     #[test]
     fn the_cursor_keys_stay_global() {
         assert_eq!(
@@ -1032,8 +1037,8 @@ mod tests {
                 Module::Equalizer,
                 ev(KeyCode::Char('j'), KeyModifiers::NONE)
             ),
-            None,
-            "the equalizer must not shadow the playlist cursor"
+            Some(Action::EqBandNext),
+            "the focused equalizer owns its list navigation"
         );
     }
 
@@ -1056,6 +1061,11 @@ mod tests {
             ] {
                 let k = ev(KeyCode::Char(c), KeyModifiers::NONE);
                 let got = module(m, k).or_else(|| resolve(k));
+                let want = match (m, c) {
+                    (Module::Equalizer, 'j') => Action::EqBandNext,
+                    (Module::Equalizer, 'k') => Action::EqBandPrev,
+                    _ => want,
+                };
                 assert_eq!(got, Some(want), "{m:?} broke {c:?}");
             }
             // And the transport, which has to work from anywhere at all.

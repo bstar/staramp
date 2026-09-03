@@ -61,6 +61,117 @@ impl Coeffs {
         }
     }
 
+    /// Equalizer APO's RBJ biquad construction, including its bandwidth,
+    /// shelf-slope, and corner-frequency conventions.
+    pub fn apo(
+        kind: super::apo::BiquadKind,
+        frequency: f64,
+        gain_db: f64,
+        width: super::apo::Width,
+        corner_frequency: bool,
+        sample_rate: f64,
+    ) -> Coeffs {
+        use super::apo::{BiquadKind as K, Width};
+        if sample_rate <= 0.0 || frequency <= 0.0 {
+            return Coeffs::IDENTITY;
+        }
+        let a = if matches!(kind, K::Peaking | K::LowShelf | K::HighShelf) {
+            10f64.powf(gain_db / 40.0)
+        } else {
+            10f64.powf(gain_db / 20.0)
+        };
+        let mut f0 = frequency.min(sample_rate * 0.5 * (1.0 - f64::EPSILON));
+        let (mut value, is_bandwidth_or_slope) = match width {
+            Width::Q(q) => (q, false),
+            Width::Bandwidth(bw) => (bw, true),
+            Width::Slope(db_per_octave) => (db_per_octave / 12.0, true),
+        };
+        if corner_frequency && matches!(kind, K::LowShelf | K::HighShelf) {
+            let slope = if is_bandwidth_or_slope {
+                value
+            } else {
+                1.0 / ((1.0 / (value * value) - 2.0) / (a + 1.0 / a) + 1.0)
+            };
+            let factor = 10f64.powf(gain_db.abs() / 80.0 / slope);
+            if kind == K::LowShelf {
+                f0 *= factor;
+            } else {
+                f0 /= factor;
+            }
+            f0 = f0.min(sample_rate * 0.5 * (1.0 - f64::EPSILON));
+        }
+        value = value.max(f64::MIN_POSITIVE);
+        let omega = 2.0 * std::f64::consts::PI * f0 / sample_rate;
+        let (sn, cs) = omega.sin_cos();
+        let alpha = if !is_bandwidth_or_slope {
+            sn / (2.0 * value)
+        } else if matches!(kind, K::LowShelf | K::HighShelf) {
+            sn / 2.0 * ((a + 1.0 / a) * (1.0 / value - 1.0) + 2.0).sqrt()
+        } else {
+            sn * (std::f64::consts::LN_2 / 2.0 * value * omega / sn).sinh()
+        };
+        let beta = 2.0 * a.sqrt() * alpha;
+        let (b0, b1, b2, a0, a1, a2) = match kind {
+            K::LowPass => (
+                (1.0 - cs) / 2.0,
+                1.0 - cs,
+                (1.0 - cs) / 2.0,
+                1.0 + alpha,
+                -2.0 * cs,
+                1.0 - alpha,
+            ),
+            K::HighPass => (
+                (1.0 + cs) / 2.0,
+                -(1.0 + cs),
+                (1.0 + cs) / 2.0,
+                1.0 + alpha,
+                -2.0 * cs,
+                1.0 - alpha,
+            ),
+            K::BandPass => (alpha, 0.0, -alpha, 1.0 + alpha, -2.0 * cs, 1.0 - alpha),
+            K::Notch => (1.0, -2.0 * cs, 1.0, 1.0 + alpha, -2.0 * cs, 1.0 - alpha),
+            K::AllPass => (
+                1.0 - alpha,
+                -2.0 * cs,
+                1.0 + alpha,
+                1.0 + alpha,
+                -2.0 * cs,
+                1.0 - alpha,
+            ),
+            K::Peaking => (
+                1.0 + alpha * a,
+                -2.0 * cs,
+                1.0 - alpha * a,
+                1.0 + alpha / a,
+                -2.0 * cs,
+                1.0 - alpha / a,
+            ),
+            K::LowShelf => (
+                a * ((a + 1.0) - (a - 1.0) * cs + beta),
+                2.0 * a * ((a - 1.0) - (a + 1.0) * cs),
+                a * ((a + 1.0) - (a - 1.0) * cs - beta),
+                (a + 1.0) + (a - 1.0) * cs + beta,
+                -2.0 * ((a - 1.0) + (a + 1.0) * cs),
+                (a + 1.0) + (a - 1.0) * cs - beta,
+            ),
+            K::HighShelf => (
+                a * ((a + 1.0) + (a - 1.0) * cs + beta),
+                -2.0 * a * ((a - 1.0) + (a + 1.0) * cs),
+                a * ((a + 1.0) + (a - 1.0) * cs - beta),
+                (a + 1.0) - (a - 1.0) * cs + beta,
+                2.0 * ((a - 1.0) - (a + 1.0) * cs),
+                (a + 1.0) - (a - 1.0) * cs - beta,
+            ),
+        };
+        Coeffs {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
+
     /// Magnitude response at a frequency, for tests and for drawing a curve.
     pub fn magnitude_at(&self, f: f64, sample_rate: f64) -> f64 {
         let w = 2.0 * std::f64::consts::PI * f / sample_rate;
@@ -83,12 +194,16 @@ pub struct State {
 
 impl State {
     #[inline]
-    pub fn process(&mut self, c: &Coeffs, x: f32) -> f32 {
-        let x = x as f64;
+    pub fn process_f64(&mut self, c: &Coeffs, x: f64) -> f64 {
         let y = c.b0 * x + self.s1;
         self.s1 = c.b1 * x - c.a1 * y + self.s2;
         self.s2 = c.b2 * x - c.a2 * y;
-        y as f32
+        y
+    }
+
+    #[inline]
+    pub fn process(&mut self, c: &Coeffs, x: f32) -> f32 {
+        self.process_f64(c, x as f64) as f32
     }
 
     pub fn reset(&mut self) {

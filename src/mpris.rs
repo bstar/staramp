@@ -122,14 +122,14 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
-        self.activity.manual_end();
+        self.activity.seek_end();
         self.player
             .send(Command::SeekBy(offset.as_micros() as f64 / 1_000_000.0));
         Ok(())
     }
 
     async fn set_position(&self, _track: TrackId, position: Time) -> fdo::Result<()> {
-        self.activity.manual_end();
+        self.activity.seek_end();
         self.player
             .send(Command::SeekTo(position.as_micros() as f64 / 1_000_000.0));
         Ok(())

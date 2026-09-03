@@ -297,7 +297,7 @@ fn handle_with_activity(
         }
         "seek" => match parts.next().and_then(|v| v.parse::<f64>().ok()) {
             Some(d) => {
-                activity.inspect(|a| a.manual_end());
+                activity.inspect(|a| a.seek_end());
                 player.send(Command::SeekBy(d));
                 "ok".into()
             }
@@ -305,7 +305,7 @@ fn handle_with_activity(
         },
         "position" => match parts.next().and_then(|v| v.parse::<f64>().ok()) {
             Some(p) => {
-                activity.inspect(|a| a.manual_end());
+                activity.inspect(|a| a.seek_end());
                 player.send(Command::SeekTo(p));
                 "ok".into()
             }

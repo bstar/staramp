@@ -460,7 +460,7 @@ impl Store {
             "SELECT h.artist,h.title,h.album,h.year,h.uri,h.outcome,h.listened_ms,
                     SUM(d.state='sent'),COUNT(d.history_id),SUM(d.state IN ('retry','blocked'))
              FROM play_history h LEFT JOIN scrobble_delivery d ON d.history_id=h.id
-             GROUP BY h.id ORDER BY h.started_at DESC LIMIT ?1",
+             GROUP BY h.id ORDER BY h.started_at DESC, h.id DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map([n as i64], |r| {
             Ok(Recent {
@@ -568,7 +568,12 @@ enum Message {
         duration: f64,
         at: Instant,
     },
-    ManualEnd,
+    ManualEnd {
+        /// Stop/next/previous may be followed by one stale observation of the
+        /// old revision. A seek deliberately starts a fresh attempt on that
+        /// same revision, so it must not suppress it.
+        suppress_revision: bool,
+    },
     Enabled(Provider, bool),
     Retry,
     Shutdown,
@@ -581,7 +586,15 @@ pub struct Control {
 
 impl Control {
     pub fn manual_end(&self) {
-        let _ = self.tx.send(Message::ManualEnd);
+        let _ = self.tx.send(Message::ManualEnd {
+            suppress_revision: true,
+        });
+    }
+
+    pub fn seek_end(&self) {
+        let _ = self.tx.send(Message::ManualEnd {
+            suppress_revision: false,
+        });
     }
 
     pub fn set_enabled(&self, provider: Provider, enabled: bool) {
@@ -652,6 +665,10 @@ impl Handle {
         self.control().manual_end();
     }
 
+    pub fn seek_end(&self) {
+        self.control().seek_end();
+    }
+
     pub fn set_enabled(&self, provider: Provider, enabled: bool) {
         self.control().set_enabled(provider, enabled);
     }
@@ -694,8 +711,25 @@ struct Active {
     last_checkpoint: Instant,
 }
 
+/// Whether an observation is the old track lingering after an explicit end.
+///
+/// The suppression expires when the player acknowledges stop or advances its
+/// revision. Until then, restarting the same revision would manufacture a
+/// second history row between the UI command and the audio thread handling it.
+fn suppresses_start(suppressed: &mut Option<u64>, revision: u64, state: PlayState) -> bool {
+    match *suppressed {
+        Some(old) if state == PlayState::Stopped || revision != old => {
+            *suppressed = None;
+            false
+        }
+        Some(_) => true,
+        None => false,
+    }
+}
+
 fn run(rx: Receiver<Message>, store: Store, mut enabled: [bool; 2], out: Arc<Mutex<Snapshot>>) {
     let mut active: Option<Active> = None;
+    let mut suppressed_revision: Option<u64> = None;
     let mut stop = false;
     while !stop {
         match rx.recv_timeout(Duration::from_millis(500)) {
@@ -712,11 +746,13 @@ fn run(rx: Receiver<Message>, store: Store, mut enabled: [bool; 2], out: Arc<Mut
                 if !owner {
                     finish_active(&store, &mut active, "interrupted", false, enabled);
                 } else {
+                    let suppress_start =
+                        suppresses_start(&mut suppressed_revision, revision, state);
                     let changed = active.as_ref().is_some_and(|a| a.revision != revision);
                     if changed {
                         finish_active(&store, &mut active, "played", true, enabled);
                     }
-                    if active.is_none() && state != PlayState::Stopped {
+                    if active.is_none() && state != PlayState::Stopped && !suppress_start {
                         if let Some(item) = item {
                             let item = *item;
                             let duration_ms =
@@ -760,8 +796,11 @@ fn run(rx: Receiver<Message>, store: Store, mut enabled: [bool; 2], out: Arc<Mut
                     qualify(&store, active.as_mut(), enabled);
                 }
             }
-            Ok(Message::ManualEnd) => {
+            Ok(Message::ManualEnd { suppress_revision }) => {
                 accrue(active.as_mut(), Instant::now());
+                if suppress_revision {
+                    suppressed_revision = active.as_ref().map(|a| a.revision);
+                }
                 finish_active(&store, &mut active, "skipped", false, enabled);
             }
             Ok(Message::Enabled(p, on)) => {
@@ -1402,6 +1441,33 @@ mod tests {
             ..Recent::default()
         };
         assert_eq!(r.name(), "Artist — Track (Record) · 1999");
+    }
+
+    #[test]
+    fn equally_timed_history_keeps_the_newest_attempt_on_top() {
+        let store = memory_store();
+        let first = QueueItem::new(crate::playlist::uri::TrackUri::parse("first.flac"));
+        let second = QueueItem::new(crate::playlist::uri::TrackUri::parse("second.flac"));
+        store.start(&first, Some(90_000), 100).unwrap();
+        store.start(&second, Some(90_000), 100).unwrap();
+
+        let recent = store.recent(2).unwrap();
+        assert_eq!(recent[0].uri, "second.flac");
+        assert_eq!(recent[1].uri, "first.flac");
+    }
+
+    #[test]
+    fn an_ended_revision_cannot_restart_from_a_stale_observation() {
+        let mut suppressed = Some(7);
+        assert!(suppresses_start(&mut suppressed, 7, PlayState::Playing));
+        assert_eq!(suppressed, Some(7));
+
+        assert!(!suppresses_start(&mut suppressed, 8, PlayState::Playing));
+        assert_eq!(suppressed, None);
+
+        let mut stopped = Some(7);
+        assert!(!suppresses_start(&mut stopped, 7, PlayState::Stopped));
+        assert_eq!(stopped, None);
     }
 
     #[test]

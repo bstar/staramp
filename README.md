@@ -315,11 +315,11 @@ where they do not scroll away with the list.
 | --------------- | ----------------------------- |
 | `p`             | playlist on or off            |
 | `i`             | album info on or off          |
-| `alt+g`         | equalizer on or off           |
+| `alt+g`         | equalizer panel on or off     |
 | `alt+e`         | choose a playlist             |
 | `alt+i`         | choose a cover                |
 | `alt+r`         | look the cover up again       |
-| `alt+s`         | listening history on or off   |
+| `alt+s`         | listening-history panel on or off |
 | `alt+1` … `alt+5` | focus player, album, equalizer, playlist, history |
 | `tab`           | next pane                     |
 
@@ -408,6 +408,8 @@ knobs:
 | `[ui] graphics`                | how covers are drawn: `auto`, `kitty`, `blocks`, `off`. See [Album art](#album-art)              |
 | `[ui] buttons`                 | transport buttons: `auto` for pictures where the terminal can, `text` for ASCII. `o` toggles     |
 | `[ui] padding_x` / `padding_y` | blank columns and rows around the window                                                         |
+| `[ui] show_equalizer`          | show the EQ panel; visibility does not enable or bypass the EQ                                   |
+| `[ui] show_scrobbler`          | show listening history; visibility does not enable or disable network scrobbling                 |
 | `[art] fetch`                  | look covers up on the Cover Art Archive when the files have none. **Off** unless you turn it on  |
 | `[output] mode`                | `"native"` for bit-perfect, `"fixed"` to pin the rate                                            |
 | `[cue] pregap`                 | which track a pregap belongs to                                                                  |
@@ -433,9 +435,10 @@ half of it (up to four minutes) has actually played. Next, previous, stop, or a
 seek before that point records a skip. Paused time does not count, and a crash,
 decode failure, or quit records an interruption rather than a skip.
 
-The optional network providers are independent and off by default. Open the
-history panel with `alt+s`, press `enter`, and choose a provider's authenticate
-row. Credentials can be pasted directly into the prompt; Last.fm asks for its
+The optional network providers are independent and off by default. Their
+`[scrobble]` switches keep working when the history panel is hidden; `alt+s`
+changes only that panel's visibility. Open it, press `enter`, and choose a
+provider's authenticate row. Credentials can be pasted directly into the prompt; Last.fm asks for its
 API key and shared secret in turn, while ListenBrainz accepts its single user
 token. The CLI remains available as an alternative:
 

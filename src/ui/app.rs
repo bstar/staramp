@@ -432,6 +432,19 @@ fn track_line(artist: Option<&str>, title: Option<&str>, album: Option<&str>) ->
     Some(line)
 }
 
+/// Runtime switches whose similarly named panels are only views of them.
+///
+/// Keeping these reads here makes the independence executable: neither may
+/// ever be derived from `ui.show_*`, which says only how the window is laid
+/// out.
+fn network_scrobblers(cfg: &crate::config::Config) -> [bool; 2] {
+    [cfg.scrobble.lastfm, cfg.scrobble.listenbrainz]
+}
+
+fn equalizer_enabled(cfg: &crate::config::Config) -> bool {
+    cfg.eq.enabled
+}
+
 /// A codec name fit to show a person.
 ///
 /// The decoders report the registry's own short name -- symphonia's
@@ -473,9 +486,9 @@ fn codec_label(codec: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        bar_fraction, clamp_padding, codec_label, hit, indicator_width, slider_fraction, snap,
-        status_indicators, step_toward, track_line, KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH,
-        VOLUME_STEP,
+        bar_fraction, clamp_padding, codec_label, equalizer_enabled, hit, indicator_width,
+        network_scrobblers, slider_fraction, snap, status_indicators, step_toward, track_line,
+        KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH, VOLUME_STEP,
     };
     use super::{resume_playlist_path, PlaylistEntry};
     use crate::playlist::queue::RepeatMode;
@@ -511,6 +524,25 @@ mod tests {
             tracks: 1,
             missing: 0,
         }
+    }
+
+    #[test]
+    fn hidden_panels_do_not_disable_audio_services() {
+        let mut cfg = crate::config::Config::default();
+        cfg.ui.show_scrobbler = false;
+        cfg.scrobble.lastfm = true;
+        cfg.scrobble.listenbrainz = true;
+        cfg.ui.show_equalizer = false;
+        cfg.eq.enabled = true;
+
+        assert_eq!(network_scrobblers(&cfg), [true, true]);
+        assert!(equalizer_enabled(&cfg));
+
+        // Showing either panel changes presentation only.
+        cfg.ui.show_scrobbler = true;
+        cfg.ui.show_equalizer = true;
+        assert_eq!(network_scrobblers(&cfg), [true, true]);
+        assert!(equalizer_enabled(&cfg));
     }
 
     #[test]
@@ -815,7 +847,7 @@ impl EqState {
         Self {
             gains: cfg.eq.band_gains(),
             preamp: cfg.eq.preamp,
-            enabled: cfg.eq.enabled,
+            enabled: equalizer_enabled(cfg),
             preset: eq::PRESETS
                 .iter()
                 .position(|p| p.name.eq_ignore_ascii_case(&cfg.eq.preset))
@@ -1831,8 +1863,10 @@ impl App {
         // which is the only moment it can change without a step in the level.
         player.set_replaygain(cfg.rg.mode(), cfg.rg.preamp, cfg.rg.prevent_clipping);
 
-        let activity =
-            crate::activity::Handle::spawn(cfg.scrobble.lastfm, cfg.scrobble.listenbrainz)?;
+        // Provider switches control submission; the history panel is merely a
+        // view and may stay closed for the whole session.
+        let [lastfm, listenbrainz] = network_scrobblers(cfg);
+        let activity = crate::activity::Handle::spawn(lastfm, listenbrainz)?;
 
         // Desktop integration is best-effort: no session bus means no MPRIS,
         // not a player that refuses to start.
@@ -3445,7 +3479,7 @@ impl App {
 
     fn seek_by(&mut self, delta: f64) {
         if !self.is_mirror() {
-            self.activity.manual_end();
+            self.activity.seek_end();
         }
         self.command(&Command::SeekBy(delta), &format!("seek {delta}"));
         if let Some(m) = &self.mpris {
@@ -4236,7 +4270,7 @@ impl App {
         }
         let pos = bar_fraction(bar, x) * dur;
         if !self.is_mirror() {
-            self.activity.manual_end();
+            self.activity.seek_end();
         }
         self.command(&Command::SeekTo(pos), &format!("position {pos}"));
         if let Some(mp) = &self.mpris {

@@ -44,6 +44,11 @@ open TUI would record and submit the same listen. Local history is always on.
 Last.fm and ListenBrainz are optional, independent providers, and credentials
 belong in the mode-0600 `credentials.toml`, never in the ordinary config.
 
+Panel visibility is presentation, never service state. Closing the history
+panel must not stop a provider enabled under `[scrobble]`, and closing the EQ
+panel must not bypass an EQ enabled under `[eq]`. `ui.show_scrobbler` and
+`ui.show_equalizer` only remember whether those panels are drawn.
+
 ## Building on macOS
 
 Both routes are verified on `aarch64-darwin`, against Homebrew's ffmpeg 8.1.2

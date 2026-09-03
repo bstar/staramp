@@ -167,6 +167,76 @@ impl EqSettings {
         }
     }
 
+    /// The chain's magnitude response at `f`, in dB.
+    ///
+    /// Computed from the *compiled* filters -- the same coefficients the
+    /// audio path runs -- so a curve drawn from this cannot drift away from
+    /// what is actually being heard. Reimplementing the response from the
+    /// profile would be a second copy of the maths, and the two would agree
+    /// only until one of them was edited.
+    ///
+    /// Channel masks are ignored: the display shows one curve, and a filter
+    /// applied to one channel still belongs on it.
+    pub fn magnitude_db_at(&self, f: f64, sample_rate: u32) -> f64 {
+        if !self.enabled {
+            return 0.0;
+        }
+        let sr = sample_rate.max(1) as f64;
+        let mut mag = self.preamp_linear as f64;
+
+        if self.stages.is_empty() {
+            // The classic ten-band chain, which is held as coefficients
+            // rather than as stages.
+            for c in &self.coeffs {
+                mag *= c.magnitude_at(f, sr);
+            }
+        } else {
+            for stage in &self.stages {
+                mag *= match &stage.filter {
+                    CompiledFilter::Gain(v) => *v,
+                    CompiledFilter::Biquad(c) => c.magnitude_at(f, sr),
+                    CompiledFilter::Iir {
+                        numerator,
+                        feedback,
+                    } => {
+                        // The same evaluation a biquad does, for an arbitrary
+                        // order: sum each side around the unit circle at w.
+                        let w = std::f64::consts::TAU * f / sr;
+                        let poly = |taps: &[f64], first: f64| {
+                            let (mut re, mut im) = (first, 0.0);
+                            for (n, a) in taps.iter().enumerate() {
+                                let ang = -(n as f64 + 1.0) * w;
+                                re += a * ang.cos();
+                                im += a * ang.sin();
+                            }
+                            (re * re + im * im).sqrt()
+                        };
+                        let num = poly(&numerator[1..], numerator[0]);
+                        // `feedback` is already negated, so the denominator is
+                        // one *minus* it.
+                        let den = poly(&feedback.iter().map(|v| -v).collect::<Vec<_>>(), 1.0);
+                        if den > 0.0 {
+                            num / den
+                        } else {
+                            1.0
+                        }
+                    }
+                    CompiledFilter::Fir(impulse) => {
+                        let w = std::f64::consts::TAU * f / sr;
+                        let (mut re, mut im) = (0.0, 0.0);
+                        for (n, h) in impulse.iter().enumerate() {
+                            let ang = -(n as f64) * w;
+                            re += h * ang.cos();
+                            im += h * ang.sin();
+                        }
+                        (re * re + im * im).sqrt()
+                    }
+                };
+            }
+        }
+        20.0 * mag.max(1e-9).log10()
+    }
+
     pub fn from_profile(enabled: bool, profile: &Profile, sample_rate: u32) -> Self {
         let stages = profile
             .stages
@@ -619,6 +689,81 @@ pub fn preset_by_name(name: &str) -> Option<&'static Preset> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The curve has to agree with the filters it is drawn from.
+    #[test]
+    fn the_response_matches_what_the_filters_do() {
+        use crate::audio::dsp::apo::{BiquadKind, Filter, Profile, Stage, Width};
+
+        let sr = 44_100u32;
+        let stage = |filter| Stage {
+            enabled: true,
+            channels: ChannelMask::ALL,
+            filter,
+        };
+        let profile = Profile {
+            stages: vec![stage(Filter::Biquad {
+                kind: BiquadKind::Peaking,
+                frequency: 1_000.0,
+                gain_db: 6.0,
+                width: Width::Q(1.4),
+                corner_frequency: false,
+            })],
+            name: "test".into(),
+        };
+        let s = EqSettings::from_profile(true, &profile, sr);
+
+        // At the centre, a +6 dB peaking filter is +6 dB.
+        let at_centre = s.magnitude_db_at(1_000.0, sr);
+        assert!(
+            (at_centre - 6.0).abs() < 0.1,
+            "1 kHz reads {at_centre:.2} dB, wanted +6"
+        );
+        // Far either side it does nothing.
+        assert!(s.magnitude_db_at(50.0, sr).abs() < 0.5);
+        assert!(s.magnitude_db_at(15_000.0, sr).abs() < 0.5);
+    }
+
+    /// A preamp moves the whole curve, and a disabled chain is flat.
+    #[test]
+    fn the_response_accounts_for_preamp_and_bypass() {
+        use crate::audio::dsp::apo::{Filter, Profile, Stage};
+
+        let sr = 44_100u32;
+        let profile = Profile {
+            stages: vec![Stage {
+                enabled: true,
+                channels: ChannelMask::ALL,
+                filter: Filter::Preamp { gain_db: -6.0 },
+            }],
+            name: "test".into(),
+        };
+        let on = EqSettings::from_profile(true, &profile, sr);
+        for f in [100.0, 1_000.0, 10_000.0] {
+            let db = on.magnitude_db_at(f, sr);
+            assert!((db + 6.0).abs() < 0.1, "{f} Hz reads {db:.2}, wanted -6");
+        }
+
+        // Bypassed is flat, whatever the profile says.
+        let off = EqSettings::from_profile(false, &profile, sr);
+        assert_eq!(off.magnitude_db_at(1_000.0, sr), 0.0);
+    }
+
+    /// The ten-band chain is held as coefficients rather than stages, and has
+    /// to report a response too.
+    #[test]
+    fn the_ten_band_chain_reports_its_own_response() {
+        let sr = 44_100u32;
+        let mut gains = [0.0f32; 10];
+        gains[4] = 8.0;
+        let s = EqSettings::build(true, 0.0, &gains, sr);
+        let at_band = s.magnitude_db_at(BANDS[4], sr);
+        assert!(
+            at_band > 6.0,
+            "the lifted band reads {at_band:.2} dB, wanted most of +8"
+        );
+    }
+
     use super::*;
 
     #[test]

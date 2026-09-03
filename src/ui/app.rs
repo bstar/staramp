@@ -867,6 +867,17 @@ struct EqState {
     /// Which ordered processing stage the keyboard is on.
     stage: usize,
     scroll: usize,
+    /// The chain as the audio path compiles it, for the response curve.
+    ///
+    /// Cached rather than built while drawing: compiling a profile allocates,
+    /// and a `GraphicEQ` stage runs an FFT to make its impulse -- which at
+    /// sixty frames a second would be a real cost for a picture that only
+    /// changes when the profile does. Rebuilt in `apply_eq`, which is the one
+    /// place a profile ever changes.
+    compiled: crate::audio::dsp::eq::EqSettings,
+    /// The rate `compiled` was built for, so a track that changes it is
+    /// noticed rather than leaving the curve describing the old one.
+    compiled_rate: u32,
 }
 
 impl EqState {
@@ -901,13 +912,31 @@ impl EqState {
             ));
             profile = profiles.len() - 1;
         }
+        let enabled = equalizer_enabled(cfg);
+        // A first rate to compile against. Corrected on the first frame that
+        // knows the real one, which is what `compiled_rate` is for.
+        let rate = 44_100;
+        let compiled =
+            crate::audio::dsp::eq::EqSettings::from_profile(enabled, &profiles[profile], rate);
         Self {
-            enabled: equalizer_enabled(cfg),
+            enabled,
             profiles,
             profile,
             stage: 0,
             scroll: 0,
+            compiled,
+            compiled_rate: rate,
         }
+    }
+
+    /// Rebuild the cached chain the curve is drawn from.
+    fn recompile(&mut self, rate: u32) {
+        self.compiled = crate::audio::dsp::eq::EqSettings::from_profile(
+            self.enabled,
+            &self.profiles[self.profile],
+            rate,
+        );
+        self.compiled_rate = rate;
     }
 
     fn active(&self) -> &crate::audio::dsp::apo::Profile {
@@ -2173,6 +2202,7 @@ impl App {
             status: None,
         };
         // The curve is only a setting until it reaches the audio thread.
+        let mut app = app;
         app.apply_eq();
         Ok(app)
     }
@@ -3733,7 +3763,18 @@ impl App {
         self.note(format!("eq: {}", self.eq.active().name));
     }
 
-    fn apply_eq(&self) {
+    fn apply_eq(&mut self) {
+        let rate = self
+            .player
+            .state
+            .sample_rate
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .max(8_000) as u32;
+        self.eq.recompile(rate);
+        self.send_eq();
+    }
+
+    fn send_eq(&self) {
         if let Some(mirror) = &self.session.link {
             #[derive(serde::Serialize)]
             struct Request<'a> {
@@ -4971,6 +5012,8 @@ impl App {
                 selected: self.eq.stage,
                 scroll: self.eq.scroll,
                 focused: self.panels.focus == Focus::Equalizer,
+                compiled: &self.eq.compiled,
+                sample_rate: self.eq.compiled_rate,
             }
             .render(rect, buf);
         }

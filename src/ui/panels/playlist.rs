@@ -112,6 +112,24 @@ pub struct Rows {
     section_of: Vec<Option<usize>>,
 }
 
+fn fold_name(key: Option<&crate::playlist::group::Key>) -> String {
+    match (key, key.and_then(|k| k.version_label())) {
+        (None, _) => String::new(),
+        (Some(k), None) => k.title().to_string(),
+        (Some(k), Some(v)) => format!("{} \u{b7} {}", k.title(), v.to_lowercase()),
+    }
+}
+
+/// The fold handle for one track in an album-grouped view.
+///
+/// Derived through the same whole-queue grouping pass as [`Rows::grouped`],
+/// so two rips of the same record do not make "reveal the playing track"
+/// unfold the wrong copy.
+pub fn fold_for_track(items: &[QueueItem], track: usize) -> Option<String> {
+    let keys = crate::playlist::group::keys(items);
+    keys.get(track).map(|key| fold_name(key.as_ref()))
+}
+
 impl Rows {
     /// No dividers: one row per track, which is what an ungrouped queue gets.
     pub fn flat(tracks: usize) -> Rows {
@@ -163,11 +181,7 @@ impl Rows {
             // next queue, where the namesake may not be there. A rip's folder
             // does go in, or folding one rip would fold all of them.
             let version = keys[i].as_ref().and_then(|k| k.version_label());
-            let fold = match (keys[i].as_ref(), version) {
-                (None, _) => String::new(),
-                (Some(k), None) => k.title().to_string(),
-                (Some(k), Some(v)) => format!("{} \u{b7} {}", k.title(), v.to_lowercase()),
-            };
+            let fold = fold_name(keys[i].as_ref());
             let shut = folded.contains(&fold);
             for t in section_of.iter_mut().take(end).skip(i) {
                 *t = Some(rows.len());
@@ -853,6 +867,15 @@ mod render_tests {
             }
         }
         items
+    }
+
+    #[test]
+    fn a_track_resolves_to_the_fold_that_contains_it() {
+        let items = grouped_items();
+        assert_eq!(fold_for_track(&items, 0).as_deref(), Some("holy land"));
+        assert_eq!(fold_for_track(&items, 2).as_deref(), Some("holy land"));
+        assert_eq!(fold_for_track(&items, 3).as_deref(), Some("chained"));
+        assert_eq!(fold_for_track(&items, items.len()), None);
     }
 
     fn grouped_draw(items: &[QueueItem], rows: &Rows, scroll: usize, height: u16) -> Vec<String> {

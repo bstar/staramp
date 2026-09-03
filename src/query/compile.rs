@@ -40,7 +40,7 @@ pub fn compile(q: &Query, now_epoch: i64, count_only: bool) -> Compiled {
         "SELECT t.id"
     };
     let join = if needs_stats {
-        " LEFT JOIN track_stat s ON s.uri = t.uri"
+        " LEFT JOIN activity.track_stat s ON s.uri = t.uri"
     } else {
         ""
     };
@@ -255,7 +255,7 @@ mod tests {
     fn a_query_using_stats_joins_them() {
         let q = c("playcount > 5");
         assert!(q.needs_stats);
-        assert!(q.sql.contains("LEFT JOIN track_stat"), "{}", q.sql);
+        assert!(q.sql.contains("LEFT JOIN activity.track_stat"), "{}", q.sql);
     }
 
     #[test]

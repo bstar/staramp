@@ -25,6 +25,7 @@ pub fn init() -> Result<Tui> {
         out,
         EnterAlternateScreen,
         crossterm::event::EnableMouseCapture,
+        crossterm::event::EnableBracketedPaste,
         crossterm::cursor::Hide
     )?;
     let mut term = Terminal::new(CrosstermBackend::new(out))?;
@@ -37,6 +38,7 @@ pub fn restore() -> Result<()> {
     execute!(
         out,
         crossterm::cursor::Show,
+        crossterm::event::DisableBracketedPaste,
         crossterm::event::DisableMouseCapture,
         LeaveAlternateScreen
     )?;

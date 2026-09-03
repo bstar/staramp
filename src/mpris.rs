@@ -20,11 +20,12 @@ pub const BUS_NAME: &str = "staramp";
 /// Bridges the player to the MPRIS interfaces.
 pub struct MprisBridge {
     player: Arc<Player>,
+    activity: crate::activity::Control,
 }
 
 impl MprisBridge {
-    pub fn new(player: Arc<Player>) -> Self {
-        Self { player }
+    pub fn new(player: Arc<Player>, activity: crate::activity::Control) -> Self {
+        Self { player, activity }
     }
 }
 
@@ -88,11 +89,13 @@ impl RootInterface for MprisBridge {
 
 impl PlayerInterface for MprisBridge {
     async fn next(&self) -> fdo::Result<()> {
+        self.activity.manual_end();
         self.player.send(Command::Next);
         Ok(())
     }
 
     async fn previous(&self) -> fdo::Result<()> {
+        self.activity.manual_end();
         self.player.send(Command::Prev);
         Ok(())
     }
@@ -108,6 +111,7 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn stop(&self) -> fdo::Result<()> {
+        self.activity.manual_end();
         self.player.send(Command::Stop);
         Ok(())
     }
@@ -118,12 +122,14 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
+        self.activity.manual_end();
         self.player
             .send(Command::SeekBy(offset.as_micros() as f64 / 1_000_000.0));
         Ok(())
     }
 
     async fn set_position(&self, _track: TrackId, position: Time) -> fdo::Result<()> {
+        self.activity.manual_end();
         self.player
             .send(Command::SeekTo(position.as_micros() as f64 / 1_000_000.0));
         Ok(())
@@ -254,7 +260,7 @@ impl PlayerInterface for MprisBridge {
 /// Returns a handle that pushes property changes; dropping it stops the server.
 /// Failure is not fatal: a missing session bus means no desktop integration,
 /// not a player that refuses to start.
-pub fn spawn(player: Arc<Player>) -> Option<MprisHandle> {
+pub fn spawn(player: Arc<Player>, activity: crate::activity::Control) -> Option<MprisHandle> {
     let (tx, rx) = std::sync::mpsc::channel::<MprisEvent>();
 
     std::thread::Builder::new()
@@ -271,7 +277,7 @@ pub fn spawn(player: Arc<Player>) -> Option<MprisHandle> {
                 }
             };
             rt.block_on(async move {
-                let server = match Server::new(BUS_NAME, MprisBridge::new(player)).await {
+                let server = match Server::new(BUS_NAME, MprisBridge::new(player, activity)).await {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("mpris unavailable: {e}");

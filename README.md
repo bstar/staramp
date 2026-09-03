@@ -7,8 +7,8 @@
 
 A terminal player for a more civilized age.
 
-No streaming. No radio stations. No accounts. WinAmp inspired. It plays the files on your disk,
-and it plays _all_ of them.
+No streaming. No radio stations. No account required. WinAmp inspired. It plays
+the files on your disk, and it plays _all_ of them.
 
 [![star/amp playing a WavPack cue album, with the analyzer, album art and playlist](docs/screenshot.png)](docs/screenshot.png)
 
@@ -122,7 +122,8 @@ work against real data, and the player runs.
 | Equalizer            | **done**: 10 bands, presets, live                                                                     |
 | ReplayGain           | **partial**: tags are read and applied; no EBU R128 scanner yet, so 31,700 tracks carry no gain to use |
 | Smart playlists      | **partial**: the query language and its SQL compiler work from the CLI; no rule builder in the TUI    |
-| Last.fm              | **not built**                                                                                         |
+| Listening history    | **done**: permanent local plays/skips, available to smart playlists                                    |
+| Scrobbling           | **done**: independent Last.fm and ListenBrainz accounts, now-playing and durable retries              |
 
 ## Installing
 
@@ -318,6 +319,8 @@ where they do not scroll away with the list.
 | `alt+e`         | choose a playlist             |
 | `alt+i`         | choose a cover                |
 | `alt+r`         | look the cover up again       |
+| `alt+s`         | listening history on or off   |
+| `alt+1` … `alt+5` | focus player, album, equalizer, playlist, history |
 | `tab`           | next pane                     |
 
 | Equalizer, appearance, general |                    |
@@ -414,11 +417,42 @@ knobs:
 | `[vis] bar_width` / `bar_gap`  | cells per bar, and columns between bars                                                          |
 | `[eq] enabled` / `preset`      | 10-band equalizer                                                                                |
 | `[replaygain] mode`            | `off` (default), `track`, or `album`. See [ReplayGain](#replaygain)                              |
+| `[scrobble] lastfm`            | submit eligible tagged listens to Last.fm; off by default                                       |
+| `[scrobble] listenbrainz`      | submit eligible tagged listens to ListenBrainz; off by default                                  |
 | `[fx]`                         | track-change effects, including `reduced_motion` to disable them                                 |
 
 Settings changed from inside the player are written back here. The write is a
 line edit rather than a re-serialisation, so comments, ordering and any key
 star/amp does not know about survive it byte for byte.
+
+## Listening history and scrobbling
+
+Local listening history is always recorded; it does not require an account or
+a network connection. A track counts as played when it ends naturally, or once
+half of it (up to four minutes) has actually played. Next, previous, stop, or a
+seek before that point records a skip. Paused time does not count, and a crash,
+decode failure, or quit records an interruption rather than a skip.
+
+The optional network providers are independent and off by default. Open the
+history panel with `alt+s`, press `enter`, and choose a provider's authenticate
+row. Credentials can be pasted directly into the prompt; Last.fm asks for its
+API key and shared secret in turn, while ListenBrainz accepts its single user
+token. The CLI remains available as an alternative:
+
+```sh
+staramp scrobble auth lastfm
+staramp scrobble auth listenbrainz
+staramp scrobble status
+staramp scrobble logout lastfm
+```
+
+Last.fm asks for an API key and shared secret from your own Last.fm API
+application, then opens the browser authorization page. ListenBrainz asks for
+the user token from your profile. Credentials are stored separately in
+`credentials.toml` with mode `0600` on Unix. Eligible listens require real
+artist and title tags and more than 30 seconds of duration; filenames are never
+invented as metadata. Failed submissions stay queued with bounded exponential
+backoff, survive restarts, and can be retried from the panel.
 
 ## ReplayGain
 
@@ -558,8 +592,10 @@ up, moved, or deleted by moving one folder:
 ```
 ~/.local/staramp/
 ├── config.toml        your settings
+├── credentials.toml   Last.fm/ListenBrainz secrets (0600)
 ├── session.toml       what was playing, for the resume offer
 ├── index.sqlite       the library index
+├── activity.sqlite    permanent plays, skips and pending scrobbles
 ├── playlists/         .m3u files, read and written in place
 ├── themes/            your own themes, and imported Winamp skins
 └── cache/             album art, logs. Safe to delete
@@ -615,6 +651,7 @@ staramp ctl position 90      # absolute
 staramp ctl volume 0.5
 staramp ctl shuffle          # toggles, prints the new state
 staramp ctl repeat           # off, all, one
+staramp ctl set-scrobble lastfm on
 staramp ctl status           # JSON
 playerctl -p staramp next    # or over MPRIS
 ```
@@ -634,6 +671,10 @@ Fields: `artist`, `albumartist`, `album`, `title`, `genre`, `composer`, `year`,
 `codec`, `bitrate`, `samplerate`, `bitdepth`, `duration`, `path`, `filesize`,
 `added`, `playcount`, `skipcount`, `lastplayed`, `rating`, `loved`, `trackno`,
 `discno`. Most have short aliases (`ar`, `al`, `ti`, `g`, `y`).
+
+`playcount`, `skipcount`, `lastplayed`, and `never` read the permanent activity
+database, so rescanning or replacing a downloaded remote index cannot erase
+listening history.
 
 Operators are `=`, `!=`, `>`, `<`, `>=`, `<=`, `~` (contains) and `!~`, joined
 with `and`, `or` and `not`, grouped with parentheses. `lossless`, `cue`,

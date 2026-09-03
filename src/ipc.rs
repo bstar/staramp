@@ -248,6 +248,15 @@ pub fn connect(path: &std::path::Path) -> std::io::Result<UnixStream> {
 ///
 /// Split out from the socket so it can be tested without one.
 pub fn handle(player: &Player, view: &crate::view::Shared, line: &str) -> String {
+    handle_with_activity(player, view, None, line)
+}
+
+fn handle_with_activity(
+    player: &Player,
+    view: &crate::view::Shared,
+    activity: Option<&crate::activity::Control>,
+    line: &str,
+) -> String {
     let mut parts = line.split_whitespace();
     let Some(cmd) = parts.next() else {
         return "error: empty request".into();
@@ -272,19 +281,23 @@ pub fn handle(player: &Player, view: &crate::view::Shared, line: &str) -> String
             "ok".into()
         }
         "stop" => {
+            activity.inspect(|a| a.manual_end());
             player.send(Command::Stop);
             "ok".into()
         }
         "next" => {
+            activity.inspect(|a| a.manual_end());
             player.send(Command::Next);
             "ok".into()
         }
         "prev" | "previous" => {
+            activity.inspect(|a| a.manual_end());
             player.send(Command::Prev);
             "ok".into()
         }
         "seek" => match parts.next().and_then(|v| v.parse::<f64>().ok()) {
             Some(d) => {
+                activity.inspect(|a| a.manual_end());
                 player.send(Command::SeekBy(d));
                 "ok".into()
             }
@@ -292,6 +305,7 @@ pub fn handle(player: &Player, view: &crate::view::Shared, line: &str) -> String
         },
         "position" => match parts.next().and_then(|v| v.parse::<f64>().ok()) {
             Some(p) => {
+                activity.inspect(|a| a.manual_end());
                 player.send(Command::SeekTo(p));
                 "ok".into()
             }
@@ -331,6 +345,24 @@ pub fn handle(player: &Player, view: &crate::view::Shared, line: &str) -> String
             }
             let mode = crate::playlist::queue::RepeatMode::parse(&want);
             player.queue.lock().unwrap().set_repeat(mode);
+            "ok".into()
+        }
+        "set-scrobble" => {
+            let mut args = rest.unwrap_or("").split_whitespace();
+            let provider = match args.next() {
+                Some("lastfm") => crate::activity::Provider::Lastfm,
+                Some("listenbrainz") => crate::activity::Provider::Listenbrainz,
+                _ => return "error: set-scrobble needs `lastfm` or `listenbrainz`".into(),
+            };
+            let on = match args.next() {
+                Some("on" | "true" | "1" | "yes") => true,
+                Some("off" | "false" | "0" | "no") => false,
+                _ => return "error: set-scrobble takes `on` or `off`".into(),
+            };
+            let Some(activity) = activity else {
+                return "error: activity control unavailable".into();
+            };
+            activity.set_enabled(provider, on);
             "ok".into()
         }
         "shuffle-now" => match player.shuffle_now() {
@@ -503,6 +535,7 @@ pub fn handle(player: &Player, view: &crate::view::Shared, line: &str) -> String
             };
             match found {
                 Some(i) => {
+                    activity.inspect(|a| a.manual_end());
                     player.send(Command::PlayIndex(i));
                     "ok".into()
                 }
@@ -666,7 +699,16 @@ pub fn spawn(
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
 ) -> Option<PathBuf> {
-    spawn_at(socket_path().ok()?, player, view, stop)
+    spawn_at_inner(socket_path().ok()?, player, view, stop, None)
+}
+
+pub fn spawn_controlled(
+    player: Arc<Player>,
+    view: crate::view::Shared,
+    stop: Arc<AtomicBool>,
+    activity: crate::activity::Control,
+) -> Option<PathBuf> {
+    spawn_at_inner(socket_path().ok()?, player, view, stop, Some(activity))
 }
 
 /// As `spawn`, at a path of the caller's choosing.
@@ -680,6 +722,16 @@ pub fn spawn_at(
     player: Arc<Player>,
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
+) -> Option<PathBuf> {
+    spawn_at_inner(path, player, view, stop, None)
+}
+
+fn spawn_at_inner(
+    path: PathBuf,
+    player: Arc<Player>,
+    view: crate::view::Shared,
+    stop: Arc<AtomicBool>,
+    activity: Option<crate::activity::Control>,
 ) -> Option<PathBuf> {
     let listener = match listen(&path) {
         Ok(l) => l,
@@ -706,12 +758,13 @@ pub fn spawn_at(
                     Ok(stream) => {
                         let player = Arc::clone(&player);
                         let view = Arc::clone(&view);
+                        let activity = activity.clone();
                         // One thread per connection. A client holds its
                         // connection open for the life of the window, so this
                         // is one thread per window rather than one per request.
                         let _ = std::thread::Builder::new()
                             .name("staramp-ipc-conn".into())
-                            .spawn(move || serve(&player, &view, stream));
+                            .spawn(move || serve(&player, &view, activity.as_ref(), stream));
                     }
                     // One refused connection is not a reason to stop answering
                     // for the rest of the process's life, which is what
@@ -738,7 +791,12 @@ pub fn spawn_at(
     Some(path)
 }
 
-fn serve(player: &Player, view: &crate::view::Shared, stream: UnixStream) {
+fn serve(
+    player: &Player,
+    view: &crate::view::Shared,
+    activity: Option<&crate::activity::Control>,
+    stream: UnixStream,
+) {
     let reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
         Err(_) => return,
@@ -746,7 +804,7 @@ fn serve(player: &Player, view: &crate::view::Shared, stream: UnixStream) {
     let mut out = stream;
     for line in reader.lines() {
         let Ok(line) = line else { break };
-        let reply = handle(player, view, line.trim());
+        let reply = handle_with_activity(player, view, activity, line.trim());
         if writeln!(out, "{reply}").is_err() {
             break;
         }

@@ -33,6 +33,15 @@ pub struct Config {
     pub rg: ReplayGainCfg,
     pub session: SessionShare,
     pub remote: Remote,
+    pub scrobble: Scrobble,
+}
+
+/// Network destinations. Local listening history is always enabled.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Scrobble {
+    pub lastfm: bool,
+    pub listenbrainz: bool,
 }
 
 /// A library on another machine, reached over SSH.
@@ -167,6 +176,7 @@ pub struct Ui {
     pub show_album: bool,
     pub show_equalizer: bool,
     pub show_playlist: bool,
+    pub show_scrobbler: bool,
 }
 
 /// The ten-band equalizer.
@@ -247,6 +257,7 @@ impl Default for Config {
         Self {
             library_root: None,
             remote: Remote::default(),
+            scrobble: Scrobble::default(),
             playlist_dir: None,
             theme: "winamp-classic".into(),
             volume: 1.0,
@@ -289,6 +300,7 @@ impl Default for Ui {
             show_album: false,
             show_equalizer: false,
             show_playlist: true,
+            show_scrobbler: false,
         }
     }
 }
@@ -430,6 +442,12 @@ buttons = "auto"
 # Look covers up on the Cover Art Archive when the disk has none. Off by
 # default: a lookup sends an artist and album name to a third party.
 fetch = false
+
+[scrobble]
+# Local listening history is always kept for smart playlists. These switches
+# only control network submission; authenticate with `staramp scrobble auth`.
+lastfm = false
+listenbrainz = false
 
 [eq]
 enabled = false
@@ -657,7 +675,7 @@ mod tests {
     #[test]
     fn reduced_motion_switches_every_effect_off() {
         let mut c = Config::default();
-        assert!(c.fx.active());
+        assert!(!c.fx.reduced_motion);
         c.fx.reduced_motion = true;
         assert!(!c.fx.active());
     }

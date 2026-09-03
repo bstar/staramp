@@ -9,5 +9,6 @@ pub mod picker;
 pub mod player;
 pub mod playlist;
 pub mod resume;
+pub mod scrobbler;
 pub mod settings;
 pub mod visualizer;

@@ -42,14 +42,14 @@ impl Db {
         }
         let conn = Connection::open(path)
             .with_context(|| format!("opening index at {}", path.display()))?;
-        Self::init(conn)
+        Self::init(conn, false)
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory()?, true)
     }
 
-    fn init(conn: Connection) -> Result<Self> {
+    fn init(conn: Connection, activity_memory: bool) -> Result<Self> {
         conn.execute_batch(schema::PRAGMAS)
             .context("applying pragmas")?;
         conn.execute_batch(schema::SCHEMA)
@@ -64,6 +64,7 @@ impl Db {
                 schema::SCHEMA_VERSION
             );
         }
+        crate::activity::attach(&conn, activity_memory, true)?;
         Ok(Self { conn })
     }
 
@@ -71,12 +72,14 @@ impl Db {
     /// WAL allows any number of readers alongside the single writer.
     pub fn open_readonly(path: &Path) -> Result<Self> {
         use rusqlite::OpenFlags;
+        crate::activity::ensure_store()?;
         let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .with_context(|| format!("opening index read-only at {}", path.display()))?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        crate::activity::attach(&conn, false, false)?;
         Ok(Self { conn })
     }
 }

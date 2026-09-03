@@ -65,6 +65,7 @@ struct Regions {
     player: Rect,
     album: Option<Rect>,
     equalizer: Option<Rect>,
+    scrobbler: Option<Rect>,
     playlist: Option<Rect>,
     status: Rect,
 }
@@ -111,6 +112,11 @@ enum Setting {
     SaveOverwrite,
     SaveAsNew,
     SaveCancel,
+    Lastfm,
+    Listenbrainz,
+    RetryScrobbles,
+    AuthLastfm,
+    AuthListenbrainz,
 }
 
 /// Which list the one overlay is showing.
@@ -179,6 +185,9 @@ struct Remembered {
     show_album: bool,
     show_equalizer: bool,
     show_playlist: bool,
+    show_scrobbler: bool,
+    lastfm: bool,
+    listenbrainz: bool,
     vis_mode: String,
     bar_width: u16,
     bar_gap: u16,
@@ -205,6 +214,9 @@ impl Remembered {
             show_album: cfg.ui.show_album,
             show_equalizer: cfg.ui.show_equalizer,
             show_playlist: cfg.ui.show_playlist,
+            show_scrobbler: cfg.ui.show_scrobbler,
+            lastfm: cfg.scrobble.lastfm,
+            listenbrainz: cfg.scrobble.listenbrainz,
             vis_mode: cfg.vis.mode.clone(),
             bar_width: cfg.vis.bar_width,
             bar_gap: cfg.vis.bar_gap,
@@ -275,6 +287,7 @@ fn focus_name(f: Focus) -> &'static str {
         Focus::Player => "player",
         Focus::Album => "album",
         Focus::Equalizer => "equalizer",
+        Focus::Scrobbler => "scrobbler",
         Focus::Playlist => "playlist",
     }
 }
@@ -765,6 +778,7 @@ enum Focus {
     Player,
     Album,
     Equalizer,
+    Scrobbler,
     Playlist,
 }
 
@@ -774,6 +788,7 @@ impl From<Focus> for keymap::Module {
             Focus::Player => keymap::Module::Player,
             Focus::Album => keymap::Module::Album,
             Focus::Equalizer => keymap::Module::Equalizer,
+            Focus::Scrobbler => keymap::Module::Scrobbler,
             Focus::Playlist => keymap::Module::Playlist,
         }
     }
@@ -865,6 +880,7 @@ struct Panels {
     eq: bool,
     album: bool,
     playlist: bool,
+    scrobbler: bool,
     help: bool,
     picker: bool,
     focus: Focus,
@@ -944,6 +960,19 @@ struct Saving {
     last_written: Instant,
 }
 
+enum AuthInput {
+    LastfmKey(String),
+    LastfmSecret {
+        api_key: String,
+        value: String,
+    },
+    LastfmApproval {
+        pending: crate::activity::LastfmPending,
+        last_try: Instant,
+    },
+    Listenbrainz(String),
+}
+
 /// What the user is part-way through typing, holding or dragging.
 ///
 /// All of it is transient: every field is empty when nothing is being edited,
@@ -951,6 +980,8 @@ struct Saving {
 /// the config.
 #[derive(Default)]
 struct Editing {
+    /// Provider credentials being pasted without leaving the TUI.
+    auth: Option<AuthInput>,
     /// What `space` does, once it has been asked.
     ///
     /// Remembered per loaded playlist for as long as the browser stays open, so
@@ -1098,6 +1129,7 @@ struct Overlays {
 
 pub struct App {
     player: Arc<Player>,
+    activity: crate::activity::Handle,
     mpris: Option<crate::mpris::MprisHandle>,
     ipc_stop: Arc<std::sync::atomic::AtomicBool>,
     ipc_path: Option<PathBuf>,
@@ -1313,6 +1345,136 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    fn auth_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        if self.edit.auth.is_none() {
+            return false;
+        }
+        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if k.code == KeyCode::Esc {
+            self.edit.auth = None;
+            self.note("authentication cancelled".into());
+            return true;
+        }
+        if k.code == KeyCode::Enter {
+            let Some(stage) = self.edit.auth.take() else {
+                return true;
+            };
+            match stage {
+                AuthInput::LastfmKey(api_key) => {
+                    if api_key.trim().is_empty() {
+                        self.edit.auth = Some(AuthInput::LastfmKey(api_key));
+                        self.note("paste the Last.fm API key first".into());
+                    } else {
+                        self.edit.auth = Some(AuthInput::LastfmSecret {
+                            api_key: api_key.trim().into(),
+                            value: String::new(),
+                        });
+                    }
+                }
+                AuthInput::LastfmSecret { api_key, value } => {
+                    match crate::activity::begin_lastfm(api_key.clone(), value.clone()) {
+                        Ok(pending) => {
+                            self.edit.auth = Some(AuthInput::LastfmApproval {
+                                pending,
+                                last_try: Instant::now(),
+                            });
+                        }
+                        Err(e) => {
+                            self.edit.auth = Some(AuthInput::LastfmSecret { api_key, value });
+                            self.note(format!("Last.fm: {e}"));
+                        }
+                    }
+                }
+                AuthInput::LastfmApproval { pending, .. } => {
+                    match crate::activity::complete_lastfm(&pending) {
+                        Ok(username) => {
+                            self.enable_scrobbler(crate::activity::Provider::Lastfm);
+                            self.note(if username.is_empty() {
+                                "Last.fm authenticated".into()
+                            } else {
+                                format!("Last.fm authenticated as {username}")
+                            });
+                        }
+                        Err(e) => {
+                            self.edit.auth = Some(AuthInput::LastfmApproval {
+                                pending,
+                                last_try: Instant::now(),
+                            });
+                            self.note(format!("Last.fm: {e}"));
+                        }
+                    }
+                }
+                AuthInput::Listenbrainz(token) => {
+                    match crate::activity::authenticate_listenbrainz(token.clone()) {
+                        Ok(username) => {
+                            self.enable_scrobbler(crate::activity::Provider::Listenbrainz);
+                            self.note(if username.is_empty() {
+                                "ListenBrainz authenticated".into()
+                            } else {
+                                format!("ListenBrainz authenticated as {username}")
+                            });
+                        }
+                        Err(e) => {
+                            self.edit.auth = Some(AuthInput::Listenbrainz(token));
+                            self.note(format!("ListenBrainz: {e}"));
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        let text = match self.edit.auth.as_mut() {
+            Some(AuthInput::LastfmKey(text) | AuthInput::Listenbrainz(text)) => Some(text),
+            Some(AuthInput::LastfmSecret { value, .. }) => Some(value),
+            Some(AuthInput::LastfmApproval { .. }) | None => None,
+        };
+        let Some(text) = text else {
+            return true;
+        };
+        match k.code {
+            KeyCode::Char('u') if ctrl => text.clear(),
+            KeyCode::Char(c) if !ctrl => text.push(c),
+            KeyCode::Backspace => {
+                text.pop();
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn auth_paste(&mut self, pasted: &str) -> bool {
+        let text = match self.edit.auth.as_mut() {
+            Some(AuthInput::LastfmKey(text) | AuthInput::Listenbrainz(text)) => text,
+            Some(AuthInput::LastfmSecret { value, .. }) => value,
+            _ => return false,
+        };
+        text.push_str(pasted.trim());
+        true
+    }
+
+    fn poll_auth(&mut self) {
+        let pending = match self.edit.auth.as_mut() {
+            Some(AuthInput::LastfmApproval { pending, last_try })
+                if last_try.elapsed() >= Duration::from_secs(5) =>
+            {
+                *last_try = Instant::now();
+                Some(pending.clone())
+            }
+            _ => None,
+        };
+        let Some(pending) = pending else { return };
+        if let Ok(username) = crate::activity::complete_lastfm(&pending) {
+            self.edit.auth = None;
+            self.enable_scrobbler(crate::activity::Provider::Lastfm);
+            self.note(if username.is_empty() {
+                "Last.fm authenticated".into()
+            } else {
+                format!("Last.fm authenticated as {username}")
+            });
+        }
     }
 
     /// Open the filter box over the playlist, from wherever the focus is.
@@ -1669,10 +1831,13 @@ impl App {
         // which is the only moment it can change without a step in the level.
         player.set_replaygain(cfg.rg.mode(), cfg.rg.preamp, cfg.rg.prevent_clipping);
 
+        let activity =
+            crate::activity::Handle::spawn(cfg.scrobble.lastfm, cfg.scrobble.listenbrainz)?;
+
         // Desktop integration is best-effort: no session bus means no MPRIS,
         // not a player that refuses to start.
         let mpris = if crate::mpris::session_bus_available() {
-            crate::mpris::spawn(Arc::clone(&player))
+            crate::mpris::spawn(Arc::clone(&player), activity.control())
         } else {
             None
         };
@@ -1687,10 +1852,11 @@ impl App {
         // Remote control is best-effort too.
         let ipc_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let view = crate::view::shared();
-        let ipc_path = crate::ipc::spawn(
+        let ipc_path = crate::ipc::spawn_controlled(
             Arc::clone(&player),
             Arc::clone(&view),
             Arc::clone(&ipc_stop),
+            activity.control(),
         );
         if let Some(p) = &ipc_path {
             tracing::info!("ipc listening on {}", p.display());
@@ -1698,6 +1864,7 @@ impl App {
 
         let app = Self {
             player,
+            activity,
             mpris,
             ipc_stop,
             ipc_path,
@@ -1707,6 +1874,7 @@ impl App {
                 eq: cfg.ui.show_equalizer,
                 album: cfg.ui.show_album,
                 playlist: cfg.ui.show_playlist,
+                scrobbler: cfg.ui.show_scrobbler,
                 help: false,
                 picker: false,
                 focus: if cfg.ui.show_playlist {
@@ -1836,10 +2004,11 @@ impl App {
     /// showing, which is milliseconds old rather than the five seconds the
     /// session file would be.
     fn take_over(&mut self) {
-        let path = crate::ipc::spawn(
+        let path = crate::ipc::spawn_controlled(
             Arc::clone(&self.player),
             Arc::clone(&self.session.shared),
             Arc::clone(&self.ipc_stop),
+            self.activity.control(),
         );
         let Some(path) = path else {
             // Somebody else got there first. Follow them.
@@ -1938,6 +2107,7 @@ impl App {
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
+            show_scrobbler: self.panels.scrobbler,
             revision: 0,
         }
     }
@@ -1957,6 +2127,7 @@ impl App {
         self.panels.album = v.show_album;
         self.panels.eq = v.show_equalizer;
         self.panels.playlist = v.show_playlist;
+        self.panels.scrobbler = v.show_scrobbler;
         if !v.cursor.is_empty() {
             let wanted = crate::playlist::uri::TrackUri::parse(&v.cursor);
             let q = self.player.queue.lock().unwrap();
@@ -2469,9 +2640,27 @@ impl App {
             self.poll_mirror();
             self.sync_view();
             self.check_track_change();
+            let activity_state = self.player.state.state();
+            let activity_revision = self
+                .player
+                .state
+                .track_revision
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let activity_item = self.player.current_item();
+            let activity_position = self.player.state.position_secs();
+            let activity_duration = self.player.state.duration_secs();
+            self.activity.observe(
+                !self.is_mirror(),
+                activity_revision,
+                activity_state,
+                activity_item,
+                activity_position,
+                activity_duration,
+            );
             if self.over.resume.is_none() && !self.is_mirror() {
                 self.save_session(false);
             }
+            self.poll_auth();
             self.publish_mpris();
             term.draw(|f| self.draw(f.area(), f.buffer_mut()))?;
 
@@ -2485,6 +2674,9 @@ impl App {
                         // actions: `n` should decline without becoming a
                         // global binding that shadows something else.
                         if self.over.resume.is_some() && self.answer_resume(k) {
+                            continue;
+                        }
+                        if self.edit.auth.is_some() && self.auth_type(k) {
                             continue;
                         }
                         // Naming a playlist eats keys ahead of everything, so
@@ -2521,12 +2713,16 @@ impl App {
                         if let Some(e) = self.fx.running.as_mut() {
                             e.finish();
                         }
+                        if self.edit.auth.is_some() {
+                            continue;
+                        }
                         let size = term.size()?;
                         self.handle_mouse(m, Rect::new(0, 0, size.width, size.height));
                     }
                     // A font zoom arrives as a resize, and it changes the
                     // cell size the button images were built for.
                     Event::Resize(..) => self.graphics.remeasure(),
+                    Event::Paste(text) if self.auth_paste(&text) => {}
                     _ => {}
                 }
             }
@@ -2557,6 +2753,23 @@ impl App {
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
+            show_scrobbler: self.panels.scrobbler,
+            lastfm: self
+                .activity
+                .snapshot()
+                .providers
+                .iter()
+                .find(|p| p.provider == crate::activity::Provider::Lastfm)
+                .map(|p| p.enabled)
+                .unwrap_or(false),
+            listenbrainz: self
+                .activity
+                .snapshot()
+                .providers
+                .iter()
+                .find(|p| p.provider == crate::activity::Provider::Listenbrainz)
+                .map(|p| p.enabled)
+                .unwrap_or(false),
             vis_mode: self.vis.mode.name().to_string(),
             bar_width: self.vis.bars.width,
             bar_gap: self.vis.bars.gap,
@@ -2628,6 +2841,15 @@ impl App {
         }
         if now.show_playlist != was.show_playlist {
             set("ui", "show_playlist", Value::Bool(now.show_playlist));
+        }
+        if now.show_scrobbler != was.show_scrobbler {
+            set("ui", "show_scrobbler", Value::Bool(now.show_scrobbler));
+        }
+        if now.lastfm != was.lastfm {
+            set("scrobble", "lastfm", Value::Bool(now.lastfm));
+        }
+        if now.listenbrainz != was.listenbrainz {
+            set("scrobble", "listenbrainz", Value::Bool(now.listenbrainz));
         }
         if now.vis_mode != was.vis_mode {
             set("vis", "mode", Value::Str(now.vis_mode.clone()));
@@ -3012,9 +3234,24 @@ impl App {
                     self.command(&Command::TogglePause, "toggle");
                 }
             }
-            Stop => self.command(&Command::Stop, "stop"),
-            Next => self.command(&Command::Next, "next"),
-            Prev => self.command(&Command::Prev, "prev"),
+            Stop => {
+                if !self.is_mirror() {
+                    self.activity.manual_end();
+                }
+                self.command(&Command::Stop, "stop")
+            }
+            Next => {
+                if !self.is_mirror() {
+                    self.activity.manual_end();
+                }
+                self.command(&Command::Next, "next")
+            }
+            Prev => {
+                if !self.is_mirror() {
+                    self.activity.manual_end();
+                }
+                self.command(&Command::Prev, "prev")
+            }
             SeekForward => self.seek_by(5.0),
             SeekBack => self.seek_by(-5.0),
             SeekForwardBig => self.seek_by(30.0),
@@ -3080,6 +3317,14 @@ impl App {
                 if self.panels.playlist {
                     self.panels.focus = Focus::Playlist;
                 } else if self.panels.focus == Focus::Playlist {
+                    self.panels.focus = Focus::Player;
+                }
+            }
+            ToggleScrobblerPanel => {
+                self.panels.scrobbler = !self.panels.scrobbler;
+                if self.panels.scrobbler {
+                    self.panels.focus = Focus::Scrobbler;
+                } else if self.panels.focus == Focus::Scrobbler {
                     self.panels.focus = Focus::Player;
                 }
             }
@@ -3188,6 +3433,8 @@ impl App {
             FocusPlaylist => self.focus_module(Focus::Playlist),
             FocusEqualizer => self.focus_module(Focus::Equalizer),
             FocusAlbum => self.focus_module(Focus::Album),
+            FocusScrobbler => self.focus_module(Focus::Scrobbler),
+            OpenPanelSettings => self.open_settings(self.panels.focus),
             PageUp => self.move_cursor(-10),
             PageDown => self.move_cursor(10),
             Home => self.cursor_to_end(false),
@@ -3197,6 +3444,9 @@ impl App {
     }
 
     fn seek_by(&mut self, delta: f64) {
+        if !self.is_mirror() {
+            self.activity.manual_end();
+        }
         self.command(&Command::SeekBy(delta), &format!("seek {delta}"));
         if let Some(m) = &self.mpris {
             let pos = (self.player.state.position_secs() + delta).max(0.0);
@@ -3248,6 +3498,9 @@ impl App {
             .tracks()
             .get(track)
             .map(|t| t.uri.to_string());
+        if self.player.state.state() != PlayState::Stopped && !self.is_mirror() {
+            self.activity.manual_end();
+        }
         match uri {
             Some(uri) => self.command(&Command::PlayIndex(track), &format!("play-uri {uri}")),
             None => self.player.send(Command::PlayIndex(track)),
@@ -3497,6 +3750,11 @@ impl App {
                         return;
                     }
                 }
+                if let Some(rect) = r.scrobbler {
+                    if hit(rect, x, y) {
+                        return;
+                    }
+                }
                 // Otherwise it scrolls the list, which is what a wheel is for.
                 self.move_cursor(if up { -3 } else { 3 });
             }
@@ -3604,6 +3862,23 @@ impl App {
                         return self.equalizer_click(rect, x, y);
                     }
                 }
+                if let Some(rect) = r.scrobbler {
+                    match header::hit(rect, header::PLAIN, x, y) {
+                        Some(header::Item::Close) => {
+                            self.panels.scrobbler = false;
+                            self.panels.focus = Focus::Player;
+                            return self.note("scrobbler closed — alt+s to bring it back".into());
+                        }
+                        Some(header::Item::Settings) => {
+                            return self.open_settings(Focus::Scrobbler)
+                        }
+                        _ => {}
+                    }
+                    if hit(rect, x, y) {
+                        self.panels.focus = Focus::Scrobbler;
+                        return;
+                    }
+                }
                 if hit(r.player, x, y) {
                     self.player_click(&r, x, y);
                 }
@@ -3655,10 +3930,11 @@ impl App {
     /// Screen order, top to bottom, so `Tab` moves down the window and
     /// `shift+Tab` back up it rather than following the order the variants
     /// happen to be declared in.
-    const FOCUS_ORDER: [Focus; 4] = [
+    const FOCUS_ORDER: [Focus; 5] = [
         Focus::Player,
         Focus::Album,
         Focus::Equalizer,
+        Focus::Scrobbler,
         Focus::Playlist,
     ];
 
@@ -3670,6 +3946,7 @@ impl App {
             Focus::Player => true,
             Focus::Album => self.panels.album,
             Focus::Equalizer => self.panels.eq,
+            Focus::Scrobbler => self.panels.scrobbler,
             Focus::Playlist => self.panels.playlist,
         }
     }
@@ -3705,6 +3982,7 @@ impl App {
             Focus::Player => {}
             Focus::Album => self.panels.album = true,
             Focus::Equalizer => self.panels.eq = true,
+            Focus::Scrobbler => self.panels.scrobbler = true,
             Focus::Playlist => self.panels.playlist = true,
         }
         self.panels.focus = f;
@@ -3749,11 +4027,58 @@ impl App {
         )
     }
 
+    /// Open the playlist on the track the transport is describing.
+    ///
+    /// A filter or folded record must not make this look like it failed: the
+    /// point of clicking the title is to reveal the track, not merely to open
+    /// a panel in which it may still be absent.
+    fn focus_playing_track(&mut self) {
+        let current = {
+            let q = self.player.queue.lock().unwrap();
+            q.current_index().map(|_| {
+                let items = q
+                    .view()
+                    .iter()
+                    .filter_map(|&i| q.tracks().get(i).cloned())
+                    .collect::<Vec<_>>();
+                (q.view_cursor(), items)
+            })
+        };
+        let Some((cursor, items)) = current else {
+            return self.note("nothing is playing".into());
+        };
+
+        if self.session_grouped() {
+            if let Some(fold) = playlist::fold_for_track(&items, cursor) {
+                if self.queue.folded.remove(&fold) {
+                    self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
+                }
+            }
+        }
+        if !self.edit.words.is_empty() {
+            self.edit.words.clear();
+            self.edit.typing = None;
+            self.edit.gen = self.edit.gen.wrapping_add(1);
+        }
+        self.queue.cursor = cursor;
+        self.panels.playlist = true;
+        self.panels.focus = Focus::Playlist;
+        self.note("playing track selected in playlist".into());
+    }
+
     fn player_click(&mut self, r: &Regions, x: u16, y: u16) {
         self.panels.focus = Focus::Player;
         let Some(g) = self.player_geometry(r) else {
             return;
         };
+        let title = Rect {
+            x: g.title.x.saturating_add(1),
+            width: g.title.width.saturating_sub(2),
+            ..g.title
+        };
+        if hit(title, x, y) {
+            return self.focus_playing_track();
+        }
         let c = &g.controls;
 
         if hit(c.prev, x, y) {
@@ -3910,6 +4235,9 @@ impl App {
             return;
         }
         let pos = bar_fraction(bar, x) * dur;
+        if !self.is_mirror() {
+            self.activity.manual_end();
+        }
         self.command(&Command::SeekTo(pos), &format!("position {pos}"));
         if let Some(mp) = &self.mpris {
             mp.notify(crate::mpris::MprisEvent::Seeked(pos));
@@ -3977,10 +4305,15 @@ impl App {
         } else {
             0
         };
+        let scrobbler_h = if self.panels.scrobbler {
+            crate::ui::panels::scrobbler::PANEL_ROWS
+        } else {
+            0
+        };
         let status_h = 1u16;
         let playlist_h = area
             .height
-            .saturating_sub(player_h + album_h + eq_h + status_h);
+            .saturating_sub(player_h + album_h + eq_h + scrobbler_h + status_h);
         // Two of its rows are border and one is the header, so three rows is
         // a panel with nothing in it.
         let show_playlist = self.panels.playlist && playlist_h >= 4;
@@ -3991,6 +4324,9 @@ impl App {
         }
         if self.panels.eq {
             constraints.push(Constraint::Length(eq_h));
+        }
+        if self.panels.scrobbler {
+            constraints.push(Constraint::Length(scrobbler_h));
         }
         if show_playlist {
             constraints.push(Constraint::Length(playlist_h));
@@ -4017,6 +4353,11 @@ impl App {
             idx += 1;
             r
         });
+        let scrobbler = self.panels.scrobbler.then(|| {
+            let r = rows[idx];
+            idx += 1;
+            r
+        });
         let playlist = show_playlist.then(|| {
             let r = rows[idx];
             idx += 1;
@@ -4028,6 +4369,7 @@ impl App {
             player,
             album,
             equalizer,
+            scrobbler,
             playlist,
             status: rows[idx],
         })
@@ -4110,6 +4452,15 @@ impl App {
             .render(rect, buf);
         }
 
+        if let Some(rect) = r.scrobbler {
+            crate::ui::panels::scrobbler::ScrobblerView {
+                theme: &self.look.theme,
+                snapshot: &self.activity.snapshot(),
+                focused: self.panels.focus == Focus::Scrobbler,
+            }
+            .render(rect, buf);
+        }
+
         if let Some(rect) = r.playlist {
             self.draw_playlist(rect, buf);
         }
@@ -4161,6 +4512,49 @@ impl App {
 
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+        if let Some(auth) = &self.edit.auth {
+            let (heading, title, rows) = match auth {
+                AuthInput::LastfmKey(value) => (
+                    "LAST.FM",
+                    "paste your application API key · enter next · esc cancel",
+                    vec![settings::Row::setting(
+                        "API key",
+                        format!("{value}\u{2582}"),
+                    )],
+                ),
+                AuthInput::LastfmSecret { value, .. } => (
+                    "LAST.FM",
+                    "paste the shared secret · enter opens authorization",
+                    vec![settings::Row::setting(
+                        "shared secret",
+                        format!("{}\u{2582}", "•".repeat(value.chars().count())),
+                    )],
+                ),
+                AuthInput::LastfmApproval { pending, .. } => (
+                    "LAST.FM",
+                    "approve in the browser · waiting automatically · enter retry",
+                    vec![settings::Row::setting("authorization", &pending.url)],
+                ),
+                AuthInput::Listenbrainz(value) => (
+                    "LISTENBRAINZ",
+                    "paste your user token · enter authenticate · esc cancel",
+                    vec![settings::Row::setting(
+                        "token",
+                        format!("{}\u{2582}", "•".repeat(value.chars().count())),
+                    )],
+                ),
+            };
+            SettingsView {
+                theme: &self.look.theme,
+                heading,
+                title,
+                rows: &rows,
+                cursor: 0,
+                scroll: 0,
+            }
+            .render(area, buf);
+            return;
+        }
         if let Some(text) = &self.edit.typing {
             let rows = [settings::Row::setting(
                 "matching",
@@ -4712,6 +5106,42 @@ impl App {
                     (Row::action("reset the bands"), Setting::EqReset),
                 ],
             ),
+            Focus::Scrobbler => {
+                let snap = self.activity.snapshot();
+                let mut rows = Vec::new();
+                if let Some(provider) = snap
+                    .providers
+                    .iter()
+                    .find(|p| p.provider == crate::activity::Provider::Lastfm && p.configured)
+                {
+                    rows.push((
+                        Row::setting("Last.fm", on_off(provider.enabled)),
+                        Setting::Lastfm,
+                    ));
+                }
+                if let Some(provider) = snap
+                    .providers
+                    .iter()
+                    .find(|p| p.provider == crate::activity::Provider::Listenbrainz && p.configured)
+                {
+                    rows.push((
+                        Row::setting("ListenBrainz", on_off(provider.enabled)),
+                        Setting::Listenbrainz,
+                    ));
+                }
+                rows.extend([
+                    (
+                        Row::action(format!("retry {} pending", snap.pending)),
+                        Setting::RetryScrobbles,
+                    ),
+                    (Row::action("authenticate Last.fm…"), Setting::AuthLastfm),
+                    (
+                        Row::action("authenticate ListenBrainz…"),
+                        Setting::AuthListenbrainz,
+                    ),
+                ]);
+                ("scrobbling and local history".into(), rows)
+            }
             // The transport has no header and so cannot get here.
             Focus::Player => (String::new(), Vec::new()),
         }
@@ -5241,8 +5671,51 @@ impl App {
                 self.apply_eq();
                 self.note("eq: bands reset".into());
             }
+            Setting::Lastfm => self.toggle_scrobbler(crate::activity::Provider::Lastfm),
+            Setting::Listenbrainz => self.toggle_scrobbler(crate::activity::Provider::Listenbrainz),
+            Setting::RetryScrobbles => {
+                self.activity.retry();
+                self.note("retrying queued scrobbles".into());
+            }
+            Setting::AuthLastfm => {
+                self.over.settings = None;
+                self.edit.auth = Some(AuthInput::LastfmKey(String::new()));
+            }
+            Setting::AuthListenbrainz => {
+                self.over.settings = None;
+                self.edit.auth = Some(AuthInput::Listenbrainz(String::new()));
+            }
         }
         self.refresh_settings();
+    }
+
+    fn toggle_scrobbler(&mut self, provider: crate::activity::Provider) {
+        let current = self
+            .activity
+            .snapshot()
+            .providers
+            .iter()
+            .find(|p| p.provider == provider)
+            .map(|p| p.enabled)
+            .unwrap_or(false);
+        let on = !current;
+        self.set_scrobbler(provider, on);
+        self.note(format!(
+            "{} {}",
+            provider.label(),
+            if on { "on" } else { "off" }
+        ));
+    }
+
+    fn enable_scrobbler(&mut self, provider: crate::activity::Provider) {
+        self.set_scrobbler(provider, true);
+    }
+
+    fn set_scrobbler(&mut self, provider: crate::activity::Provider, on: bool) {
+        self.activity.set_enabled(provider, on);
+        if self.is_mirror() {
+            self.remote(&format!("set-scrobble {} {on}", provider.key()));
+        }
     }
 
     /// Step through how covers are drawn, and remember the choice.

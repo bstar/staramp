@@ -1,5 +1,6 @@
 //! staramp — a Winamp-feel terminal music player for local libraries.
 
+mod activity;
 mod audio;
 mod config;
 mod cue;
@@ -87,6 +88,16 @@ enum ArtCmd {
 }
 
 #[derive(Subcommand)]
+enum ScrobbleCmd {
+    /// Authenticate a provider and store its credentials locally.
+    Auth { provider: activity::Provider },
+    /// Show configured providers and queued submissions.
+    Status,
+    /// Remove a provider's saved credentials and disable it.
+    Logout { provider: activity::Provider },
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// Decode a file to WAV. Diagnostic: proves sample accuracy without
     /// involving any audio hardware.
@@ -150,6 +161,11 @@ enum Command {
     Art {
         #[command(subcommand)]
         cmd: ArtCmd,
+    },
+    /// Configure and inspect listening-history scrobbling.
+    Scrobble {
+        #[command(subcommand)]
+        cmd: ScrobbleCmd,
     },
     /// Run a smart-playlist query against the index.
     Query {
@@ -244,6 +260,11 @@ fn main() -> Result<()> {
         }
         Some(Command::Theme { cmd }) => cmd_theme(cmd),
         Some(Command::Art { cmd }) => cmd_art(cmd),
+        Some(Command::Scrobble { cmd }) => match cmd {
+            ScrobbleCmd::Auth { provider } => activity::auth(provider),
+            ScrobbleCmd::Status => activity::print_status(),
+            ScrobbleCmd::Logout { provider } => activity::logout(provider),
+        },
         Some(Command::Query {
             expr,
             count,

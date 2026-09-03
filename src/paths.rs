@@ -58,6 +58,16 @@ pub fn index_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("index.sqlite"))
 }
 
+/// Listening history and statistics, kept apart from rebuildable indexes.
+pub fn activity_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("activity.sqlite"))
+}
+
+/// Provider tokens and Last.fm application credentials.
+pub fn credentials_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("credentials.toml"))
+}
+
 /// Playlists staramp reads and writes when no `playlist_dir` is configured.
 pub fn playlist_dir() -> Result<PathBuf> {
     Ok(data_dir()?.join("playlists"))

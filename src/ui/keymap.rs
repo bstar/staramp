@@ -30,6 +30,7 @@ pub enum Action {
     ChooseCover,
     RetryCover,
     TogglePlaylistPanel,
+    ToggleScrobblerPanel,
     OpenPlaylistPicker,
     ToggleEqEnabled,
     NextEqPreset,
@@ -45,6 +46,8 @@ pub enum Action {
     FocusPlaylist,
     FocusEqualizer,
     FocusAlbum,
+    FocusScrobbler,
+    OpenPanelSettings,
     CursorUpBig,
     CursorDownBig,
     CursorUp,
@@ -441,6 +444,12 @@ pub const BINDINGS: &[Binding] = &[
         group: "windows",
     },
     Binding {
+        action: Action::ToggleScrobblerPanel,
+        keys: "alt+s",
+        label: "listening history",
+        group: "windows",
+    },
+    Binding {
         action: Action::OpenPlaylistPicker,
         keys: "alt+e",
         label: "choose a playlist",
@@ -460,7 +469,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         action: Action::FocusPlayer,
-        keys: "alt+1..4",
+        keys: "alt+1..5",
         label: "focus a pane",
         group: "windows",
     },
@@ -608,6 +617,7 @@ pub enum Module {
     Playlist,
     Equalizer,
     Album,
+    Scrobbler,
 }
 
 /// The focused panel's own bindings, tried before [`resolve`].
@@ -634,7 +644,16 @@ pub fn module(m: Module, k: KeyEvent) -> Option<Action> {
         Module::Playlist => playlist(k),
         Module::Equalizer => equalizer(k),
         Module::Album => album(k),
+        Module::Scrobbler => scrobbler(k),
     }
+}
+
+fn scrobbler(k: KeyEvent) -> Option<Action> {
+    use KeyCode::*;
+    (!k.modifiers
+        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && k.code == Enter)
+        .then_some(Action::OpenPanelSettings)
 }
 
 /// Seeking, at the two sizes.
@@ -777,6 +796,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('t'), _, _, true) => Action::NextTheme,
         (Char('p'), false, _, false) => Action::TogglePlaylistPanel,
         (Char('e'), _, _, true) => Action::OpenPlaylistPicker,
+        (Char('s'), _, _, true) => Action::ToggleScrobblerPanel,
         (Tab, ..) => Action::FocusNext,
         (BackTab, ..) => Action::FocusPrev,
         // Straight to a panel, opening it if it is shut. Alt because the bare
@@ -786,6 +806,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('2'), false, _, true) => Action::FocusPlaylist,
         (Char('3'), false, _, true) => Action::FocusEqualizer,
         (Char('4'), false, _, true) => Action::FocusAlbum,
+        (Char('5'), false, _, true) => Action::FocusScrobbler,
 
         (Up, false, _, true) => Action::MoveAlbumUp,
         (Down, false, _, true) => Action::MoveAlbumDown,

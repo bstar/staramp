@@ -33,7 +33,7 @@ impl MprisHandle {
 }
 
 /// Always `None`: there is no bus to publish on.
-pub fn spawn(_player: Arc<Player>) -> Option<MprisHandle> {
+pub fn spawn(_player: Arc<Player>, _activity: crate::activity::Control) -> Option<MprisHandle> {
     None
 }
 

@@ -19,6 +19,31 @@ Neither branch is merged.
 
 Start darwin work from `darwin-output-adaptation`, not `main`.
 
+## Building on Linux
+
+Use the Nix flake for all builds and checks. Do not assume `cargo` or the
+system audio dependencies are available in the ambient shell.
+
+```sh
+nix develop -c cargo build --release
+```
+
+Run other Cargo commands through the flake in the same way, for example
+`nix develop -c cargo test --all`.
+
+## Listening history is user data
+
+`activity.sqlite` is deliberately separate from `index.sqlite`. The index is
+rebuildable and a remote index is replaced when it is downloaded; plays,
+skips, and queued scrobbles must survive both. Library connections attach the
+activity database so smart-playlist fields can join `activity.track_stat`.
+
+Only the window that owns playback records activity. Mirroring windows send
+transport and scrobble-setting changes to the owner over IPC; otherwise every
+open TUI would record and submit the same listen. Local history is always on.
+Last.fm and ListenBrainz are optional, independent providers, and credentials
+belong in the mode-0600 `credentials.toml`, never in the ordinary config.
+
 ## Building on macOS
 
 Both routes are verified on `aarch64-darwin`, against Homebrew's ffmpeg 8.1.2

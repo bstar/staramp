@@ -34,6 +34,7 @@ pub struct View {
     pub show_album: bool,
     pub show_equalizer: bool,
     pub show_playlist: bool,
+    pub show_scrobbler: bool,
     /// Bumped on every change, so a window can tell at a glance whether what it
     /// is showing is still current.
     pub revision: u64,
@@ -52,6 +53,7 @@ impl View {
             || self.show_album != other.show_album
             || self.show_equalizer != other.show_equalizer
             || self.show_playlist != other.show_playlist
+            || self.show_scrobbler != other.show_scrobbler
     }
 }
 
@@ -115,6 +117,7 @@ mod tests {
             show_album: true,
             show_equalizer: false,
             show_playlist: true,
+            show_scrobbler: false,
             revision: 7,
         }
     }

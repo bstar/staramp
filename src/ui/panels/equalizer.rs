@@ -65,7 +65,13 @@ pub struct Geometry {
     pub rows: Rect,
 }
 
-pub const PANEL_ROWS: u16 = super::header::ROWS + 8;
+/// The panel's height.
+///
+/// The eight rows the list wants, plus the curve's own. Additive rather than
+/// shared: taking the curve's rows out of the list left it one row tall,
+/// which is not a list. A panel that is open by choice can afford to be the
+/// size of what it shows.
+pub const PANEL_ROWS: u16 = super::header::ROWS + 8 + CURVE_ROWS;
 
 pub fn geometry(area: Rect, profile: &str) -> Option<Geometry> {
     let inner = super::header::body(area);
@@ -420,6 +426,23 @@ mod curve_tests {
         );
     }
 
+    /// The panel as actually laid out has to have room for the curve.
+    ///
+    /// The threshold and the panel height are two numbers in different files
+    /// that have to agree, and nothing else notices when they do not: the
+    /// curve simply is not drawn, and every other test still passes.
+    #[test]
+    fn the_real_panel_is_tall_enough_to_draw_a_curve() {
+        let area = Rect::new(0, 0, 60, PANEL_ROWS);
+        let inner = crate::ui::panels::header::body(area);
+        assert_eq!(
+            curve_rows(inner.height),
+            CURVE_ROWS,
+            "a {PANEL_ROWS}-row panel leaves {} inner rows, not enough for the curve",
+            inner.height
+        );
+    }
+
     /// The curve gives its rows back when the list needs them.
     #[test]
     fn the_curve_yields_to_the_list_in_a_short_panel() {
@@ -428,6 +451,56 @@ mod curve_tests {
         // Not tall enough: the list keeps everything.
         assert_eq!(curve_rows(2 + CURVE_ROWS), 0);
         assert_eq!(curve_rows(4), 0);
+    }
+
+    /// End to end: render the whole panel and confirm the curve is in it.
+    ///
+    /// The unit tests all passed while the curve was never drawn, because
+    /// each of them was right about its own piece. This one renders the
+    /// widget the way the app does.
+    #[test]
+    fn the_panel_actually_shows_the_curve() {
+        use crate::audio::dsp::eq::EqSettings;
+        let theme = crate::theme::builtin::load("cosmic").unwrap();
+        let profile = Profile {
+            name: "t".into(),
+            stages: vec![peaking(1_000.0, 9.0, 1.4)],
+        };
+        let compiled = EqSettings::from_profile(true, &profile, 44_100);
+        let area = Rect::new(0, 0, 60, PANEL_ROWS);
+        let mut buf = Buffer::empty(area);
+        EqView {
+            theme: &theme,
+            profile: &profile,
+            enabled: true,
+            selected: 0,
+            scroll: 0,
+            focused: true,
+            compiled: &compiled,
+            sample_rate: 44_100,
+        }
+        .render(area, &mut buf);
+
+        let braille = (0..PANEL_ROWS)
+            .flat_map(|y| (0..60).map(move |x| (x, y)))
+            .filter(|(x, y)| {
+                buf[(*x, *y)]
+                    .symbol()
+                    .chars()
+                    .next()
+                    .is_some_and(|c| ('\u{2801}'..='\u{28ff}').contains(&c))
+            })
+            .count();
+        assert!(braille > 20, "only {braille} braille cells in the panel");
+
+        // And the list is still a list.
+        let has_row = (0..PANEL_ROWS).any(|y| {
+            (0..60)
+                .map(|x| buf[(x, y)].symbol().to_string())
+                .collect::<String>()
+                .contains("1000")
+        });
+        assert!(has_row, "the filter list is gone");
     }
 
     /// Not an assertion -- run with `--nocapture` to look at the plot.

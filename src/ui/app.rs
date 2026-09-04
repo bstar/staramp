@@ -181,6 +181,24 @@ struct SettingsState {
     scroll: usize,
 }
 
+enum PlaylistAddStep {
+    Menu,
+    Destinations(Vec<crate::playlist::add::Destination>),
+    Matches(crate::playlist::add::Destination),
+    Confirm {
+        destination: crate::playlist::add::Destination,
+        matched: crate::playlist::add::TrackMatch,
+    },
+}
+
+/// The track captured by a right click and the modal reached from it.
+struct PlaylistAddState {
+    source: QueueItem,
+    step: PlaylistAddStep,
+    cursor: usize,
+    scroll: usize,
+}
+
 /// Every setting that outlives the session, as `config.toml` last had it.
 ///
 /// One place that knows what persists, diffed on the save timer rather than a
@@ -510,7 +528,7 @@ mod tests {
         network_scrobblers, shifted_history_offset, slider_fraction, snap, status_indicators,
         step_toward, track_line, KEY_VOLUME_STEP, MIN_HEIGHT, MIN_WIDTH, VOLUME_STEP,
     };
-    use super::{resume_playlist_path, PlaylistEntry};
+    use super::{resume_playlist_path, App, PlaylistAddState, PlaylistAddStep, PlaylistEntry};
     use crate::playlist::queue::RepeatMode;
     use crate::vis::mode::VisMode;
     use ratatui::layout::Rect;
@@ -831,6 +849,34 @@ mod tests {
     fn padding_never_underflows_on_a_tiny_terminal() {
         assert_eq!(clamp_padding(8, 10, MIN_WIDTH), 0);
         assert_eq!(clamp_padding(8, 0, MIN_HEIGHT), 0);
+    }
+
+    #[test]
+    fn matching_destinations_are_starred_and_name_the_format() {
+        let source = crate::playlist::queue::QueueItem::new(crate::playlist::uri::TrackUri::parse(
+            "new.flac",
+        ));
+        let state = PlaylistAddState {
+            source,
+            step: PlaylistAddStep::Destinations(vec![crate::playlist::add::Destination {
+                name: "epic".into(),
+                path: PathBuf::from("epic.m3u"),
+                tracks: 10,
+                matches: vec![crate::playlist::add::TrackMatch {
+                    index: 4,
+                    kind: crate::playlist::add::MatchKind::Similar,
+                    uri: "old.mp3".into(),
+                    title: "Song".into(),
+                    artist: "Artist".into(),
+                    codec: "mp3".into(),
+                }],
+            }]),
+            cursor: 0,
+            scroll: 0,
+        };
+        let (_, _, rows) = App::playlist_add_rows(&state);
+        assert_eq!(rows[0].label, "★ epic");
+        assert_eq!(rows[0].value, "similar · MP3");
     }
 }
 
@@ -1279,6 +1325,8 @@ struct Overlays {
     chooser: Option<Chooser>,
     /// A panel's settings, open over everything.
     settings: Option<SettingsState>,
+    /// Context menu and destination flow for one right-clicked track.
+    playlist_add: Option<PlaylistAddState>,
     /// A previous session offered but not yet accepted or declined.
     resume: Option<Session>,
     /// The library browser, when it is open. Per window, not shared.
@@ -1420,6 +1468,71 @@ impl App {
                 self.over.library = Some(crate::ui::panels::library::Library::new(m));
             }
             Err(e) => self.note(format!("cannot read the index: {e}")),
+        }
+    }
+
+    fn browse_model(&mut self) -> Result<Arc<crate::library::browse::Model>> {
+        if let Some(model) = self.over.browse.clone() {
+            return Ok(model);
+        }
+        let index = self.player.vfs().index_path()?;
+        let db = crate::library::db::Db::open_readonly(&index)?;
+        let model = Arc::new(crate::library::browse::Model::load(&db)?);
+        self.over.browse = Some(Arc::clone(&model));
+        Ok(model)
+    }
+
+    fn playlist_directory(&self) -> Option<PathBuf> {
+        self.queue
+            .source
+            .as_ref()
+            .and_then(|p| p.parent())
+            .map(PathBuf::from)
+            .or_else(|| crate::paths::playlist_dir().ok())
+    }
+
+    fn open_track_menu(&mut self, source: QueueItem) {
+        self.over.settings = None;
+        self.over.playlist_add = Some(PlaylistAddState {
+            source,
+            step: PlaylistAddStep::Menu,
+            cursor: 0,
+            scroll: 0,
+        });
+    }
+
+    fn open_playlist_destinations(&mut self) {
+        let source = match &self.over.playlist_add {
+            Some(state) => state.source.clone(),
+            None => return,
+        };
+        let Some(dir) = self.playlist_directory() else {
+            self.over.playlist_add = None;
+            return self.note("no playlist directory configured".into());
+        };
+        let model = match self.browse_model() {
+            Ok(model) => model,
+            Err(error) => {
+                self.over.playlist_add = None;
+                return self.note(format!("cannot read the library index: {error}"));
+            }
+        };
+        match crate::playlist::add::scan(&dir, &model, &source) {
+            Ok(destinations) if destinations.is_empty() => {
+                self.over.playlist_add = None;
+                self.note("no playlists found".into());
+            }
+            Ok(destinations) => {
+                if let Some(state) = &mut self.over.playlist_add {
+                    state.step = PlaylistAddStep::Destinations(destinations);
+                    state.cursor = 0;
+                    state.scroll = 0;
+                }
+            }
+            Err(error) => {
+                self.over.playlist_add = None;
+                self.note(format!("cannot list playlists: {error}"));
+            }
         }
     }
 
@@ -3290,6 +3403,227 @@ impl App {
         self.fx.running = Some(e);
     }
 
+    fn playlist_add_len(state: &PlaylistAddState) -> usize {
+        match &state.step {
+            PlaylistAddStep::Menu => 1,
+            PlaylistAddStep::Destinations(entries) => entries.len(),
+            PlaylistAddStep::Matches(destination) => destination.matches.len(),
+            PlaylistAddStep::Confirm { matched, .. } => {
+                if matched.kind == crate::playlist::add::MatchKind::Similar {
+                    3
+                } else {
+                    2
+                }
+            }
+        }
+    }
+
+    fn move_playlist_add(&mut self, delta: i32) {
+        let Some(state) = &mut self.over.playlist_add else {
+            return;
+        };
+        let last = Self::playlist_add_len(state).saturating_sub(1) as i32;
+        state.cursor = (state.cursor as i32 + delta).clamp(0, last) as usize;
+    }
+
+    fn handle_playlist_add(&mut self, action: Action) -> bool {
+        use Action::*;
+        if self.over.playlist_add.is_none() {
+            return false;
+        }
+        let last = self
+            .over
+            .playlist_add
+            .as_ref()
+            .map(Self::playlist_add_len)
+            .unwrap_or(1)
+            .saturating_sub(1) as i32;
+        match action {
+            CursorUp => self.move_playlist_add(-1),
+            CursorDown => self.move_playlist_add(1),
+            PageUp | Home => self.move_playlist_add(-last - 1),
+            PageDown | End => self.move_playlist_add(last + 1),
+            Activate => self.take_playlist_add(),
+            CloseOverlay => self.over.playlist_add = None,
+            Quit => self.quit = true,
+            _ => {}
+        }
+        true
+    }
+
+    fn take_playlist_add(&mut self) {
+        let Some(mut state) = self.over.playlist_add.take() else {
+            return;
+        };
+        match state.step {
+            PlaylistAddStep::Menu => {
+                self.over.playlist_add = Some(state);
+                self.open_playlist_destinations();
+            }
+            PlaylistAddStep::Destinations(ref entries) => {
+                let Some(destination) = entries.get(state.cursor).cloned() else {
+                    self.over.playlist_add = Some(state);
+                    return;
+                };
+                match destination.matches.len() {
+                    0 => self.apply_playlist_destination(destination, None, false, state.source),
+                    1 => {
+                        let matched = destination.matches[0].clone();
+                        state.step = PlaylistAddStep::Confirm {
+                            destination,
+                            matched: matched.clone(),
+                        };
+                        state.cursor = if matched.kind == crate::playlist::add::MatchKind::Similar {
+                            2
+                        } else {
+                            1
+                        };
+                        state.scroll = 0;
+                        self.over.playlist_add = Some(state);
+                    }
+                    _ => {
+                        state.step = PlaylistAddStep::Matches(destination);
+                        state.cursor = 0;
+                        state.scroll = 0;
+                        self.over.playlist_add = Some(state);
+                    }
+                }
+            }
+            PlaylistAddStep::Matches(ref destination) => {
+                let Some(matched) = destination.matches.get(state.cursor).cloned() else {
+                    self.over.playlist_add = Some(state);
+                    return;
+                };
+                state.step = PlaylistAddStep::Confirm {
+                    destination: destination.clone(),
+                    matched: matched.clone(),
+                };
+                state.cursor = if matched.kind == crate::playlist::add::MatchKind::Similar {
+                    2
+                } else {
+                    1
+                };
+                state.scroll = 0;
+                self.over.playlist_add = Some(state);
+            }
+            PlaylistAddStep::Confirm {
+                ref destination,
+                ref matched,
+            } => {
+                let similar = matched.kind == crate::playlist::add::MatchKind::Similar;
+                let action = state.cursor;
+                if (similar && action == 2) || (!similar && action == 1) {
+                    return;
+                }
+                let destination = destination.clone();
+                let matched = matched.clone();
+                if similar && action == 0 {
+                    self.apply_playlist_destination(
+                        destination,
+                        Some(matched),
+                        false,
+                        state.source,
+                    );
+                } else {
+                    self.apply_playlist_destination(destination, None, true, state.source);
+                }
+            }
+        }
+    }
+
+    fn apply_playlist_destination(
+        &mut self,
+        mut destination: crate::playlist::add::Destination,
+        replacement: Option<crate::playlist::add::TrackMatch>,
+        allow_duplicate: bool,
+        source: QueueItem,
+    ) {
+        let active = self.queue.source.as_ref() == Some(&destination.path);
+        if active && self.queue.dirty {
+            return self.note("save the current playlist before editing it on disk".into());
+        }
+
+        let model = match self.browse_model() {
+            Ok(model) => model,
+            Err(error) => return self.note(format!("cannot read the library index: {error}")),
+        };
+        let current = match crate::playlist::m3u::read_file(&destination.path) {
+            Ok(playlist) => playlist,
+            Err(error) => return self.note(format!("cannot read {}: {error}", destination.name)),
+        };
+        destination.tracks = current.items.len();
+        destination.matches = crate::playlist::add::matches(&model, &source, &current);
+
+        if replacement.is_none() && !allow_duplicate && !destination.matches.is_empty() {
+            let matched = destination.matches[0].clone();
+            let multiple = destination.matches.len() > 1;
+            self.over.playlist_add = Some(PlaylistAddState {
+                source,
+                step: if multiple {
+                    PlaylistAddStep::Matches(destination)
+                } else {
+                    PlaylistAddStep::Confirm {
+                        destination,
+                        matched: matched.clone(),
+                    }
+                },
+                cursor: if multiple {
+                    0
+                } else if matched.kind == crate::playlist::add::MatchKind::Similar {
+                    2
+                } else {
+                    1
+                },
+                scroll: 0,
+            });
+            return self.note("that playlist changed; review the match".into());
+        }
+
+        let result = match &replacement {
+            Some(matched) => crate::playlist::add::replace(&destination.path, matched, &source),
+            None => crate::playlist::add::append(&destination.path, &source),
+        };
+        let changed = match result {
+            Ok(changed) => changed,
+            Err(error) => {
+                return self.note(format!("could not update {}: {error}", destination.name))
+            }
+        };
+
+        if active {
+            if self.session.link.is_none() {
+                let mut queue = self.player.queue.lock().unwrap();
+                match replacement {
+                    Some(_) => {
+                        queue.replace_at(changed, source.clone());
+                    }
+                    None => queue.push(source.clone()),
+                }
+                self.queue.dirty = false;
+            } else {
+                let reply = self.session.link.as_ref().and_then(|link| {
+                    link.ask(&format!("refresh-playlist {}", destination.path.display()))
+                });
+                if !matches!(reply.as_deref().map(str::trim), Some("ok")) {
+                    return self.note(
+                        "playlist saved, but the playing session could not refresh it".into(),
+                    );
+                }
+            }
+        }
+        self.rescan_playlists();
+        let verb = if replacement.is_some() {
+            "replaced"
+        } else {
+            "added"
+        };
+        let track = source
+            .title
+            .as_deref()
+            .unwrap_or_else(|| source.uri.backing_path());
+        self.note(format!("{verb} {track} in {}", destination.name));
+    }
+
     /// Tell the desktop about anything that changed since the last frame.
     fn publish_mpris(&mut self) {
         let Some(m) = &self.mpris else { return };
@@ -3303,6 +3637,10 @@ impl App {
 
     fn handle(&mut self, action: Action) {
         use Action::*;
+
+        if self.handle_playlist_add(action) {
+            return;
+        }
 
         // The picker is modal: it owns navigation while open, so `enter` loads
         // a playlist rather than playing whatever the queue cursor was on.
@@ -4022,6 +4360,9 @@ impl App {
         if self.over.settings.is_some() {
             return self.settings_mouse(m, r.area);
         }
+        if self.over.playlist_add.is_some() {
+            return self.playlist_add_mouse(m, r.area);
+        }
         if self.over.chooser.is_some() {
             return;
         }
@@ -4215,10 +4556,21 @@ impl App {
                 }
             }
 
-            // A right click on the player toggles playback: the one gesture
-            // worth having without aiming at a two-cell button.
-            MouseEventKind::Down(MouseButton::Right) if hit(r.player, x, y) => {
-                self.handle(Action::PlayPause)
+            MouseEventKind::Down(MouseButton::Right) => {
+                if let Some(rect) = r.playlist {
+                    if let Some(index) = self.playlist_track_at(rect, x, y) {
+                        let source = self.queue.items.get(index).cloned();
+                        if let Some(source) = source {
+                            self.panels.focus = Focus::Playlist;
+                            self.set_cursor(index);
+                            return self.open_track_menu(source);
+                        }
+                    }
+                }
+                // The player keeps its easy play/pause gesture.
+                if hit(r.player, x, y) {
+                    self.handle(Action::PlayPause);
+                }
             }
             _ => {}
         }
@@ -4702,6 +5054,46 @@ impl App {
         }
     }
 
+    fn playlist_track_at(&self, rect: Rect, x: u16, y: u16) -> Option<usize> {
+        let inner = playlist::list_rect(rect);
+        if !hit(inner, x, y) {
+            return None;
+        }
+        let row = self.queue.scroll + (y - inner.y) as usize;
+        match self.queue.rows.rows().get(row) {
+            Some(&playlist::Row::Track(index)) if index < self.queue.items.len() => Some(index),
+            _ => None,
+        }
+    }
+
+    fn playlist_add_mouse(&mut self, m: MouseEvent, area: Rect) {
+        let Some(state) = &self.over.playlist_add else {
+            return;
+        };
+        let rows = Self::playlist_add_len(state);
+        let scroll = state.scroll;
+        match m.kind {
+            MouseEventKind::ScrollUp => self.move_playlist_add(-3),
+            MouseEventKind::ScrollDown => self.move_playlist_add(3),
+            MouseEventKind::Down(MouseButton::Left) => {
+                let inner = settings::list_rect(area, rows);
+                if !hit(inner, m.column, m.row) {
+                    self.over.playlist_add = None;
+                    return;
+                }
+                let index = scroll + (m.row - inner.y) as usize;
+                if index >= rows {
+                    return;
+                }
+                if let Some(state) = &mut self.over.playlist_add {
+                    state.cursor = index;
+                }
+                self.take_playlist_add();
+            }
+            _ => {}
+        }
+    }
+
     /// The settings list under the pointer.
     ///
     /// A single click acts, unlike the playlist picker where one selects and
@@ -5077,6 +5469,124 @@ impl App {
         }
     }
 
+    fn playlist_add_rows(state: &PlaylistAddState) -> (&'static str, String, Vec<settings::Row>) {
+        use crate::playlist::add::MatchKind;
+        let track = state
+            .source
+            .title
+            .clone()
+            .unwrap_or_else(|| state.source.uri.to_string());
+        match &state.step {
+            PlaylistAddStep::Menu => (
+                "TRACK",
+                track,
+                vec![settings::Row::action("add to playlist…")],
+            ),
+            PlaylistAddStep::Destinations(destinations) => (
+                "ADD TO PLAYLIST",
+                track,
+                destinations
+                    .iter()
+                    .map(|destination| {
+                        let exact = destination
+                            .matches
+                            .iter()
+                            .any(|m| m.kind == MatchKind::Exact);
+                        let codecs: Vec<String> = destination
+                            .matches
+                            .iter()
+                            .filter(|m| !m.codec.is_empty())
+                            .map(|m| codec_label(&m.codec))
+                            .collect();
+                        let value = if destination.matches.is_empty() {
+                            format!("{} tracks", destination.tracks)
+                        } else {
+                            let kind = if exact { "exact" } else { "similar" };
+                            let codec = if codecs.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" · {}", codecs.join("/"))
+                            };
+                            format!("{kind}{codec}")
+                        };
+                        settings::Row::setting(
+                            &format!(
+                                "{}{}",
+                                if destination.matches.is_empty() {
+                                    ""
+                                } else {
+                                    "★ "
+                                },
+                                destination.name
+                            ),
+                            value,
+                        )
+                    })
+                    .collect(),
+            ),
+            PlaylistAddStep::Matches(destination) => (
+                "CHOOSE VERSION",
+                format!(
+                    "{} has {} matches",
+                    destination.name,
+                    destination.matches.len()
+                ),
+                destination
+                    .matches
+                    .iter()
+                    .map(|matched| {
+                        let label = if matched.artist.is_empty() {
+                            format!("#{} {}", matched.index + 1, matched.title)
+                        } else {
+                            format!(
+                                "#{} {} — {}",
+                                matched.index + 1,
+                                matched.artist,
+                                matched.title
+                            )
+                        };
+                        let kind = if matched.kind == MatchKind::Exact {
+                            "exact"
+                        } else {
+                            "similar"
+                        };
+                        let value = if matched.codec.is_empty() {
+                            kind.into()
+                        } else {
+                            format!("{kind} · {}", codec_label(&matched.codec))
+                        };
+                        settings::Row::setting(&label, value)
+                    })
+                    .collect(),
+            ),
+            PlaylistAddStep::Confirm {
+                destination,
+                matched,
+            } => {
+                let similar = matched.kind == MatchKind::Similar;
+                let mut rows = Vec::new();
+                if similar {
+                    rows.push(settings::Row::action(format!(
+                        "replace #{} in place",
+                        matched.index + 1
+                    )));
+                }
+                rows.push(settings::Row::action("add anyway"));
+                rows.push(settings::Row::action("cancel"));
+                (
+                    "ALREADY THERE",
+                    format!(
+                        "{}: {} {}",
+                        destination.name,
+                        if similar { "similar" } else { "exact" },
+                        matched.title
+                    ),
+                    rows,
+                )
+            }
+        }
+    }
+
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
         if let Some(input) = &self.edit.eq_value {
@@ -5168,6 +5678,21 @@ impl App {
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
+            }
+            .render(area, buf);
+            return;
+        }
+        if let Some(state) = &mut self.over.playlist_add {
+            let (heading, title, rows) = Self::playlist_add_rows(state);
+            let height = settings::list_rect(area, rows.len()).height as usize;
+            state.scroll = settings::clamp_scroll(state.cursor, state.scroll, height);
+            SettingsView {
+                theme: &self.look.theme,
+                heading,
+                title: &title,
+                rows: &rows,
+                cursor: state.cursor,
+                scroll: state.scroll,
             }
             .render(area, buf);
             return;

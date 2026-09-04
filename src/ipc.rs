@@ -588,6 +588,24 @@ fn handle_with_activity(
                 Err(e) => format!("error: {e}"),
             }
         }
+        // An already loaded playlist was edited by a following window. Keep
+        // the playing row rather than treating this as a new queue.
+        "refresh-playlist" => {
+            let Some(path) = rest else {
+                return "error: refresh-playlist needs a file".into();
+            };
+            let active = view.lock().ok().is_some_and(|v| v.playlist_path == path);
+            if !active {
+                return "error: that playlist is not active".into();
+            }
+            match crate::load_playlist(std::path::Path::new(path)) {
+                Ok(items) => {
+                    player.refresh_queue_tracks(items);
+                    "ok".into()
+                }
+                Err(e) => format!("error: {e}"),
+            }
+        }
         // Adding from the browser in a window that follows the session. The
         // URIs come as a JSON array because a path may contain anything,
         // spaces included, and the protocol splits on whitespace.
@@ -1180,6 +1198,44 @@ mod tests {
         )
         .starts_with("error:"));
         assert!(handle(&player, &crate::view::shared(), "play-uri").starts_with("error:"));
+    }
+
+    #[test]
+    fn refreshing_the_active_playlist_keeps_the_playing_track() {
+        use crate::playlist::queue::QueueItem;
+        use crate::playlist::uri::TrackUri;
+
+        let dir = std::env::temp_dir().join(format!(
+            "staramp-refresh-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("epic.m3u");
+        std::fs::write(&path, "x.flac\na.flac\nb.flac\n").unwrap();
+
+        let player = Arc::new(Player::detached());
+        player.queue.lock().unwrap().set_tracks(vec![
+            QueueItem::new(TrackUri::parse("a.flac")),
+            QueueItem::new(TrackUri::parse("b.flac")),
+        ]);
+        player.queue.lock().unwrap().jump_to(1);
+        let view = crate::view::shared();
+        view.lock().unwrap().playlist_path = path.display().to_string();
+
+        assert_eq!(
+            handle(
+                &player,
+                &view,
+                &format!("refresh-playlist {}", path.display())
+            ),
+            "ok"
+        );
+        let queue = player.queue.lock().unwrap();
+        assert_eq!(queue.len(), 3);
+        assert_eq!(queue.current().unwrap().uri.to_string(), "b.flac");
+        drop(queue);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

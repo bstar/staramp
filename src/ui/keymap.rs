@@ -116,6 +116,11 @@ pub const MOUSE: &[MouseHelp] = &[
         group: "playlist",
     },
     MouseHelp {
+        gesture: "right click",
+        label: "add to a playlist",
+        group: "playlist",
+    },
+    MouseHelp {
         gesture: "click `filter`",
         label: "order the playlist",
         group: "playlist",

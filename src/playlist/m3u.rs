@@ -21,6 +21,8 @@ use super::uri::TrackUri;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaylistItem {
     pub uri: TrackUri,
+    /// Blank lines and non-EXT comments immediately before this entry.
+    pub before: Vec<String>,
     /// The line exactly as it appeared, for lossless write-back.
     pub raw_line: String,
     /// From `#EXTINF`, when present.
@@ -33,6 +35,8 @@ pub struct Playlist {
     pub name: String,
     pub source_path: Option<PathBuf>,
     pub items: Vec<PlaylistItem>,
+    /// Blank lines and comments after the final entry.
+    pub trailing: Vec<String>,
     /// Whether the source carried an `#EXTM3U` header, so write-back can match.
     pub extended: bool,
 }
@@ -65,12 +69,14 @@ pub fn parse(text: &str) -> Playlist {
     let mut pl = Playlist::default();
     let mut pending_title: Option<String> = None;
     let mut pending_duration: Option<i64> = None;
+    let mut pending_lines = Vec::new();
 
     for raw in text.lines() {
         let line = raw.trim_end_matches(['\r', '\n']);
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
+            pending_lines.push(line.to_string());
             continue;
         }
         if trimmed.starts_with('#') {
@@ -84,17 +90,21 @@ pub fn parse(text: &str) -> Playlist {
                 };
                 pending_duration = dur.map(|d| d as i64);
                 pending_title = title.filter(|t| !t.is_empty());
+            } else {
+                pending_lines.push(line.to_string());
             }
             continue;
         }
 
         pl.items.push(PlaylistItem {
             uri: TrackUri::parse(trimmed),
+            before: std::mem::take(&mut pending_lines),
             raw_line: line.to_string(),
             ext_title: pending_title.take(),
             ext_duration_secs: pending_duration.take(),
         });
     }
+    pl.trailing = pending_lines;
 
     pl
 }
@@ -122,6 +132,10 @@ pub fn write_string(pl: &Playlist, style: WriteStyle) -> String {
         out.push_str("#EXTM3U\n");
     }
     for item in &pl.items {
+        for line in &item.before {
+            out.push_str(line);
+            out.push('\n');
+        }
         if extended {
             let dur = item.ext_duration_secs.unwrap_or(-1);
             match &item.ext_title {
@@ -132,6 +146,10 @@ pub fn write_string(pl: &Playlist, style: WriteStyle) -> String {
         // The raw line, not a re-rendered URI: that is what makes write-back
         // lossless for entries we could not resolve.
         out.push_str(&item.raw_line);
+        out.push('\n');
+    }
+    for line in &pl.trailing {
+        out.push_str(line);
         out.push('\n');
     }
     out
@@ -165,12 +183,14 @@ pub fn from_uris(name: &str, uris: impl Iterator<Item = TrackUri>) -> Playlist {
         source_path: None,
         items: uris
             .map(|uri| PlaylistItem {
+                before: Vec::new(),
                 raw_line: uri.to_string(),
                 uri,
                 ext_title: None,
                 ext_duration_secs: None,
             })
             .collect(),
+        trailing: Vec::new(),
         extended: false,
     }
 }
@@ -248,6 +268,14 @@ mod tests {
         let pl = parse(src);
         assert_eq!(pl.len(), 2);
         assert_eq!(write_string(&pl, WriteStyle::MpdCompatible), src);
+    }
+
+    #[test]
+    fn preserves_comments_and_blank_lines_around_entries() {
+        let src =
+            "# curator's note\n\nfirst.flac\n# keep this pair together\nsecond.flac\n\n# footer\n";
+        let pl = parse(src);
+        assert_eq!(write_string(&pl, WriteStyle::Preserve), src);
     }
 
     #[test]

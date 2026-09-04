@@ -359,6 +359,7 @@ The pointer works everywhere the keyboard does.
 | playlist  | wheel                      | scroll the list                 |
 | playlist  | click                      | select a track                  |
 | playlist  | double click               | play it                         |
+| playlist  | right click                | add it to another playlist      |
 | playlist  | click `filter`             | order the playlist              |
 | player    | click a transport button   | that button                     |
 | player    | click `SHUF` / `REP`       | toggle                          |
@@ -377,6 +378,11 @@ The pointer works everywhere the keyboard does.
 | overlays  | click outside              | close the picker                |
 | overlays  | click `close` on a header  | close that panel                |
 | overlays  | click `settings` on a header | what that panel controls      |
+
+Adding to another playlist writes that M3U immediately. A starred destination
+already contains either the same library entry or a likely alternate encoding
+of it. Staramp warns before adding a duplicate and can replace an alternate
+version at the same playlist position.
 
 ## Theming
 

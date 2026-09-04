@@ -272,6 +272,41 @@ impl Queue {
         self.revision += 1;
     }
 
+    /// Reload an edited playlist while keeping the current decoder's place.
+    pub fn refresh_tracks(&mut self, tracks: Vec<QueueItem>) {
+        let current = self.current_index().and_then(|index| {
+            let uri = self.tracks.get(index)?.uri.to_string();
+            let occurrence = self.tracks[..=index]
+                .iter()
+                .filter(|item| item.uri.to_string() == uri)
+                .count()
+                .saturating_sub(1);
+            Some((uri, occurrence))
+        });
+        let old_position = self.pos;
+        self.tracks = tracks;
+        self.order = (0..self.tracks.len()).collect();
+        self.play_next.clear();
+        self.from_queue = false;
+        self.pos = current
+            .as_ref()
+            .and_then(|(uri, occurrence)| {
+                self.tracks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.uri.to_string() == *uri)
+                    .nth(*occurrence)
+                    .map(|(index, _)| index)
+            })
+            .unwrap_or_else(|| old_position.min(self.tracks.len().saturating_sub(1)));
+        if self.shuffle {
+            self.reshuffle_pinning_current();
+        } else {
+            self.resequence();
+        }
+        self.revision += 1;
+    }
+
     /// Put the queue in album order, or take it out of one.
     ///
     /// Does not interrupt what is playing: the track keeps playing and `pos`
@@ -314,6 +349,19 @@ impl Queue {
         self.tracks.push(item);
         self.order.push(self.tracks.len() - 1);
         self.revision += 1;
+    }
+
+    /// Replace one storage row without disturbing playback or ordering.
+    ///
+    /// Used when an on-disk playlist replaces an alternate encoding in place.
+    /// Indices stay valid, including the current and play-next pointers.
+    pub fn replace_at(&mut self, index: usize, item: QueueItem) -> bool {
+        let Some(slot) = self.tracks.get_mut(index) else {
+            return false;
+        };
+        *slot = item;
+        self.revision += 1;
+        true
     }
 
     /// Rebuild `tracks` from `keep`, and carry everything that points into it.
@@ -1251,6 +1299,26 @@ mod tests {
         assert_eq!(q.len(), 3);
         assert_eq!(shown(&q), ["a", "c", "e"]);
         assert!(super::super::group::is_permutation(q.view(), q.len()));
+    }
+
+    #[test]
+    fn refreshing_tracks_keeps_the_playing_uri_selected() {
+        let mut q = Queue::with_seed(1);
+        q.set_tracks(named(&["a", "b", "c"]));
+        q.jump_to(1);
+        q.refresh_tracks(named(&["x", "a", "b", "c"]));
+        assert_eq!(q.current().unwrap().uri.to_string(), "b");
+        assert!(super::super::group::is_permutation(q.view(), q.len()));
+    }
+
+    #[test]
+    fn replacing_a_storage_row_does_not_move_the_playing_position() {
+        let mut q = Queue::with_seed(1);
+        q.set_tracks(named(&["a", "old.mp3", "c"]));
+        q.jump_to(2);
+        assert!(q.replace_at(1, named(&["new.flac"]).remove(0)));
+        assert_eq!(shown(&q), ["a", "new.flac", "c"]);
+        assert_eq!(q.current().unwrap().uri.to_string(), "c");
     }
 
     #[test]

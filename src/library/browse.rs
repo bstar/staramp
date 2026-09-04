@@ -105,6 +105,8 @@ pub struct Track {
     /// apart -- see [`Model::build`].
     pub sheet: Option<Arc<str>>,
     pub codec: Arc<str>,
+    /// Stable recording identity from the file's tags, when present.
+    pub mb_recording_id: Option<Arc<str>>,
     /// Index into [`Model::albums`].
     pub album: u32,
     pub artist_from: Source,
@@ -190,6 +192,7 @@ struct Raw {
     dir: String,
     sheet: Option<String>,
     codec: String,
+    mb_recording_id: Option<String>,
     canonical: bool,
     artist_from: Source,
     album_from: Source,
@@ -209,7 +212,9 @@ impl Model {
         let sql = format!(
             "SELECT t.uri, t.title, t.artist, t.album_artist, t.album,
                     COALESCE(t.year, b.year), t.disc_no, t.track_no, t.duration_ms,
-                    t.codec, t.file_id, t.start_frame, t.end_frame,
+                    COALESCE(NULLIF(t.codec, 'cue'), b.codec),
+                    COALESCE(t.mb_recording_id, b.mb_recording_id),
+                    t.file_id, t.start_frame, t.end_frame,
                     f.dir_id, d.rel_path, c.rel_path,
                     ({CANONICAL}) AS canonical
                FROM track t
@@ -244,15 +249,16 @@ impl Model {
                     unplayable: false,
                 },
                 span: Span {
-                    file_id: r.get(10)?,
-                    start_frame: r.get(11)?,
-                    end_frame: r.get(12)?,
+                    file_id: r.get(11)?,
+                    start_frame: r.get(12)?,
+                    end_frame: r.get(13)?,
                 },
-                dir_id: r.get(13)?,
-                dir: r.get(14)?,
-                sheet: r.get(15)?,
+                dir_id: r.get(14)?,
+                dir: r.get(15)?,
+                sheet: r.get(16)?,
                 codec: r.get::<_, Option<String>>(9)?.unwrap_or_default(),
-                canonical: r.get::<_, i64>(16)? != 0,
+                mb_recording_id: r.get(10)?,
+                canonical: r.get::<_, i64>(17)? != 0,
                 artist_from: Source::Tag,
                 album_from: Source::Tag,
                 year_from: Source::Tag,
@@ -285,6 +291,7 @@ impl Model {
                 dir: r.dir.into(),
                 sheet: r.sheet.map(Arc::from),
                 codec: r.codec.into(),
+                mb_recording_id: r.mb_recording_id.map(Arc::from),
                 album: 0,
                 artist_from: r.artist_from,
                 album_from: r.album_from,

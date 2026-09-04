@@ -1,3 +1,4 @@
+pub mod add;
 pub mod filter;
 pub mod group;
 pub mod m3u;

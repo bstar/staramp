@@ -246,6 +246,10 @@ impl Player {
         self.queue.lock().unwrap().set_tracks(items);
     }
 
+    pub fn refresh_queue_tracks(&self, items: Vec<QueueItem>) {
+        self.queue.lock().unwrap().refresh_tracks(items);
+    }
+
     pub fn toggle_shuffle(&self) -> bool {
         // Only protect the current track if there actually is one. Pinning with
         // nothing playing makes every shuffle start on the same track.

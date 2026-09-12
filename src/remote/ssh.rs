@@ -139,6 +139,12 @@ pub fn master_argv(host: &str, ctl: &Path) -> Vec<String> {
         // Never prompt: there is a full-screen UI on this terminal, and a
         // password prompt drawn under it is invisible and unanswerable.
         "BatchMode=yes".to_string(),
+        // The user's own `StrictHostKeyChecking no` -- set for a lab machine
+        // years ago and forgotten -- would otherwise apply here too, and
+        // silently accept a new key for a host whose music this is about to
+        // play. BatchMode already turns the prompt into a refusal; this makes
+        // the refusal the policy rather than a side effect.
+        "StrictHostKeyChecking=yes".to_string(),
         // FLAC, WavPack and DSD are already compressed. zlib would spend CPU
         // on both machines to make the stream very slightly larger.
         "Compression=no".to_string(),
@@ -328,7 +334,10 @@ impl Master {
                 .name("staramp-ssh-log".into())
                 .spawn(move || {
                     for line in BufReader::new(err).lines().map_while(Result::ok) {
-                        tracing::debug!("ssh: {line}");
+                        // Filtered: a server can put anything in a banner or
+                        // an auth message, and whoever later reads the log is
+                        // doing so in a terminal.
+                        tracing::debug!("ssh: {}", crate::util::printable(&line));
                         let mut n = notes.lock().unwrap();
                         n.push_str(&line);
                         n.push('\n');

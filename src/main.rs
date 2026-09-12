@@ -1947,7 +1947,10 @@ fn cmd_theme(cmd: ThemeCmd) -> Result<()> {
 
             let dir = paths::config_dir()?.join("themes");
             std::fs::create_dir_all(&dir)?;
-            let id = name.to_lowercase().replace(' ', "-");
+            // `--name ../../../../tmp/x` would otherwise write there. Self
+            // inflicted, but the APO importer already refuses the same shape
+            // and two spellings of one rule is how one of them goes wrong.
+            let id = theme::safe_id(&name)?;
             let out = dir.join(format!("{id}.toml"));
             std::fs::write(&out, &toml)?;
             println!("wrote {}", out.display());

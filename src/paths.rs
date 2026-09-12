@@ -242,6 +242,16 @@ pub fn migrate_legacy() -> Vec<String> {
 }
 
 fn copy_recursive(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    // The same refusal the import copier makes, for the same reason: `is_dir`
+    // and `copy` both follow a link, and `remove_file` then deletes the link
+    // rather than what it pointed at. Migrating an old install is a smaller
+    // blast radius than an import, but not a different rule.
+    if from.symlink_metadata()?.file_type().is_symlink() {
+        return Err(std::io::Error::other(format!(
+            "refusing to follow symlink {}",
+            from.display()
+        )));
+    }
     if from.is_dir() {
         std::fs::create_dir_all(to)?;
         for entry in std::fs::read_dir(from)? {

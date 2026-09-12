@@ -96,8 +96,23 @@ chmod +x "$appdir/AppRun"
 # The type-2 runtime, downloaded rather than executed: this is the small ELF
 # that gets prepended to the filesystem image and does the mounting at run
 # time. Nothing here has to run it, which is the point.
+#
+# Pinned to a dated tag and checksummed, because it is the first code that runs
+# when anybody opens this AppImage. `continuous` is a rolling tag GitHub
+# rewrites in place: a build that consumes it produces an artifact nobody can
+# reproduce, and the provenance attestation would faithfully attest a build
+# that pulled in whatever was at that URL on the day. The checksum is verified
+# before the file is made executable, so bad bytes never reach `cat` below.
+#
+# To move it: pick a tag from
+# https://github.com/AppImage/type2-runtime/releases, download its
+# runtime-x86_64, and put its `sha256sum` here.
+runtime_tag=20251108
+runtime_sha256=2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d
+
 curl -fsSL -o "$work/runtime" \
-  https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+  "https://github.com/AppImage/type2-runtime/releases/download/$runtime_tag/runtime-x86_64"
+echo "$runtime_sha256  $work/runtime" | sha256sum -c -
 chmod +x "$work/runtime"
 
 # gzip rather than zstd: every AppImage runtime in the wild can read it, and

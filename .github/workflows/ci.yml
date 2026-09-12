@@ -18,11 +18,16 @@ on:
   workflow_call:
   workflow_dispatch:
 
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -30,10 +35,10 @@ jobs:
             pkg-config clang libclang-dev \
             libasound2-dev libdbus-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: ./scripts/check-version.sh
       - run: cargo fmt --check
       # dead_code is allowed rather than denied: a few modules are complete and
@@ -52,16 +57,16 @@ jobs:
   macos:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install build dependencies
         # ffmpeg for libavformat/libavcodec, which ffmpeg-next links in
         # process; pkg-config so its build script can find them. No ALSA and
         # no D-Bus: cpal uses CoreAudio here and MPRIS is compiled out.
         run: brew install ffmpeg pkg-config
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Point bindgen at the active toolchain's libclang
         # ffmpeg-next runs bindgen, which needs libclang. Homebrew does not
         # necessarily provide one; the active Apple toolchain always does.
@@ -85,8 +90,8 @@ jobs:
   deny:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           command: check advisories bans licenses sources
 
@@ -94,7 +99,7 @@ jobs:
     # rust-version in Cargo.toml is a promise; this is what makes it true.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -102,8 +107,8 @@ jobs:
             pkg-config clang libclang-dev \
             libasound2-dev libdbus-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: "1.90"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo check --all-targets

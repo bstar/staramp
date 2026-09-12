@@ -18,6 +18,9 @@ yanked = "deny"
 # reached only through `lofty`. Failing the build on it would mean either
 # carrying a permanent ignore or dropping a dependency over someone else's
 # transitive choice.
+# Narrowed to direct dependencies rather than ignored outright, because the
+# alternative -- `all` with a permanent ignore for `paste` -- is an exception
+# nobody revisits. Revisit this if a way to drop it appears.
 unmaintained = "workspace"
 
 [licenses]

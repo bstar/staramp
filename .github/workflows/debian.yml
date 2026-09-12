@@ -18,6 +18,11 @@ on:
   workflow_call:
   workflow_dispatch:
 
+# Nothing here needs write access. Declared rather than inherited, so a change
+# to the repository default cannot quietly widen what a workflow may do.
+permissions:
+  contents: read
+
 jobs:
   deb:
     # One package per Debian generation, built and then installed in the image
@@ -41,7 +46,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y -qq --no-install-recommends ca-certificates curl git
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Build and install it
         # A slim container defaults to `sh -e`, which has no pipefail and
         # cannot source these scripts.
@@ -55,7 +60,7 @@ jobs:
           # dependency list shows up.
           apt-get install -y -qq ./dist/*.deb
           staramp --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: staramp-deb-${{ matrix.suffix }}
           path: dist/*.deb

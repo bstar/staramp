@@ -72,7 +72,12 @@ rayon = "1"
 
 # Index. `bundled` vendors SQLite so there is no system dependency and FTS5 is
 # guaranteed present -- important for a self-contained binary.
-rusqlite = { version = "0.37", features = ["bundled", "functions", "backup"] }
+#
+# `functions` and `backup` were enabled and never called. They widen the C
+# surface of a vendored SQLite that already parses a database downloaded from
+# another machine, which is the one dependency here where unused features are
+# worth removing rather than leaving in case.
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 # Tags. Over symphonia's metadata because symphonia cannot read APE tags on
 # .ape/.wv/.mpc at all -- 148 files in the reference library would have none --
@@ -114,6 +119,11 @@ md5 = "0.8"
 rpassword = "7"
 webbrowser = "1"
 discord-rich-presence = "1.1"
+
+# Temporary files with unpredictable names, in the directory they will be
+# renamed into. `playlist_dir` is configurable and meant to be shared with
+# MPD, so it is the one place staramp writes that may not be private.
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"

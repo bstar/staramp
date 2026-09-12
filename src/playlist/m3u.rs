@@ -165,11 +165,22 @@ pub fn write_file(pl: &Playlist, path: &Path, style: WriteStyle) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("m3u");
-    let tmp = path.with_extension(format!("{ext}.{}", std::process::id()));
-    std::fs::write(&tmp, write_string(pl, style))
-        .with_context(|| format!("writing {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("replacing {}", path.display()))
+    // A random name in the destination directory rather than a pid-derived
+    // one. `playlist_dir` is configurable and is meant to be shared with MPD,
+    // so it is the one directory staramp writes to that may not be private --
+    // and a predictable temp name there can be pre-created as a symlink for
+    // the write to follow.
+    let mut tmp = tempfile::Builder::new()
+        .prefix(".staramp-")
+        .suffix(".m3u")
+        .tempfile_in(path.parent().unwrap_or(std::path::Path::new(".")))
+        .with_context(|| format!("writing beside {}", path.display()))?;
+    std::io::Write::write_all(&mut tmp, write_string(pl, style).as_bytes())
+        .with_context(|| format!("writing {}", path.display()))?;
+    tmp.persist(path)
+        .map_err(|e| e.error)
+        .with_context(|| format!("replacing {}", path.display()))?;
+    Ok(())
 }
 
 /// Build a playlist from what the queue is holding.

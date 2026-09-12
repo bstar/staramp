@@ -749,11 +749,15 @@ fn load(
                     &reread
                 }
             };
-            shrink(image::load_from_memory(bytes).ok())
+            shrink(
+                crate::util::image::decode_limited(bytes, crate::util::image::MAX_DIMENSION).ok(),
+            )
         }
         // A library image, wherever the library is.
         cover::Candidate::File(rel) => match vfs.read(rel) {
-            Ok(bytes) => shrink(image::load_from_memory(&bytes).ok()),
+            Ok(bytes) => shrink(
+                crate::util::image::decode_limited(&bytes, crate::util::image::MAX_DIMENSION).ok(),
+            ),
             Err(e) => {
                 tracing::debug!("cover {rel}: {e}");
                 None
@@ -806,7 +810,7 @@ fn save_choice(
 /// music folder is common enough, and it is not worth a message on the status
 /// line every time a track changes.
 fn decode(path: &std::path::Path) -> Option<Arc<image::RgbImage>> {
-    match image::open(path) {
+    match crate::util::image::open_limited(path, crate::util::image::MAX_DIMENSION) {
         Ok(i) => shrink(Some(i)),
         Err(e) => {
             tracing::debug!("cover {}: {e}", path.display());

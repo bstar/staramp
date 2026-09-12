@@ -42,12 +42,47 @@ fn float(v: f64) -> String {
     }
 }
 
+/// Escape a string for a TOML basic string.
+///
+/// Quotes and backslashes were already handled; control characters were not,
+/// and a literal newline inside a basic string is not valid TOML. The values
+/// that reach here are file stems -- a theme name, an equalizer profile name,
+/// a library path -- and a filename on Linux may contain a newline, so a
+/// preset called `bass\nlibrary_root = "/"` would be written out as two lines
+/// and the config would stop parsing on the next run.
+///
+/// It cannot inject a second key even without this, because the closing quote
+/// is escaped and TOML rejects the unterminated string that results. That
+/// makes this a corruption fix rather than an injection one, which is a reason
+/// to fix it rather than a reason not to.
+pub fn escape_basic(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            // Everything else below 0x20, and DEL, which TOML spells as an
+            // escape rather than allowing raw.
+            c if c.is_control() => {
+                let _ = std::fmt::Write::write_fmt(&mut out, format_args!("\\u{:04X}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 impl Value {
     fn render(&self) -> String {
         match self {
             // Escaped the way TOML wants it. Config values here are theme and
             // style names, but a path could reach this one day.
-            Value::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+            Value::Str(s) => format!("\"{}\"", escape_basic(s)),
             Value::Int(i) => i.to_string(),
             Value::Bool(b) => b.to_string(),
             Value::Float(f) => float(*f),
@@ -508,5 +543,37 @@ mode = \"bars\"
     fn writing_the_value_it_already_has_changes_nothing() {
         let out = apply(SAMPLE, "vis", "mode", &Value::Str("bars".into()));
         assert_eq!(out, SAMPLE);
+    }
+
+    /// A theme or preset name is a file stem, and a filename on Linux may
+    /// contain a newline. Written raw, that ends the TOML line and the config
+    /// stops parsing on the next run.
+    #[test]
+    fn a_value_with_a_newline_still_writes_a_config_that_parses() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "theme = \"cosmic\"\n").unwrap();
+
+        let hostile = "bass\nlibrary_root = \"/\"\nvolume = 9";
+        set(&path, ROOT, "theme", &Value::Str(hostile.into())).unwrap();
+
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !text.contains("\nlibrary_root"),
+            "the value broke out of its line:\n{text}"
+        );
+        let parsed: toml::Value = toml::from_str(&text).expect("config no longer parses");
+        assert_eq!(parsed["theme"].as_str(), Some(hostile));
+        assert!(parsed.get("volume").is_none());
+    }
+
+    #[test]
+    fn control_characters_are_escaped_rather_than_written_raw() {
+        assert_eq!(escape_basic("a\nb"), "a\\nb");
+        assert_eq!(escape_basic("a\tb"), "a\\tb");
+        assert_eq!(escape_basic("a\u{1}b"), "a\\u0001b");
+        assert_eq!(escape_basic("say \"hi\"\\"), "say \\\"hi\\\"\\\\");
+        // Ordinary text, including non-ASCII, is left exactly as it is.
+        assert_eq!(escape_basic("Mötley Crüe"), "Mötley Crüe");
     }
 }

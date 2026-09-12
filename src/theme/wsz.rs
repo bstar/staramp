@@ -35,6 +35,16 @@ pub struct SkinColors {
     pub warnings: Vec<String>,
 }
 
+/// The most VISCOLOR.TXT or PLEDIT.TXT may expand to. Both are a couple of
+/// dozen short lines in every real skin.
+const MAX_TEXT_BYTES: u64 = 1024 * 1024;
+
+/// The most TEXT.BMP may expand to. The real ones are a few kilobytes.
+const MAX_BITMAP_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Winamp's font sheet is 155x18. Anything remotely this large is not one.
+const MAX_BITMAP_DIMENSION: u32 = 4096;
+
 /// Read a `.wsz` (or `.zip`) and extract everything we can colour from.
 pub fn read(path: &Path) -> Result<SkinColors> {
     let file = std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
@@ -65,15 +75,45 @@ pub fn read(path: &Path) -> Result<SkinColors> {
 
     let mut out = SkinColors::default();
 
-    let read_entry = |zip: &mut zip::ZipArchive<std::fs::File>, want: &str| -> Option<Vec<u8>> {
+    // A skin is a zip somebody downloaded, and deflate does not have to be
+    // honest about what it expands to: a ten-megabyte archive whose
+    // VISCOLOR.TXT inflates a thousandfold is ten gigabytes of resident memory
+    // before anything looks at it. The declared size is checked first, and the
+    // read is capped anyway in case the header is lying, which nothing stops a
+    // hostile archive from doing.
+    //
+    // A refusal is a warning rather than a silent fallback, because "your
+    // colours look wrong" with nothing said is the one outcome that wastes
+    // somebody's afternoon.
+    let read_entry = |zip: &mut zip::ZipArchive<std::fs::File>,
+                      want: &str,
+                      limit: u64,
+                      warnings: &mut Vec<String>|
+     -> Option<Vec<u8>> {
         let idx = index.iter().find(|(_, n)| n == want).map(|(i, _)| *i)?;
-        let mut f = zip.by_index(idx).ok()?;
+        let f = zip.by_index(idx).ok()?;
+        let declared = f.size();
+        if declared > limit {
+            warnings.push(format!(
+                "{want} says it holds {declared} bytes, over the {limit}-byte limit; ignored"
+            ));
+            return None;
+        }
         let mut buf = Vec::new();
-        f.read_to_end(&mut buf).ok()?;
+        if f.take(limit + 1).read_to_end(&mut buf).is_err() {
+            warnings.push(format!("{want} could not be read; ignored"));
+            return None;
+        }
+        if buf.len() as u64 > limit {
+            warnings.push(format!(
+                "{want} expands past the {limit}-byte limit; ignored"
+            ));
+            return None;
+        }
         Some(buf)
     };
 
-    if let Some(bytes) = read_entry(&mut zip, "viscolor.txt") {
+    if let Some(bytes) = read_entry(&mut zip, "viscolor.txt", MAX_TEXT_BYTES, &mut out.warnings) {
         let (colors, warn) = parse_viscolor(&String::from_utf8_lossy(&bytes));
         out.viscolor = colors;
         out.warnings.extend(warn);
@@ -82,7 +122,7 @@ pub fn read(path: &Path) -> Result<SkinColors> {
             .push("no VISCOLOR.TXT; analyzer colours will be derived".into());
     }
 
-    if let Some(bytes) = read_entry(&mut zip, "pledit.txt") {
+    if let Some(bytes) = read_entry(&mut zip, "pledit.txt", MAX_TEXT_BYTES, &mut out.warnings) {
         let p = parse_pledit(&String::from_utf8_lossy(&bytes));
         out.pledit_normal = p.0;
         out.pledit_current = p.1;
@@ -95,11 +135,16 @@ pub fn read(path: &Path) -> Result<SkinColors> {
 
     // The bitmap font sheet is two-tone, so a histogram identifies it exactly:
     // most frequent colour is the background, second most is the glyph.
-    if let Some(bytes) = read_entry(&mut zip, "text.bmp") {
-        if let Ok(img) = image::load_from_memory(&bytes) {
-            let (bg, fg) = two_tone(&img.to_rgb8());
-            out.text_bg = bg;
-            out.text_fg = fg;
+    if let Some(bytes) = read_entry(&mut zip, "text.bmp", MAX_BITMAP_BYTES, &mut out.warnings) {
+        match crate::util::image::decode_limited(&bytes, MAX_BITMAP_DIMENSION) {
+            Ok(img) => {
+                let (bg, fg) = two_tone(&img.to_rgb8());
+                out.text_bg = bg;
+                out.text_fg = fg;
+            }
+            Err(e) => out
+                .warnings
+                .push(format!("TEXT.BMP could not be read: {e}")),
         }
     }
 
@@ -182,6 +227,12 @@ fn two_tone(img: &image::RgbImage) -> (Option<Rgb>, Option<Rgb>) {
 
 /// Render an imported skin as a theme file.
 pub fn to_theme_toml(skin: &SkinColors, name: &str, source: &str) -> String {
+    // Both of these are file stems from a skin somebody downloaded, and a
+    // filename may legally contain a quote or a newline. Written raw they end
+    // the TOML string early and the theme stops parsing -- or, with a newline,
+    // become extra lines in the file. The same escaping the config editor uses.
+    let name = crate::config::edit::escape_basic(name);
+    let source = crate::config::edit::escape_basic(source);
     let id = name.to_lowercase().replace(' ', "-");
     let mut s = String::new();
     s.push_str(&format!(
@@ -347,5 +398,52 @@ mod tests {
         let file = super::super::schema::ThemeFile::parse(&toml).unwrap();
         let t = super::super::resolve::Theme::resolve(&file);
         assert_eq!(t.vis_ramp.len(), 16, "derivation fills the gap");
+    }
+
+    /// A skin is a zip from the internet, and deflate does not have to be
+    /// honest about what it expands to.
+    #[test]
+    fn an_entry_that_expands_past_the_limit_is_refused_and_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bomb.wsz");
+
+        {
+            let file = std::fs::File::create(&path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options: zip::write::FileOptions<()> = zip::write::FileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            // Highly compressible, and far past the one-megabyte text limit.
+            zip.start_file("VISCOLOR.TXT", options).unwrap();
+            let zeros = vec![b'0'; 4 * 1024 * 1024];
+            std::io::Write::write_all(&mut zip, &zeros).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let compressed = std::fs::metadata(&path).unwrap().len();
+        assert!(
+            compressed < 64 * 1024,
+            "the fixture is not actually a bomb ({compressed} bytes)"
+        );
+
+        let skin = read(&path).expect("a skin with one oversized entry should still read");
+        assert!(
+            skin.warnings.iter().any(|w| w.contains("limit")),
+            "the refusal was silent: {:?}",
+            skin.warnings
+        );
+        // Refused rather than half-read.
+        assert!(skin.viscolor.is_empty());
+    }
+
+    /// A skin's file stem becomes a TOML string, and a filename may contain a
+    /// quote or a newline.
+    #[test]
+    fn a_skin_name_cannot_break_the_theme_file_it_is_written_into() {
+        let skin = SkinColors::default();
+        let hostile = "base\"\nid = \"stolen";
+        let toml = to_theme_toml(&skin, hostile, "base.wsz");
+        let parsed: toml::Value = toml::from_str(&toml).expect("the theme no longer parses");
+        assert_eq!(parsed["meta"]["name"].as_str(), Some(hostile));
+        assert_ne!(parsed["meta"]["id"].as_str(), Some("stolen"));
     }
 }

@@ -89,6 +89,14 @@ pub struct RemoteFile {
     /// `base + data.len()`.
     inflight: VecDeque<InFlight>,
     issued_to: u64,
+    /// How many reads this file has asked the far end for.
+    ///
+    /// Counted here rather than at the server, because a test that asks "did
+    /// this cost network traffic?" means requests *sent*, and the server's own
+    /// tally moves on its own thread: a request issued before the question was
+    /// asked can be served after it, which is a racing test rather than a real
+    /// difference.
+    issued: u64,
 
     /// The pinned ends. Empty until something asks for them.
     head: Vec<u8>,
@@ -110,6 +118,7 @@ impl RemoteFile {
             data: Vec::new(),
             inflight: VecDeque::new(),
             issued_to: 0,
+            issued: 0,
             head: Vec::new(),
             tail: Vec::new(),
         })
@@ -210,6 +219,7 @@ impl RemoteFile {
                         at: self.issued_to,
                     });
                     self.issued_to += n as u64;
+                    self.issued += 1;
                 }
                 // The link is gone. `collect` reports it properly; there is
                 // nothing useful to do here.
@@ -572,7 +582,7 @@ mod tests {
         let mut buf = vec![0u8; 600_000];
         r.file.read_exact(&mut buf).unwrap();
 
-        let before = r.reads.load(Ordering::Relaxed);
+        let before = r.file.issued;
         let anchor = r.file.stream_position().unwrap();
         for back in [1000u64, 5000, 20_000, 50_000] {
             r.file.seek(SeekFrom::Start(anchor - back)).unwrap();
@@ -582,8 +592,7 @@ mod tests {
             assert_eq!(b, bytes[at..at + 256], "reading {back} bytes back");
         }
         assert_eq!(
-            r.reads.load(Ordering::Relaxed),
-            before,
+            r.file.issued, before,
             "history is kept behind the cursor precisely so this is free"
         );
     }

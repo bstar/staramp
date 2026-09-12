@@ -59,6 +59,7 @@ impl Coeffs {
             a1: a1 / a0,
             a2: a2 / a0,
         }
+        .finite_or_identity()
     }
 
     /// Equalizer APO's RBJ biquad construction, including its bandwidth,
@@ -169,6 +170,27 @@ impl Coeffs {
             b2: b2 / a0,
             a1: a1 / a0,
             a2: a2 / a0,
+        }
+        .finite_or_identity()
+    }
+
+    /// A filter that cannot be computed is no filter, not a broken one.
+    ///
+    /// Every input here is range-checked before it arrives, but the arithmetic
+    /// in between can still leave the numbers: `a0` can come out zero, and the
+    /// `sinh` in the bandwidth branch overflows to infinity for a wide enough
+    /// band, either of which makes the division produce NaN. A NaN coefficient
+    /// is not a wrong sound, it is a permanent one -- `process` feeds each
+    /// output back in, so the filter's state is NaN from that sample until it
+    /// is rebuilt, and every sample it touches afterwards is silence at best.
+    fn finite_or_identity(self) -> Self {
+        if [self.b0, self.b1, self.b2, self.a1, self.a2]
+            .iter()
+            .all(|v| v.is_finite())
+        {
+            self
+        } else {
+            Coeffs::IDENTITY
         }
     }
 

@@ -17,6 +17,21 @@ pub struct Profile {
     pub stages: Vec<Stage>,
 }
 
+/// The most gain any one APO stage may ask for, either way.
+///
+/// Wider than the ten-band editor's ±12 dB, because APO presets legitimately
+/// use more -- a headphone correction curve with a deep notch is ordinary --
+/// and narrow enough that no preset can hand the output device a number with
+/// no musical reading. See [`Profile::check_ranges`].
+pub const MAX_GAIN_DB: f64 = 24.0;
+
+/// Above any sample rate that exists, so a real filter is never refused.
+pub const MAX_FREQUENCY_HZ: f64 = 1_000_000.0;
+
+/// Q, bandwidth in octaves, or shelf slope. A Q of 1000 is already thousands
+/// of times narrower than anything tuned by hand.
+pub const MAX_WIDTH: f64 = 1000.0;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stage {
     pub enabled: bool,
@@ -84,6 +99,7 @@ impl Profile {
         if self.name.trim().is_empty() {
             bail!("profile name cannot be empty");
         }
+        self.check_ranges()?;
         for (index, stage) in self.stages.iter().enumerate() {
             let valid = match &stage.filter {
                 Filter::Preamp { gain_db } => gain_db.is_finite(),
@@ -132,6 +148,59 @@ impl Profile {
         Ok(())
     }
 
+    /// Refuse a profile that asks for more than an equalizer can sensibly do.
+    ///
+    /// Finite is not the same as reasonable. A preset is a text file people
+    /// download and swap, and `Preamp: 400` is both a legal line and a
+    /// hundred-billion-fold multiplier: the first thing it reaches is the
+    /// output device, at whatever the speakers or headphones will do with
+    /// full-scale noise. There is no musical reading of it, so it is rejected
+    /// where it is read rather than clamped silently somewhere downstream.
+    ///
+    /// The ranges are Equalizer APO's own practical ones. ±[`MAX_GAIN_DB`]
+    /// covers every real preset; a Q of 1000 is already a filter thousands of
+    /// times narrower than anything a person tunes by hand; and the frequency
+    /// ceiling is above any sample rate that exists.
+    fn check_ranges(&self) -> Result<()> {
+        for (index, stage) in self.stages.iter().enumerate() {
+            let n = index + 1;
+            let gain = match &stage.filter {
+                Filter::Preamp { gain_db } => Some(*gain_db),
+                Filter::Biquad {
+                    frequency,
+                    gain_db,
+                    width,
+                    ..
+                } => {
+                    if *frequency > MAX_FREQUENCY_HZ {
+                        bail!("stage {n} asks for {frequency} Hz, over the {MAX_FREQUENCY_HZ} Hz limit");
+                    }
+                    let w = width_value(*width);
+                    if w > MAX_WIDTH {
+                        bail!("stage {n} has a width of {w}, over the limit of {MAX_WIDTH}");
+                    }
+                    Some(*gain_db)
+                }
+                Filter::GraphicEq { points } => {
+                    if let Some((f, g)) = points
+                        .iter()
+                        .find(|(f, g)| *f > MAX_FREQUENCY_HZ || g.abs() > MAX_GAIN_DB)
+                    {
+                        bail!("stage {n} has a point at {f} Hz and {g} dB, outside the limits");
+                    }
+                    None
+                }
+                Filter::Iir { .. } => None,
+            };
+            if let Some(g) = gain {
+                if g.abs() > MAX_GAIN_DB {
+                    bail!("stage {n} asks for {g} dB, over the ±{MAX_GAIN_DB} dB limit");
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn legacy(name: impl Into<String>, preamp: f32, gains: &[f32; 10]) -> Self {
         let mut stages = vec![Stage {
             enabled: true,
@@ -168,8 +237,8 @@ impl Profile {
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Imported".into());
         let mut stages = Vec::new();
-        let mut stack = Vec::new();
-        parse_one(path, &mut stages, &mut stack, ChannelMask::ALL)?;
+        let mut ctx = Includes::rooted_at(path)?;
+        parse_one(path, &mut stages, &mut ctx, ChannelMask::ALL)?;
         if stages.is_empty() {
             bail!("{} contains no supported EQ commands", path.display());
         }
@@ -307,30 +376,102 @@ fn safe_name(name: &str) -> Result<String> {
     Ok(name.to_string())
 }
 
+/// The most any one preset, or anything it includes, may be.
+const MAX_PRESET_BYTES: u64 = 4 * 1024 * 1024;
+
+/// How deep `Include` may nest.
+const MAX_INCLUDE_DEPTH: usize = 32;
+
+/// What an `Include` chain is allowed to reach, and what it has reached.
+///
+/// A preset is a file people download and pass around, and `Include` takes a
+/// path. Three separate things have to be true for that to be safe:
+///
+/// * **It cannot leave the directory the preset came from.** Otherwise
+///   `Include: /etc/shadow` is read, and every line of it that looks like
+///   `something: value` comes back through the error messages.
+/// * **Each file is parsed once.** The ancestor stack catches a cycle, but a
+///   diamond is not a cycle: thirty-two files that each include the next twice
+///   is four billion parses from a preset of a few hundred bytes.
+/// * **Size is checked before reading, not after.** `Include: /dev/zero`
+///   canonicalises, opens and never ends.
+struct Includes {
+    root: PathBuf,
+    stack: Vec<PathBuf>,
+    visited: std::collections::HashSet<PathBuf>,
+}
+
+impl Includes {
+    /// Root the parse at the directory the top-level preset lives in.
+    fn rooted_at(path: &Path) -> Result<Self> {
+        let canonical = path
+            .canonicalize()
+            .with_context(|| format!("opening APO preset {}", path.display()))?;
+        let root = canonical
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        Ok(Self {
+            root,
+            stack: Vec::new(),
+            visited: std::collections::HashSet::new(),
+        })
+    }
+
+    /// Resolve one `Include` against the root, refusing anything outside it.
+    fn resolve(&self, canonical_parent: &Path, parameters: &str) -> Result<PathBuf> {
+        let raw = Path::new(parameters.trim_matches('"'));
+        let joined = if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            canonical_parent.join(raw)
+        };
+        let include = joined
+            .canonicalize()
+            .with_context(|| format!("opening the APO preset included as {}", raw.display()))?;
+        anyhow::ensure!(
+            include.starts_with(&self.root),
+            "an APO preset may only include files beside it, and {} is outside {}",
+            raw.display(),
+            self.root.display()
+        );
+        Ok(include)
+    }
+}
+
 fn parse_one(
     path: &Path,
     stages: &mut Vec<Stage>,
-    stack: &mut Vec<PathBuf>,
+    ctx: &mut Includes,
     inherited_channels: ChannelMask,
 ) -> Result<ChannelMask> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("opening APO preset {}", path.display()))?;
-    if stack.contains(&canonical) {
+    if ctx.stack.contains(&canonical) {
         bail!("APO include cycle through {}", canonical.display());
     }
-    if stack.len() >= 32 {
-        bail!("APO includes are nested more than 32 files deep");
+    if ctx.stack.len() >= MAX_INCLUDE_DEPTH {
+        bail!("APO includes are nested more than {MAX_INCLUDE_DEPTH} files deep");
     }
-    stack.push(canonical.clone());
+    // Measured before it is read. A file that is not a file at all -- a fifo,
+    // or /dev/zero -- has no length to measure and is refused here rather than
+    // read until memory runs out.
+    let meta = std::fs::metadata(&canonical)
+        .with_context(|| format!("reading APO preset {}", canonical.display()))?;
+    anyhow::ensure!(
+        meta.is_file(),
+        "{} is not a file that can hold a preset",
+        canonical.display()
+    );
+    anyhow::ensure!(
+        meta.len() <= MAX_PRESET_BYTES,
+        "{} is larger than the 4 MiB preset limit",
+        canonical.display()
+    );
+    ctx.stack.push(canonical.clone());
     let text = std::fs::read_to_string(&canonical)
         .with_context(|| format!("reading APO preset {}", canonical.display()))?;
-    if text.len() > 4 * 1024 * 1024 {
-        bail!(
-            "{} is larger than the 4 MiB preset limit",
-            canonical.display()
-        );
-    }
     let mut channels = inherited_channels;
     for (line_index, raw) in text.lines().enumerate() {
         let line_no = line_index + 1;
@@ -385,14 +526,19 @@ fn parse_one(
             channels = parse_channels(parameters)?;
             Ok(())
         } else if command.eq_ignore_ascii_case("Include") {
-            let include = Path::new(parameters.trim_matches('"'));
-            let include = if include.is_absolute() {
-                include.to_path_buf()
-            } else {
-                canonical.parent().unwrap_or(Path::new(".")).join(include)
-            };
-            channels = parse_one(&include, stages, stack, channels)?;
-            Ok(())
+            let parent = canonical.parent().unwrap_or(Path::new("."));
+            match ctx.resolve(parent, parameters) {
+                // Already parsed somewhere in this profile. Parsing it again
+                // would only append the same stages a second time, and doing
+                // so for each path that reaches it is how a handful of small
+                // files becomes billions of parses.
+                Ok(include) if !ctx.visited.insert(include.clone()) => Ok(()),
+                Ok(include) => {
+                    channels = parse_one(&include, stages, ctx, channels)?;
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
         } else if command.to_ascii_lowercase().starts_with("filter") {
             stages.push(parse_filter(parameters, channels)?);
             Ok(())
@@ -401,7 +547,7 @@ fn parse_one(
         };
         result.with_context(|| format!("{}:{line_no}", canonical.display()))?;
     }
-    stack.pop();
+    ctx.stack.pop();
     Ok(channels)
 }
 
@@ -706,5 +852,90 @@ mod tests {
         };
         assert_eq!(gain_db, 2.25);
         assert_eq!(width, Width::Q(1.4));
+    }
+
+    /// `Include` takes a path, and a preset is a file people download.
+    #[test]
+    fn an_include_cannot_leave_the_directory_the_preset_came_from() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("secret.txt");
+        std::fs::write(&outside, "root:x:0:0:secret:/root:/bin/sh\n").unwrap();
+
+        let presets = dir.path().join("presets");
+        std::fs::create_dir(&presets).unwrap();
+        let root = presets.join("main.txt");
+
+        for attempt in [
+            "Include: ../secret.txt\n",
+            "Include: \"../secret.txt\"\n",
+            &format!("Include: {}\n", outside.display()),
+        ] {
+            std::fs::write(&root, format!("Preamp: -3 dB\n{attempt}")).unwrap();
+            let err = Profile::parse_file(&root).expect_err("the include was followed");
+            // Naming the path that was refused is useful. Echoing what was
+            // inside it would be the leak: every line of a file that looks
+            // like `key: value` otherwise comes back as a parse error.
+            let text = format!("{err:#}");
+            assert!(
+                !text.contains("root:x:0:0"),
+                "the refusal quoted the contents of the file: {text}"
+            );
+        }
+
+        // A sibling is still an ordinary include.
+        std::fs::write(presets.join("part.txt"), "Preamp: -2 dB\n").unwrap();
+        std::fs::write(&root, "Include: part.txt\n").unwrap();
+        let profile = Profile::parse_file(&root).expect("a sibling include was refused");
+        assert_eq!(profile.stages.len(), 1);
+    }
+
+    /// A cycle is caught by the ancestor stack. A diamond is not a cycle: the
+    /// same file reached by two paths used to be parsed twice, and thirty-two
+    /// files that each include the next twice is four billion parses.
+    #[test]
+    fn a_file_reached_twice_is_parsed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let leaf = dir.path().join("leaf.txt");
+        std::fs::write(&leaf, "Preamp: -1 dB\n").unwrap();
+        for name in ["a.txt", "b.txt"] {
+            std::fs::write(dir.path().join(name), "Include: leaf.txt\n").unwrap();
+        }
+        let root = dir.path().join("root.txt");
+        std::fs::write(&root, "Include: a.txt\nInclude: b.txt\n").unwrap();
+
+        let profile = Profile::parse_file(&root).expect("a diamond was refused");
+        assert_eq!(
+            profile.stages.len(),
+            1,
+            "the leaf was parsed once per path that reached it"
+        );
+    }
+
+    /// Measured before it is read: a preset that is not a file has no length,
+    /// and one that is enormous should not be loaded to discover that.
+    #[test]
+    fn a_preset_that_is_not_a_file_is_refused_without_reading_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("main.txt");
+        std::fs::write(&root, "Include: /dev/zero\n").unwrap();
+        assert!(Profile::parse_file(&root).is_err());
+
+        // A directory is not a preset either.
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(&root, "Include: sub\n").unwrap();
+        assert!(Profile::parse_file(&root).is_err());
+    }
+
+    /// The gain limit applies to what is imported, not only to what is typed.
+    #[test]
+    fn an_imported_preset_cannot_ask_for_absurd_gain() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("loud.txt");
+        std::fs::write(&root, "Preamp: 400 dB\n").unwrap();
+        let err = Profile::parse_file(&root).expect_err("400 dB was imported");
+        assert!(format!("{err:#}").contains("24"), "{err:#}");
+
+        std::fs::write(&root, "Preamp: -6 dB\n").unwrap();
+        assert!(Profile::parse_file(&root).is_ok());
     }
 }

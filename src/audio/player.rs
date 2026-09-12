@@ -17,7 +17,7 @@ use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 
 use super::decode::Decoder;
 use super::dsp::eq::{EqHandle, EqState};
-use super::dsp::gain::{ReplayGain, RgMode};
+use super::dsp::gain::{soft_clip, ReplayGain, RgMode};
 use super::output::Output;
 use super::ring;
 use super::source;
@@ -27,6 +27,17 @@ use crate::playlist::uri::TrackUri;
 use crate::vfs::Vfs;
 
 const BACKOFF: Duration = Duration::from_millis(2);
+
+/// Does the signal need holding back from full scale before the ring?
+///
+/// Only where something could have pushed it past: an equalizer doing
+/// anything at all, or a gain above unity. A transparent chain at or below
+/// unity is passed through untouched, because that is the bit-perfect path --
+/// the header says so, and a limiter quietly sitting in it would make that a
+/// lie for any track that legitimately peaks near full scale.
+fn needs_limiting(settings: &super::dsp::eq::EqSettings, scale: f32) -> bool {
+    !settings.is_transparent() || scale > 1.0
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayState {
@@ -984,8 +995,15 @@ fn run(
                                     *x *= scale;
                                 }
                             }
+                            // Only where something could have pushed the signal
+                            // past full scale: an equalizer that is doing
+                            // anything, or a gain above unity. A transparent
+                            // chain at or below unity is passed through
+                            // untouched, because that is the bit-perfect path
+                            // and a limiter in it would be a lie.
+                            let limiting = needs_limiting(&settings, scale);
                             for &x in buf.iter() {
-                                let _ = s.producer.push(x);
+                                let _ = s.producer.push(if limiting { soft_clip(x) } else { x });
                             }
                             state.position_frames.store(d.position(), Ordering::Relaxed);
                             state.underruns.store(
@@ -1767,5 +1785,46 @@ mod tests {
         let s = PlayerState::new();
         s.position_frames.store(1000, Ordering::Relaxed);
         assert!(s.position_secs().is_finite());
+    }
+
+    /// The bit-perfect claim in one test: with nothing turned on, nothing
+    /// touches the samples on their way to the device.
+    #[test]
+    fn a_transparent_chain_at_unity_is_never_limited() {
+        use crate::audio::dsp::eq::EqSettings;
+        let flat = EqSettings::flat(44_100);
+        assert!(flat.is_transparent());
+        assert!(
+            !needs_limiting(&flat, 1.0),
+            "the bit-perfect path was limited"
+        );
+        assert!(!needs_limiting(&flat, 0.5), "attenuation cannot clip");
+
+        // And where something could push past full scale, it is.
+        assert!(
+            needs_limiting(&flat, 1.5),
+            "a gain above unity was not limited"
+        );
+        let boosted = EqSettings::build(true, 6.0, &[6.0; 10], 44_100);
+        assert!(!boosted.is_transparent());
+        assert!(
+            needs_limiting(&boosted, 1.0),
+            "a boosting equalizer was not limited"
+        );
+    }
+
+    /// What limiting does when it happens: hold the signal inside full scale
+    /// without touching anything that was already comfortably inside it.
+    #[test]
+    fn limiting_holds_full_scale_without_touching_ordinary_levels() {
+        use crate::audio::dsp::gain::soft_clip;
+        for x in [0.0f32, 0.1, -0.5, 0.89, -0.89] {
+            assert_eq!(soft_clip(x), x, "{x} was altered below the knee");
+        }
+        for x in [1.0f32, 4.0, 1e6, -1e6, -3.0] {
+            let y = soft_clip(x);
+            assert!(y.abs() <= 1.0, "{x} left the output at {y}");
+            assert_eq!(y.signum(), x.signum(), "{x} changed sign");
+        }
     }
 }

@@ -33,6 +33,18 @@ pub const Q: f64 = 1.4;
 pub const MAX_GAIN_DB: f32 = 12.0;
 pub const MIN_GAIN_DB: f32 = -12.0;
 
+/// Hold an APO gain to the range [`super::apo::MAX_GAIN_DB`] allows.
+///
+/// A NaN gain becomes silence rather than a NaN multiplier: `clamp` panics on
+/// a NaN bound but propagates a NaN value, and a single NaN sample poisons a
+/// biquad's state for as long as the filter runs.
+fn apo_gain(gain_db: f64) -> f64 {
+    if gain_db.is_nan() {
+        return 0.0;
+    }
+    gain_db.clamp(-super::apo::MAX_GAIN_DB, super::apo::MAX_GAIN_DB)
+}
+
 /// A named curve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Preset {
@@ -144,6 +156,14 @@ impl EqSettings {
     }
 
     pub fn build(enabled: bool, preamp_db: f32, gains: &[f32; 10], sample_rate: u32) -> Self {
+        // The bands below are clamped; the preamp was not, and it multiplies
+        // all ten of them. It arrives from the config file and over IPC, so
+        // the same limit applies to it.
+        let preamp_db = if preamp_db.is_nan() {
+            0.0
+        } else {
+            preamp_db.clamp(MIN_GAIN_DB, MAX_GAIN_DB)
+        };
         let mut coeffs = [Coeffs::IDENTITY; 10];
         let mut all_flat = true;
         for (i, &g) in gains.iter().enumerate() {
@@ -243,8 +263,15 @@ impl EqSettings {
             .iter()
             .filter(|stage| stage.enabled)
             .map(|stage| {
+                // Clamped here as well as refused in `Profile::check_ranges`.
+                // Compiling is the last point before coefficients reach the
+                // audio thread, and a profile can arrive from a file, from the
+                // editor, or over IPC -- three doors, one lock worth having on
+                // the inside as well.
                 let filter = match &stage.filter {
-                    Filter::Preamp { gain_db } => CompiledFilter::Gain(10f64.powf(gain_db / 20.0)),
+                    Filter::Preamp { gain_db } => {
+                        CompiledFilter::Gain(10f64.powf(apo_gain(*gain_db) / 20.0))
+                    }
                     Filter::Biquad {
                         kind,
                         frequency,
@@ -254,7 +281,7 @@ impl EqSettings {
                     } => CompiledFilter::Biquad(Coeffs::apo(
                         *kind,
                         *frequency,
-                        *gain_db,
+                        apo_gain(*gain_db),
                         *width,
                         *corner_frequency,
                         sample_rate as f64,
@@ -951,5 +978,94 @@ mod tests {
             _ => unreachable!(),
         };
         assert_ne!(first, second);
+    }
+
+    /// The finding this exists for: a preset is a text file people download
+    /// and swap, `Preamp: 400` is a legal line in one, and what it asks for is
+    /// a hundred-billion-fold multiplier straight into the output device.
+    #[test]
+    fn an_absurd_preamp_is_refused_and_cannot_reach_the_device() {
+        use super::*;
+        use crate::audio::dsp::apo::{ChannelMask, Filter, Profile, Stage};
+        let mut profile = Profile {
+            name: "loud".into(),
+            stages: vec![Stage {
+                enabled: true,
+                channels: ChannelMask::ALL,
+                filter: Filter::Preamp { gain_db: 400.0 },
+            }],
+        };
+        assert!(
+            profile.validate().is_err(),
+            "a 400 dB preamp was accepted as a profile"
+        );
+
+        // And if one reaches compilation anyway -- an older saved profile, a
+        // future caller that forgets to validate -- the gain is still held to
+        // the limit rather than passed through.
+        let settings = EqSettings::from_profile(true, &profile, 44_100);
+        let CompiledFilter::Gain(g) = settings.stages[0].filter else {
+            panic!("expected a gain stage");
+        };
+        let ceiling = 10f64.powf(super::super::apo::MAX_GAIN_DB / 20.0);
+        assert!(
+            g <= ceiling,
+            "compiled gain {g} is over the {ceiling} ceiling"
+        );
+
+        // A NaN is silence, not a NaN multiplier: one NaN sample poisons a
+        // filter's state for as long as it runs.
+        profile.stages[0].filter = Filter::Preamp { gain_db: f64::NAN };
+        let settings = EqSettings::from_profile(true, &profile, 44_100);
+        let CompiledFilter::Gain(g) = settings.stages[0].filter else {
+            panic!("expected a gain stage");
+        };
+        assert_eq!(g, 1.0);
+    }
+
+    /// The ten-band path has always clamped its bands. Its preamp multiplies
+    /// all ten of them and did not.
+    #[test]
+    fn the_ten_band_preamp_is_clamped_like_its_bands() {
+        let loud = EqSettings::build(true, 400.0, &[0.0; 10], 44_100);
+        let ceiling = db_to_linear(MAX_GAIN_DB);
+        assert!(
+            loud.preamp_linear <= ceiling,
+            "preamp {} is over the {ceiling} ceiling",
+            loud.preamp_linear
+        );
+        assert_eq!(
+            EqSettings::build(true, f32::NAN, &[0.0; 10], 44_100).preamp_linear,
+            1.0
+        );
+    }
+
+    /// Every input can be in range and the arithmetic between them still leave
+    /// the numbers. A NaN coefficient is not a wrong sound but a permanent
+    /// one, because the filter feeds its own output back in.
+    #[test]
+    fn a_filter_that_cannot_be_computed_becomes_a_pass_through() {
+        use super::*;
+        use crate::audio::dsp::apo::{BiquadKind, ChannelMask, Filter, Profile, Stage, Width};
+        let profile = Profile {
+            name: "wide".into(),
+            stages: vec![Stage {
+                enabled: true,
+                channels: ChannelMask::ALL,
+                filter: Filter::Biquad {
+                    kind: BiquadKind::Peaking,
+                    frequency: 1000.0,
+                    gain_db: 6.0,
+                    // `sinh` of this overflows to infinity, and inf/inf is NaN.
+                    width: Width::Bandwidth(1e308),
+                    corner_frequency: false,
+                },
+            }],
+        };
+        let settings = EqSettings::from_profile(true, &profile, 44_100);
+        let CompiledFilter::Biquad(c) = settings.stages[0].filter else {
+            panic!("expected a biquad");
+        };
+        assert_eq!(c, Coeffs::IDENTITY, "a NaN filter reached the audio path");
     }
 }

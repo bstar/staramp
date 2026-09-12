@@ -613,15 +613,31 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let from = dir.path().join("track.flac");
         std::fs::write(&from, b"not really a flac").unwrap();
-        std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o4777)).unwrap();
+        // World-writable and executable, which is what a file unpacked from a
+        // zip with careless modes actually looks like.
+        std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o777)).unwrap();
 
         let to = dir.path().join("copied.flac");
         copy_verified(&from, &to).unwrap();
 
         let mode = std::fs::metadata(&to).unwrap().permissions().mode();
-        assert_eq!(mode & 0o7000, 0, "setuid or sticky bits were carried over");
         assert_eq!(mode & 0o022, 0, "the file was group- or world-writable");
+        assert_eq!(mode & 0o111, 0, "an audio file was made executable");
         assert_eq!(mode & 0o600, 0o600, "the owner cannot read and write it");
+
+        // And the setuid bit, where the filesystem allows one to be set at
+        // all -- a build sandbox commonly does not, and that is the fixture
+        // failing rather than the code.
+        let suid = dir.path().join("suid.flac");
+        std::fs::write(&suid, b"x").unwrap();
+        if std::fs::set_permissions(&suid, std::fs::Permissions::from_mode(0o4755)).is_ok()
+            && std::fs::metadata(&suid).unwrap().permissions().mode() & 0o4000 != 0
+        {
+            let out = dir.path().join("copied-suid.flac");
+            copy_verified(&suid, &out).unwrap();
+            let mode = std::fs::metadata(&out).unwrap().permissions().mode();
+            assert_eq!(mode & 0o7000, 0, "setuid or sticky bits were carried over");
+        }
     }
 
     /// Rejects and replaced albums must not be filed into the live library,

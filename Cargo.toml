@@ -144,6 +144,11 @@ features = [
 ]
 
 [profile.release]
+# Arithmetic on lengths, offsets, frame counts and sample rates read out of
+# files and off the wire. Wrapping silently in release turns a hostile number
+# into a plausible wrong one, and the debug-built test suite would never see
+# it. The cost is a few percent on a player that is I/O and FFT bound.
+overflow-checks = true
 opt-level = 3
 lto = "thin"
 codegen-units = 1

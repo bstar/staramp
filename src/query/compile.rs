@@ -211,7 +211,14 @@ fn compile_pred(p: &Predicate, now: i64, params: &mut Vec<Param>) -> String {
         // `added > 90d` means "added since 90 days ago", so a *newer* timestamp.
         // The comparison direction is preserved by converting the value, not by
         // flipping the operator.
-        Value::RelativeDays(d) => (now - (d * 86_400.0) as i64) as f64,
+        // Saturating, in both the cast and the subtraction. `added > -1e300d`
+        // is a legal thing to type, and `now - i64::MIN` is an overflow --
+        // which with overflow checks on in release is a crash reachable from
+        // a saved smart playlist.
+        Value::RelativeDays(d) => {
+            let seconds = (d * 86_400.0).clamp(i64::MIN as f64, i64::MAX as f64) as i64;
+            now.saturating_sub(seconds) as f64
+        }
         Value::Text(t) => {
             params.push(Param::Text(t.clone()));
             return format!("{col} {} ?", sql_op(p.op));

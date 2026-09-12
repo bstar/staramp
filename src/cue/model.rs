@@ -33,7 +33,16 @@ impl Msf {
     pub fn to_audio_frames(self, sample_rate: u32) -> u64 {
         // Rounded rather than truncated: at 75 Hz the truncation error
         // accumulates visibly across a 70-minute disc image.
-        (self.cd_frames() * sample_rate as u64 + 37) / 75
+        //
+        // Checked, because a cue sheet is a text file that arrives with an
+        // album and `MM` is parsed as a bare `u32`: an INDEX of two billion
+        // minutes beside a DSD backing file overflows the multiply. Saturating
+        // gives a position past the end of the file, which the seek refuses,
+        // rather than a small wrong number that looks plausible.
+        self.cd_frames()
+            .checked_mul(sample_rate as u64)
+            .map(|n| (n + 37) / 75)
+            .unwrap_or(u64::MAX)
     }
 }
 

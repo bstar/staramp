@@ -287,7 +287,8 @@ fn main() -> Result<()> {
             if request.is_empty() {
                 anyhow::bail!("nothing to send — try `staramp ctl status`");
             }
-            println!("{}", ipc::send(&request.join(" "))?);
+            // The reply carries track titles and paths out of the queue.
+            println!("{}", util::printable(&ipc::send(&request.join(" "))?));
             Ok(())
         }
         Some(Command::Theme { cmd }) => cmd_theme(cmd),
@@ -333,7 +334,7 @@ fn cmd_probe(input: PathBuf) -> Result<()> {
             vt.ordinal, vt.number
         );
         if let Some(t) = &vt.title {
-            println!("title       {t}");
+            println!("title       {}", util::printable(t));
         }
         println!("backing     {}", opened.backing_path.display());
         println!(
@@ -1126,9 +1127,15 @@ fn cmd_search(query: String, limit: usize) -> Result<()> {
     Ok(())
 }
 
+/// Shorten for a column, and strip anything that would drive the terminal.
+///
+/// Both at once on purpose: every caller is printing text out of a tag or a
+/// playlist, and forgetting the second half is exactly the mistake this exists
+/// to prevent. See [`util::printable`].
 fn truncate(s: &str, n: usize) -> String {
+    let s = util::printable(s);
     if s.chars().count() <= n {
-        s.to_string()
+        s
     } else {
         s.chars().take(n.saturating_sub(1)).collect::<String>() + "…"
     }
@@ -1217,7 +1224,13 @@ fn cmd_playlists(dir: PathBuf, show_missing: bool, check_roundtrip: bool) -> Res
                     cok += 1;
                 }
             } else {
-                missing.push(format!("{}: {}", pl.name, uri));
+                // Both halves are somebody else's text: the name is a
+                // filename and the URI is a line out of an .m3u.
+                missing.push(format!(
+                    "{}: {}",
+                    util::printable(&pl.name),
+                    util::printable(&uri)
+                ));
             }
         }
 
@@ -1924,7 +1937,7 @@ fn cmd_theme(cmd: ThemeCmd) -> Result<()> {
             let toml = theme::wsz::to_theme_toml(&skin_colors, &name, source);
 
             for w in &skin_colors.warnings {
-                eprintln!("  note: {w}");
+                eprintln!("  note: {}", util::printable(w));
             }
 
             if dry_run {
@@ -1950,7 +1963,7 @@ fn load_theme(id: &str) -> Result<theme::resolve::Theme> {
     if why.starts_with("no theme") {
         anyhow::bail!("{why} — try `staramp theme list`");
     }
-    eprintln!("  ({why})");
+    eprintln!("  ({})", util::printable(&why));
     Ok(t)
 }
 

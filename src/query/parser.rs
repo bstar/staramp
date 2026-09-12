@@ -49,7 +49,22 @@ struct Spanned {
 
 fn lex(input: &str) -> Result<Vec<Spanned>, ParseError> {
     let b: Vec<char> = input.chars().collect();
-    let mut out = Vec::new();
+    // The scan below indexes `b`, so every span it records counts characters.
+    // A span is documented as byte offsets, which is what the caller slices
+    // the source with -- and for anything but ASCII the two disagree, so
+    // `staramp query 'é!'` sliced through the middle of a character and
+    // panicked. Remapped once at the end rather than by rewriting arithmetic
+    // that `i + 1` is correct for.
+    let at_byte: Vec<usize> = input
+        .char_indices()
+        .map(|(o, _)| o)
+        .chain(std::iter::once(input.len()))
+        .collect();
+    let to_bytes = |(a, b): (usize, usize)| -> (usize, usize) {
+        let last = at_byte.len() - 1;
+        (at_byte[a.min(last)], at_byte[b.min(last)])
+    };
+    let mut out: Vec<Spanned> = Vec::new();
     let mut i = 0;
 
     while i < b.len() {
@@ -125,9 +140,11 @@ fn lex(input: &str) -> Result<Vec<Spanned>, ParseError> {
                     ('!', _) => {
                         return Err(ParseError {
                             message: "stray `!`".into(),
-                            span: (start, i + 1),
+                            // Remapped here too: this returns before the pass
+                            // over `out` at the end of the function.
+                            span: to_bytes((start, i + 1)),
                             hint: Some("did you mean `!=` or `!~`?".into()),
-                        })
+                        });
                     }
                     _ => unreachable!(),
                 };
@@ -165,6 +182,9 @@ fn lex(input: &str) -> Result<Vec<Spanned>, ParseError> {
             }
         }
     }
+    for token in &mut out {
+        token.span = to_bytes(token.span);
+    }
     Ok(out)
 }
 
@@ -174,14 +194,23 @@ pub fn parse(input: &str) -> Result<Query, ParseError> {
         toks,
         pos: 0,
         src_len: input.len(),
+        depth: 0,
     };
     p.query()
 }
+
+/// How deeply `(` and `not` may nest.
+///
+/// The descent below recurses on both, and a stack overflow aborts the process
+/// rather than unwinding -- there is nothing to catch. No expression a person
+/// writes comes close to this.
+const MAX_DEPTH: u32 = 64;
 
 struct Parser {
     toks: Vec<Spanned>,
     pos: usize,
     src_len: usize,
+    depth: u32,
 }
 
 impl Parser {
@@ -368,9 +397,25 @@ impl Parser {
         }
     }
 
+    /// Enter one level of nesting, or refuse.
+    fn deeper(&mut self) -> Result<(), ParseError> {
+        self.depth += 1;
+        if self.depth > MAX_DEPTH {
+            return Err(ParseError {
+                message: format!("nested more than {MAX_DEPTH} levels deep"),
+                span: self.span(),
+                hint: Some("check for unbalanced parentheses".into()),
+            });
+        }
+        Ok(())
+    }
+
     fn not_expr(&mut self) -> Result<Expr, ParseError> {
         if self.eat_word("not") {
-            return Ok(Expr::Not(Box::new(self.not_expr()?)));
+            self.deeper()?;
+            let inner = self.not_expr();
+            self.depth -= 1;
+            return Ok(Expr::Not(Box::new(inner?)));
         }
         self.primary()
     }
@@ -378,7 +423,10 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr, ParseError> {
         if matches!(self.peek(), Some(Tok::LParen)) {
             self.pos += 1;
-            let inner = self.or_expr()?;
+            self.deeper()?;
+            let inner = self.or_expr();
+            self.depth -= 1;
+            let inner = inner?;
             if matches!(self.peek(), Some(Tok::RParen)) {
                 self.pos += 1;
             }
@@ -800,5 +848,53 @@ mod tests {
         let p = q("loved limit 3 per artist");
         assert_eq!(p.limit, Some(3));
         assert_eq!(p.limit_per, Some(Field::Artist));
+    }
+
+    /// The caller slices the source with these offsets to draw a caret under
+    /// the problem. A span counted in characters cuts a multi-byte one in half
+    /// and panics, so `staramp query 'é!'` used to take the process down.
+    #[test]
+    fn an_error_span_is_a_byte_offset_on_a_character_boundary() {
+        for src in [
+            "é!",
+            "artist = é and !",
+            "Mötley !",
+            "日本語!",
+            "genre ~ \"powér\" and !",
+        ] {
+            let Err(e) = parse(src) else { continue };
+            let (a, b) = e.span;
+            assert!(a <= b, "{src}: span {a}..{b} is inverted");
+            assert!(
+                b <= src.len(),
+                "{src}: span end {b} past {} bytes",
+                src.len()
+            );
+            assert!(
+                src.is_char_boundary(a),
+                "{src}: span start {a} splits a character"
+            );
+            assert!(
+                src.is_char_boundary(b),
+                "{src}: span end {b} splits a character"
+            );
+            // What the CLI actually does with them.
+            let _ = &src[..a];
+            let _ = &src[a..b];
+        }
+    }
+
+    /// The descent recurses on `(` and on `not`, and a stack overflow aborts
+    /// the process rather than unwinding: there is nothing to catch.
+    #[test]
+    fn deep_nesting_is_an_error_rather_than_an_overflow() {
+        let deep = "(".repeat(10_000) + "artist = x";
+        assert!(parse(&deep).is_err(), "10000 parens were accepted");
+        let nots = "not ".repeat(10_000) + "loved";
+        assert!(parse(&nots).is_err(), "10000 nots were accepted");
+
+        // Ordinary nesting still works.
+        assert!(parse("((artist = x or artist = y) and year > 2000)").is_ok());
+        assert!(parse("not not loved").is_ok());
     }
 }

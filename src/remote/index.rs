@@ -78,7 +78,7 @@ pub fn sync(lib: &Library) -> Result<PathBuf> {
     // Downloaded beside the target and renamed into place, so an interrupted
     // fetch never leaves a half-written database that looks complete.
     let part = local.with_extension("part");
-    lib.download(&remote, &part)?;
+    lib.download(&remote, &part, attrs.size.unwrap_or(0))?;
 
     // ⚠ The index is in WAL mode (`schema::PRAGMAS`). If a scan is running on
     // the far machine right now, the committed data is split between the main
@@ -88,9 +88,9 @@ pub fn sync(lib: &Library) -> Result<PathBuf> {
     // is how a library ends up corrupt on the one day it matters.
     let wal_part = with_suffix(&part, "-wal");
     let _ = std::fs::remove_file(&wal_part);
-    if lib.stat_absolute(&format!("{remote}-wal"))?.is_some() {
+    if let Some(wal) = lib.stat_absolute(&format!("{remote}-wal"))? {
         tracing::debug!("the far index has a -wal sidecar; taking it too");
-        if let Err(e) = lib.download(&format!("{remote}-wal"), &wal_part) {
+        if let Err(e) = lib.download(&format!("{remote}-wal"), &wal_part, wal.size.unwrap_or(0)) {
             tracing::debug!("could not fetch the -wal sidecar: {e}");
         }
     }
@@ -126,6 +126,19 @@ fn check(path: &Path) -> Result<()> {
         .query_row("PRAGMA quick_check(1)", [], |r| r.get(0))
         .context("running quick_check")?;
     anyhow::ensure!(verdict == "ok", "quick_check said: {verdict}");
+    // An index from a build that does not share this schema is not something
+    // to guess at. A range rather than equality: older versions are migrated
+    // in place when the local index is opened for writing, so a peer running
+    // a slightly older staramp still reads correctly here.
+    let version: i32 = db
+        .conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .context("reading the index schema version")?;
+    anyhow::ensure!(
+        (1..=crate::library::schema::SCHEMA_VERSION).contains(&version),
+        "the index has schema version {version}, and this build understands 1 to {};          run `staramp scan` on that machine",
+        crate::library::schema::SCHEMA_VERSION
+    );
     // An index with no tracks is not corrupt, but it is not usable either,
     // and saying so here beats an empty browser with no explanation.
     let n = db.track_count().unwrap_or(0);

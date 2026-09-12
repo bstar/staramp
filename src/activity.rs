@@ -1093,6 +1093,14 @@ fn http_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
         .user_agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
         .http_status_as_error(false)
+        // Every endpoint this talks to is https, and a redirect is the one
+        // place that could quietly stop being true: without this, a
+        // compromised or intercepted service can answer 302 to an http:// URL
+        // and the request goes out again in the clear. Three hops is more than
+        // any of these need -- the Cover Art Archive's own chain is the
+        // longest at two -- and ten was room for a redirect loop to spend.
+        .https_only(true)
+        .max_redirects(5)
         .timeout_global(Some(Duration::from_secs(15)))
         .build()
         .into()

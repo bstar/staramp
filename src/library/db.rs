@@ -97,10 +97,41 @@ impl Db {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .with_context(|| format!("opening index read-only at {}", path.display()))?;
+        harden(&conn)?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        // `initialize` is false, so nothing here runs DDL against the file
+        // that was just opened. On the remote path that file came off another
+        // machine, and the attach inherits this connection's read-only flag.
         crate::activity::attach(&conn, false, false)?;
         Ok(Self { conn })
     }
+}
+
+/// Tell SQLite the file it just opened may be hostile.
+///
+/// The index for a remote library is downloaded from another machine and
+/// parsed in-process. `quick_check` answers whether it is intact, which is a
+/// different question from whether it is safe: upstream is explicit that a
+/// crafted database can do more than come back corrupt.
+///
+/// None of these cost anything here, because nothing in this program uses what
+/// they turn off. There is no `CREATE VIEW` and no `CREATE TRIGGER` anywhere
+/// in the schema, and the one virtual table -- `track_fts` -- is tagged
+/// innocuous by FTS5 itself, so full-text search keeps working with
+/// `trusted_schema` off. Set before any statement is prepared, which is what
+/// the trigger and view switches require.
+fn harden(conn: &Connection) -> Result<()> {
+    use rusqlite::config::DbConfig;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_DEFENSIVE, true)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_TRUSTED_SCHEMA, false)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false)?;
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_VIEW, false)?;
+    // A missing activity database should be reported, not conjured, on a
+    // read-only connection.
+    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_ATTACH_CREATE, false)?;
+    // Malformed b-tree cells are caught as they are read rather than trusted.
+    conn.execute_batch("PRAGMA cell_size_check = ON;")?;
+    Ok(())
 }
 
 fn add_created_time(conn: &Connection) -> Result<()> {

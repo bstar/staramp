@@ -601,12 +601,30 @@ use std::io::Read as _;
 /// itself, and a header that silently failed to apply would look exactly like
 /// the service being down.
 fn agent() -> ureq::Agent {
+    build_agent(true)
+}
+
+/// The agent, with the https-only rule optional.
+///
+/// Only a test passes `false`, and only so that it can point the real agent at
+/// a plaintext socket it controls and read back the headers that arrived. The
+/// rule itself is asserted separately, so making it switchable here does not
+/// make it untested.
+fn build_agent(https_only: bool) -> ureq::Agent {
     ureq::Agent::config_builder()
         .user_agent(USER_AGENT)
         // Statuses are read rather than raised, because the body is what
         // distinguishes a busy server from a rate limit, and an error that has
         // already thrown the body away cannot tell them apart.
         .http_status_as_error(false)
+        // Every endpoint this talks to is https, and a redirect is the one
+        // place that could quietly stop being true: without this, a
+        // compromised or intercepted service can answer 302 to an http:// URL
+        // and the request goes out again in the clear. Three hops is more than
+        // any of these need -- the Cover Art Archive's own chain is the
+        // longest at two -- and ten was room for a redirect loop to spend.
+        .https_only(https_only)
+        .max_redirects(5)
         .timeout_global(Some(Duration::from_secs(15)))
         .build()
         .into()
@@ -794,18 +812,35 @@ fn metal_archives_relation(body: &[u8]) -> Option<String> {
         .as_array()?
         .iter()
         .filter_map(|r| r.get("url")?.get("resource")?.as_str())
-        .find(|url| {
-            let lower = url.to_ascii_lowercase();
-            let Some(rest) = lower
-                .strip_prefix("https://")
-                .or_else(|| lower.strip_prefix("http://"))
-            else {
-                return false;
-            };
-            let host = rest.split('/').next().unwrap_or("");
-            host == "metal-archives.com" || host.ends_with(".metal-archives.com")
-        })
+        .find(|url| is_metal_archives(url))
         .map(str::to_string)
+}
+
+/// Is this URL really Encyclopaedia Metallum?
+///
+/// The URL is not built here: it comes out of a MusicBrainz URL relationship,
+/// which anyone with a MusicBrainz account can edit, and clicking an album
+/// opens it in the listener's own browser. So the host has to be checked, and
+/// checked the way a browser will read it rather than the way it reads at a
+/// glance.
+///
+/// The authority ends at the first `/`, `?`, `#` or `\` -- a browser stops at
+/// all four, and stopping only at `/` accepts
+/// `https://evil.example?x.metal-archives.com`, which ends with the right
+/// suffix and goes somewhere else entirely. Userinfo (`@`) and a port (`:`)
+/// are refused outright rather than parsed, since a real Metal Archives URL
+/// has neither.
+fn is_metal_archives(url: &str) -> bool {
+    const HOST: &str = "metal-archives.com";
+    let lower = url.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#', '\\']).next().unwrap_or_default();
+    if host.contains('@') || host.contains(':') {
+        return false;
+    }
+    host == HOST || host.ends_with(&format!(".{HOST}"))
 }
 
 fn catalog_ids(body: &[u8], artist: &str, album: &str) -> (Vec<String>, Vec<String>) {
@@ -1301,7 +1336,9 @@ mod tests {
             headers
         });
 
-        let _ = agent().get(format!("http://127.0.0.1:{port}/")).call();
+        let _ = build_agent(false)
+            .get(format!("http://127.0.0.1:{port}/"))
+            .call();
         let headers = handle.join().unwrap().to_lowercase();
         assert!(
             headers.contains("user-agent: staramp/"),
@@ -1311,6 +1348,15 @@ mod tests {
             headers.contains("github.com/bstar/staramp"),
             "the agent must carry a contact: {headers}"
         );
+    }
+
+    /// Every endpoint here is https. A redirect is the one place that could
+    /// quietly stop being true, and ten hops was room for a loop to spend.
+    #[test]
+    fn the_agent_refuses_cleartext_and_bounds_its_redirects() {
+        let config = agent().config().clone();
+        assert!(config.https_only(), "a redirect could downgrade to http");
+        assert!(config.max_redirects() <= 5);
     }
 
     #[test]
@@ -1486,6 +1532,36 @@ mod tests {
             br#"{"relations":[{"url":{"resource":"javascript:alert(1)"}}]}"#
         )
         .is_none());
+    }
+
+    /// The URL comes from a MusicBrainz relationship, which anyone with an
+    /// account can edit, and clicking an album opens it in the listener's own
+    /// browser. The host has to be read the way a browser reads it.
+    #[test]
+    fn a_host_that_only_looks_like_metal_archives_is_refused() {
+        for good in [
+            "https://metal-archives.com/bands/Test/1",
+            "https://www.metal-archives.com/bands/Test/1",
+        ] {
+            assert!(is_metal_archives(good), "{good} should be accepted");
+        }
+        for bad in [
+            // The authority ends at the first ?, # or \ as well as /.
+            "https://evil.example?x.metal-archives.com",
+            "https://evil.example#.metal-archives.com",
+            "https://evil.example\\.metal-archives.com",
+            // Userinfo and ports are not part of a real one.
+            "https://metal-archives.com@evil.example/",
+            "https://evil.example:443/.metal-archives.com",
+            // A suffix without the dot is a different domain.
+            "https://notmetal-archives.com/bands/Test/1",
+            // And cleartext is not accepted at all.
+            "http://www.metal-archives.com/bands/Test/1",
+            "javascript:alert(1)",
+            "file:///etc/shadow",
+        ] {
+            assert!(!is_metal_archives(bad), "{bad} should be refused");
+        }
     }
 
     #[test]

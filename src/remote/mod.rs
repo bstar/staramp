@@ -50,6 +50,9 @@ pub struct Library {
     window: u64,
 }
 
+/// How much larger than its advertised size a downloaded file may be.
+const DOWNLOAD_SLACK: u64 = 16 * 1024 * 1024;
+
 impl Library {
     /// Connect to `host` and resolve `root` there.
     ///
@@ -193,8 +196,15 @@ impl Library {
     }
 
     /// Copy a whole file down, streaming it to disk rather than into memory.
-    pub fn download(&self, remote: &str, to: &std::path::Path) -> Result<u64> {
+    ///
+    /// `expect` is the size the far end claimed when it was stat'd. A little
+    /// slack is allowed because a file can legitimately grow between the stat
+    /// and the read, but not without limit: a host that advertises a small
+    /// index and then streams forever would otherwise fill this machine's
+    /// disk, and the far end is not ours to trust about its own sizes.
+    pub fn download(&self, remote: &str, to: &std::path::Path, expect: u64) -> Result<u64> {
         use std::io::{Read, Write};
+        let ceiling = expect.saturating_add(DOWNLOAD_SLACK);
         let session = self.session(true)?;
         let mut src = stream::RemoteFile::open(session, remote, stream::MIN_WINDOW)
             .with_context(|| format!("opening {}:{remote}", self.host()))?;
@@ -210,6 +220,11 @@ impl Library {
             }
             dst.write_all(&buf[..n])?;
             total += n as u64;
+            anyhow::ensure!(
+                total <= ceiling,
+                "{}:{remote} said it held {expect} bytes and has sent more than {ceiling}",
+                self.host()
+            );
         }
         dst.flush()?;
         Ok(total)

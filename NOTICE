@@ -1,0 +1,51 @@
+staramp
+Copyright (c) 2026 bstar
+
+staramp links FFmpeg (https://ffmpeg.org) -- libavformat, libavcodec,
+libavutil and libswresample -- to decode the formats symphonia does not.
+FFmpeg is the FFmpeg project's work, not staramp's.
+
+Most of FFmpeg is licensed under the GNU Lesser General Public License,
+version 2.1 or later; its text is in LICENSES/ffmpeg-LGPL-2.1.txt. Some
+builds are configured with `--enable-gpl` or `--enable-version3`, which put
+the resulting libraries under the GPL or under version 3 of either licence,
+and a binary linked against such a build inherits those terms. FFmpeg's own
+LICENSE.md sets out which components fall where.
+
+The libraries are always linked dynamically, never statically. The `.deb`,
+the Arch package and the Nix package declare a dependency on the system
+FFmpeg and use whatever that system provides. The AppImage and the portable
+tarball carry a copy alongside the binary, because libavcodec's soname
+differs on every distribution -- there the copy is Debian's build, it sits
+beside the executable in `usr/lib`, and it can be replaced with another of
+the same soname without rebuilding staramp.
+
+Source for FFmpeg is available from the project at
+https://ffmpeg.org/download.html, and for the build in a given package from
+whichever distribution supplied it -- Debian's for the AppImage and the
+tarball.
+
+The visualizer is staramp's own. `src/vis/spectrum.rs` spaces its bands on
+the ERB scale of Glasberg and Moore (1990) and weights them with the A curve
+of IEC 61672-1, and `src/vis/meter.rs` follows the peak-programme meter
+ballistics of IEC 60268-10. Those are published standards and formulae, not
+anyone's source. Earlier releases carried analysis ported from cliamp and
+cava; none of it remains.
+
+The ten equalizer centre frequencies are Winamp's classic layout, which is a
+specification rather than code. The filters are staramp's own.
+
+The terminal text effects follow the designs of TerminalTextEffects
+(https://github.com/ChrisBuilds/terminaltexteffects) and its Rust port ttfx
+(https://github.com/omacom/ttfx). They are reimplemented here rather than
+depended on -- those render ANSI to stdout, while staramp needs per-character
+state it can draw into a ratatui buffer -- so no ttfx code is included.
+
+Colour schemes under themes/ are transcriptions of published palettes:
+Catppuccin, Dracula, Nord, Rose Pine, Tokyo Night, Gruvbox, Everforest,
+Kanagawa, Ayu, One Dark and Solarized, each MIT-licensed or public. Each theme
+file names its author.
+
+themes/winamp-classic.toml transcribes the Winamp 2.91 base skin's own
+PLEDIT.TXT and VISCOLOR.TXT values. staramp is not affiliated with, endorsed
+by, or connected to Winamp, Nullsoft or the Llama Group.

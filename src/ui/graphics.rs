@@ -140,10 +140,27 @@ pub enum Picture {
     PlayMark,
 }
 
-/// What a picture was built for: which one, in which colours, at what size
-/// in pixels. Colours are in the key rather than the theme's name so a theme
-/// change simply misses and rebuilds.
-type ButtonKey = (Picture, (u8, u8, u8), (u8, u8, u8), (u8, u8, u8), u32, u32);
+/// What a picture was built for: which one, in which colours, over how many
+/// cells, at what size in pixels. Colours are in the key rather than the
+/// theme's name so a theme change simply misses and rebuilds.
+///
+/// The cell count is in the key as well as the pixel size, and the two are
+/// not the same fact. A protocol is transmitted as pixels but *placed* over a
+/// number of cells, and the same pixel size can be reached from different
+/// cell counts -- four cells of seven pixels and two cells of fourteen are
+/// both twenty-eight. Keyed on pixels alone, a protocol built for two cells
+/// is handed to a button that spans four, and the two cells it does not cover
+/// keep whatever the terminal already had there: a graphics placement is not
+/// erased by painting the cell, only by another placement or a delete.
+type ButtonKey = (
+    Picture,
+    (u8, u8, u8),
+    (u8, u8, u8),
+    (u8, u8, u8),
+    // Cells, then pixels.
+    (u16, u16),
+    (u32, u32),
+);
 
 pub struct Graphics {
     mode: Mode,
@@ -407,7 +424,14 @@ impl Graphics {
             area.height as u32 * cell.height as u32,
         );
         let tuple = |c: Rgb| (c.r, c.g, c.b);
-        let key = (which, tuple(fg), tuple(plate), tuple(bg), w, h);
+        let key = (
+            which,
+            tuple(fg),
+            tuple(plate),
+            tuple(bg),
+            (area.width, area.height),
+            (w, h),
+        );
         if !self.buttons.contains_key(&key) {
             let img = match which {
                 Picture::Button(b) => crate::ui::panels::faces::raster(b, w, h, fg, plate, bg),
@@ -733,5 +757,63 @@ mod tests {
         assert_eq!(buf[(2, 0)].symbol(), "\x1b[u\x1b[3C\x1b[2B");
         mend_unit_placeholder(&mut buf, 3, 0);
         assert_eq!(buf[(3, 0)].symbol(), " ");
+    }
+
+    /// A picture is transmitted as pixels and placed over cells, and those are
+    /// two different facts. Keyed on pixels alone, four cells of seven pixels
+    /// and two cells of fourteen are the same entry -- so a button spanning
+    /// four cells was served a picture built to cover two, and the two it did
+    /// not cover kept whatever the terminal already had there. On a paused
+    /// player that was the lit pause icon, sitting in the right-hand half of
+    /// the next-track button.
+    #[test]
+    fn a_picture_for_four_cells_is_not_reused_for_two() {
+        #[allow(deprecated)]
+        let small = Picker::from_fontsize(FontSize {
+            width: 7,
+            height: 16,
+        });
+        // Twice as wide a cell, the same height: contrived so that both
+        // dimensions collide at once, which is what the key has to survive.
+        #[allow(deprecated)]
+        let large = Picker::from_fontsize(FontSize {
+            width: 14,
+            height: 16,
+        });
+
+        let mut g = Graphics::disabled();
+        g.mode = Mode::Kitty;
+        let (fg, plate, bg) = (
+            Rgb::new(200, 200, 200),
+            Rgb::new(47, 47, 47),
+            Rgb::new(27, 27, 27),
+        );
+        let button = Picture::Button(crate::ui::panels::faces::Button::Next);
+
+        // Four cells at seven pixels, then two cells at fourteen. Both are
+        // 28 by 48 pixels, and they must not be the same entry.
+        g.picker = Some(small);
+        assert!(g
+            .picture(button, Rect::new(0, 0, 4, 3), fg, plate, bg)
+            .is_some());
+        g.picker = Some(large);
+        assert!(g
+            .picture(button, Rect::new(0, 0, 2, 3), fg, plate, bg)
+            .is_some());
+
+        assert_eq!(
+            g.buttons.len(),
+            2,
+            "the two-cell picture was served the four-cell picture's entry"
+        );
+
+        // And each is held against the cells it was actually built to cover.
+        let mut cells: Vec<(u16, u16)> = g.buttons.keys().map(|k| k.4).collect();
+        cells.sort();
+        assert_eq!(cells, vec![(2, 3), (4, 3)]);
+        assert!(
+            g.buttons.keys().all(|k| k.5 == (28, 48)),
+            "the fixture is wrong: the two sizes were meant to collide in pixels"
+        );
     }
 }

@@ -31,6 +31,43 @@ pub fn base_dir() -> Result<PathBuf> {
     Ok(home.join(".local").join(APP))
 }
 
+/// Make a directory staramp owns readable by nobody else.
+///
+/// `create_dir_all` takes the umask, which on most systems means 0755, and
+/// what lives under here is not a matter of taste: `index.sqlite` lists every
+/// path in the library, `activity.sqlite` is a complete listening history, and
+/// the log names whatever is playing. On a shared machine that is all readable
+/// by every other account.
+///
+/// Applied to a directory that already exists as well as a new one, because
+/// installs that predate this run with the old mode and would otherwise keep
+/// it forever. Best-effort by design: a directory that cannot be chmodded --
+/// one on a filesystem with no Unix modes, most likely -- is not a reason to
+/// refuse to start.
+pub fn own_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
+    Ok(())
+}
+
+/// Create the directories staramp keeps its own files in, privately.
+///
+/// Called once at startup, before anything opens a database or a log.
+pub fn init_private_dirs() {
+    for dir in [base_dir(), config_dir(), cache_dir()]
+        .into_iter()
+        .flatten()
+    {
+        if let Err(e) = own_dir(&dir) {
+            tracing::debug!("could not prepare {}: {e}", dir.display());
+        }
+    }
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -107,7 +144,9 @@ pub fn runtime_dir() -> Result<PathBuf> {
         Some(d) => PathBuf::from(d).join("staramp"),
         None => cache_dir()?.join("run"),
     };
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    // 0700: this holds the control socket and the ssh multiplexer socket. The
+    // XDG runtime directory is already private, but the cache fallback is not.
+    own_dir(&dir).with_context(|| format!("creating {}", dir.display()))?;
     Ok(dir)
 }
 

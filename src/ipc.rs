@@ -123,6 +123,103 @@ fn take_lock(path: &std::path::Path) -> Option<std::fs::File> {
     held.then_some(file)
 }
 
+/// Who is on the other end of a connection.
+///
+/// The abstract namespace this binds in on Linux is scoped to the network
+/// namespace, not to a user and not to a directory, and it has no permission
+/// bits at all -- so the address being unguessable is the only thing standing
+/// between another local user and this socket, and it is not unguessable: the
+/// name is a hash of a path that contains nothing but the uid. Every verb here
+/// is therefore reachable by anyone with an account on the machine unless the
+/// peer is asked who it is.
+///
+/// `SO_PEERCRED` is the question. The kernel fills it in at connect time from
+/// the peer's own credentials, so it cannot be forged by the client.
+#[cfg(target_os = "linux")]
+mod peer {
+    use std::io;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::net::UnixStream;
+
+    const SOL_SOCKET: i32 = 1;
+
+    /// `SO_PEERCRED`. This is 17 on x86, x86_64, arm, aarch64, riscv64 and
+    /// s390x, which covers every target staramp is built for; it is 18 on MIPS
+    /// and different again on some SPARC and PA-RISC ports, so do not copy this
+    /// constant anywhere without checking.
+    const SO_PEERCRED: i32 = 17;
+
+    /// `struct ucred`: three 32-bit fields, twelve bytes, on every Linux ABI.
+    #[repr(C)]
+    #[derive(Default)]
+    struct Ucred {
+        _pid: i32,
+        uid: u32,
+        _gid: u32,
+    }
+
+    extern "C" {
+        #[link_name = "getsockopt"]
+        fn libc_getsockopt(
+            fd: i32,
+            level: i32,
+            name: i32,
+            value: *mut core::ffi::c_void,
+            len: *mut u32,
+        ) -> i32;
+        #[link_name = "getuid"]
+        fn libc_getuid() -> u32;
+    }
+
+    /// The uid of the process that opened `stream`.
+    fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
+        let mut cred = Ucred::default();
+        // `socklen_t` is u32 on every Linux ABI, 32- and 64-bit alike.
+        let mut len = core::mem::size_of::<Ucred>() as u32;
+        // SAFETY: `cred` is a correctly sized and aligned `struct ucred`, `len`
+        // holds its size as the kernel requires, and the borrow keeps the file
+        // descriptor open across the call.
+        let rc = unsafe {
+            libc_getsockopt(
+                stream.as_raw_fd(),
+                SOL_SOCKET,
+                SO_PEERCRED,
+                (&mut cred as *mut Ucred).cast(),
+                &mut len,
+            )
+        };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if len as usize != core::mem::size_of::<Ucred>() {
+            return Err(io::Error::other("SO_PEERCRED returned a short struct"));
+        }
+        Ok(cred.uid)
+    }
+
+    /// Our own uid.
+    pub fn own_uid() -> u32 {
+        // SAFETY: `getuid` takes no arguments, cannot fail and has no error
+        // state.
+        unsafe { libc_getuid() }
+    }
+
+    /// Is this connection from the user running the player?
+    ///
+    /// Fails closed: a connection whose credentials cannot be read is refused,
+    /// because the only reason that happens is a socket type this was never
+    /// meant to serve.
+    pub fn is_own_uid(stream: &UnixStream) -> bool {
+        match peer_uid(stream) {
+            Ok(uid) => uid == own_uid(),
+            Err(e) => {
+                tracing::warn!("ipc: cannot read peer credentials: {e}");
+                false
+            }
+        }
+    }
+}
+
 /// The abstract socket name for a session, on Linux.
 ///
 /// Hashed rather than the path itself, because a socket name has 108 bytes to
@@ -157,6 +254,7 @@ pub fn listen(path: &std::path::Path) -> std::io::Result<UnixListener> {
     #[cfg(not(target_os = "linux"))]
     {
         use std::io::{Error, ErrorKind};
+        use std::os::unix::fs::PermissionsExt;
 
         // Silent truncation by the kernel is a silent loss of remote control,
         // so say so instead. There is nothing to fall back to: the name *is*
@@ -199,9 +297,17 @@ pub fn listen(path: &std::path::Path) -> std::io::Result<UnixListener> {
         // certainly stale -- its owner is dead, or we would not have the lock.
         let _ = std::fs::remove_file(path);
         if let Some(parent) = path.parent() {
+            // 0700 on the directory is what actually keeps other users out.
+            // There is no way to bind a socket with a mode already set, so the
+            // chmod below is a moment late and the directory has to carry the
+            // guarantee. `create_dir_all` succeeds on a directory that already
+            // exists without touching its mode, so set it either way.
             let _ = std::fs::create_dir_all(parent);
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
         }
-        UnixListener::bind(path).inspect_err(|_| release_path(path))
+        let listener = UnixListener::bind(path).inspect_err(|_| release_path(path))?;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        Ok(listener)
     }
 }
 
@@ -634,6 +740,15 @@ fn handle_with_activity(
             let Some(path) = rest else {
                 return "error: load-playlist needs a file".into();
             };
+            // Deliberately any path the user can read, and not confined to the
+            // playlist directory. `staramp ui /somewhere/else.m3u` joining a
+            // running session is exactly this verb, with a path that came from
+            // the command line, so confining it would break the documented
+            // "load that into the session" answer.
+            //
+            // What makes that safe is the uid check on `accept`: the peer is
+            // the user, and the user can already read their own files. See
+            // `mod peer`.
             match crate::load_playlist(std::path::Path::new(path)) {
                 Ok(items) if !items.is_empty() => {
                     player.set_queue_tracks(items);
@@ -669,12 +784,16 @@ fn handle_with_activity(
                 Some(Ok(v)) => v,
                 _ => return "error: enqueue needs a JSON array of uris".into(),
             };
-            let items: Vec<crate::playlist::queue::QueueItem> = uris
-                .iter()
-                .map(|u| {
-                    crate::playlist::queue::QueueItem::new(crate::playlist::uri::TrackUri::parse(u))
-                })
-                .collect();
+            // Library URIs only. A window following the session is trusted to
+            // name tracks, not to name files.
+            let mut items: Vec<crate::playlist::queue::QueueItem> = Vec::with_capacity(uris.len());
+            for u in &uris {
+                let uri = crate::playlist::uri::TrackUri::parse(u);
+                if !uri.is_library_relative() {
+                    return "error: that is not a library track".into();
+                }
+                items.push(crate::playlist::queue::QueueItem::new(uri));
+            }
             if cmd == "set-queue" {
                 let n = items.len();
                 player.set_queue_tracks(items);
@@ -846,6 +965,14 @@ fn spawn_at_inner(
                 }
                 match incoming {
                     Ok(stream) => {
+                        // Another user's connection is dropped here rather than
+                        // served. The wake-up connection below comes from this
+                        // same process, so it passes.
+                        #[cfg(target_os = "linux")]
+                        if !peer::is_own_uid(&stream) {
+                            tracing::warn!("ipc: refused a connection from another user");
+                            continue;
+                        }
                         let player = Arc::clone(&player);
                         let view = Arc::clone(&view);
                         let activity = activity.clone();
@@ -1458,5 +1585,43 @@ mod tests {
             let p = socket_path().unwrap();
             assert!(p.ends_with("staramp.sock"));
         }
+    }
+
+    /// The socket carries no authentication of its own, so the kernel's answer
+    /// to "who connected?" is the whole of it. Our own connections must pass,
+    /// or the player loses its own remote control and its shutdown wake-up.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn our_own_connections_are_recognised_as_ours() {
+        let (_path, stop, client) = serving();
+        assert!(
+            peer::is_own_uid(&client),
+            "a connection from this very process was not recognised"
+        );
+        assert!(!ask(&client, "status").is_empty());
+        stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Queue edits name tracks in the library, never files on the machine.
+    #[test]
+    fn enqueue_refuses_a_uri_that_leaves_the_library() {
+        let (_path, stop, client) = serving();
+        for uri in [
+            "/etc/passwd",
+            "../../../../etc/passwd",
+            "a/../../b.flac",
+            "..\\..\\windows\\win.ini",
+        ] {
+            let req = format!("enqueue {}", serde_json::to_string(&vec![uri]).unwrap());
+            assert_eq!(
+                ask(&client, &req),
+                "error: that is not a library track",
+                "{uri} was accepted into the queue"
+            );
+        }
+        // An ordinary library track still goes in.
+        let ok = serde_json::to_string(&vec!["Artist/Album/01 - Track.flac"]).unwrap();
+        assert_eq!(ask(&client, &format!("enqueue {ok}")), "1");
+        stop.store(true, Ordering::Relaxed);
     }
 }

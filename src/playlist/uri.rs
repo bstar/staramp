@@ -77,6 +77,41 @@ impl TrackUri {
     pub fn is_cue(&self) -> bool {
         matches!(self, TrackUri::CueTrack { .. })
     }
+
+    /// Does this URI name a file inside the library, rather than somewhere
+    /// else on the machine?
+    ///
+    /// A library URI is relative and goes downward. Playlist lines are not
+    /// written by staramp -- an `.m3u` is a text file anyone can edit and
+    /// anyone can send you -- and neither is the index a remote library
+    /// serves, so `/etc/shadow` and `../../../../etc/shadow` both have to be
+    /// recognised as what they are before anything opens them.
+    ///
+    /// `parse` deliberately still accepts them: a line that does not resolve
+    /// is preserved rather than dropped, so that saving a playlist cannot
+    /// silently delete somebody's entry. Refusing happens where the bytes
+    /// would actually be read.
+    pub fn is_library_relative(&self) -> bool {
+        is_library_relative(self.backing_path())
+    }
+}
+
+/// The path rule behind [`TrackUri::is_library_relative`].
+///
+/// Checked on the string rather than on a `Path`, because that is the form the
+/// index and the playlist both store, and because `Path::components` quietly
+/// normalises away the `.` that a Windows-authored playlist can contain.
+pub fn is_library_relative(path: &str) -> bool {
+    use std::path::{Component, Path};
+    let p = Path::new(path);
+    !p.is_absolute()
+        && !path.is_empty()
+        // A backslash is a separator on the platform that wrote the playlist
+        // even where it is a legal filename byte here, so `..\..\x` has to be
+        // read the way its author meant it.
+        && !path.split(['/', '\\']).any(|part| part == "..")
+        && p.components()
+            .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
 impl fmt::Display for TrackUri {
@@ -200,5 +235,47 @@ mod tests {
         ] {
             assert_eq!(TrackUri::parse(s).to_string(), s);
         }
+    }
+
+    /// A playlist is a text file that arrives with an album, and an index can
+    /// arrive from another machine. Neither is a statement about what this
+    /// program may open.
+    #[test]
+    fn a_library_uri_goes_downward_and_nowhere_else() {
+        for good in [
+            "Artist/Album/01 - Track.flac",
+            "Album/rip.cue/track0007",
+            "./Artist/Album/01.flac",
+            "single.flac",
+            "Artist/..hidden-but-not-parent/01.flac",
+        ] {
+            assert!(
+                TrackUri::parse(good).is_library_relative(),
+                "{good} should be a library track"
+            );
+        }
+        for bad in [
+            "/etc/shadow",
+            "../../../../etc/shadow",
+            "Artist/../../../etc/shadow",
+            "..",
+            "..\\..\\windows\\win.ini",
+            "",
+        ] {
+            assert!(
+                !TrackUri::parse(bad).is_library_relative(),
+                "{bad} should not be a library track"
+            );
+        }
+    }
+
+    /// Recognising an escape is not the same as dropping the line: a playlist
+    /// entry staramp cannot play still has to survive being saved.
+    #[test]
+    fn an_escaping_line_still_parses_and_round_trips() {
+        let s = "../../etc/passwd";
+        let uri = TrackUri::parse(s);
+        assert_eq!(uri.to_string(), s);
+        assert!(!uri.is_library_relative());
     }
 }

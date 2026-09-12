@@ -321,6 +321,7 @@ fn publish(
         *client = None;
     }
     if client.is_none() {
+        safe_socket_dir()?;
         let mut connected = DiscordIpcClient::new(client_id);
         connected
             .connect()
@@ -339,6 +340,33 @@ fn publish(
     // replaced regularly, so at most a handful of unread optional replies can
     // accumulate before they are discarded with the old connection.
     Ok(())
+}
+
+/// Refuse to look for the Discord socket in a directory anyone can write to.
+///
+/// The client library searches `$XDG_RUNTIME_DIR` first and then falls back to
+/// `$TMPDIR`, `$TMP` and `$TEMP`, testing each candidate with an `exists()`
+/// that follows symlinks and no check of who owns what it finds. Where the
+/// runtime directory is unset -- a cron job, a `sudo` shell, an ssh session
+/// without a seat -- that fallback is `/tmp`, and any other local user can
+/// leave a socket named `discord-ipc-0` there and be handed the presence
+/// stream: what is playing, and the Last.fm name if one is configured.
+///
+/// No credential is at stake, which is why this refuses rather than tries
+/// harder. Presence is a convenience, and a convenience is not worth a channel
+/// to a stranger.
+fn safe_socket_dir() -> Result<(), String> {
+    if std::env::var_os("XDG_RUNTIME_DIR").is_some() {
+        return Ok(());
+    }
+    if cfg!(target_os = "macos") {
+        // `confstr(_CS_DARWIN_USER_TEMP_DIR)` gives launchd's per-user
+        // directory, which is what TMPDIR holds in a desktop session.
+        return Ok(());
+    }
+    Err("Discord presence needs XDG_RUNTIME_DIR set; \
+         the fallback socket directory is shared with other users"
+        .into())
 }
 
 fn activity_for(presence: &Presence, lastfm_username: &str) -> Activity<'static> {

@@ -244,6 +244,11 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Before anything creates a file under them. What staramp keeps is the
+    // shape of a music collection and a record of what was listened to, which
+    // is nobody else's business on a shared machine.
+    paths::init_private_dirs();
+
     // Move an older XDG-style install into the single base directory. No-op
     // once done, and it never overwrites anything already there.
     for moved in paths::migrate_legacy() {

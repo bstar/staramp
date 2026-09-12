@@ -5,6 +5,45 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Security
+
+A review of everything staramp parses, launches and downloads, written up in
+[docs/security-review.md](docs/security-review.md). What changed:
+
+- **The control socket asks who connected.** On Linux it is bound in the
+  abstract namespace, which has no permission bits, so any local user could
+  connect, drive playback and read the queue with its file paths. The peer's
+  uid is now checked. On macOS the socket and its directory are private, and
+  staramp's own directories are 0700 rather than whatever the umask gave --
+  the index lists every path in the library and the activity database is a
+  complete listening history.
+- **An Equalizer APO preset cannot reach the output device with an absurd
+  gain.** `Preamp: 400 dB` was a legal line that compiled to a
+  hundred-billion-fold multiplier. Gains, widths and frequencies are bounded,
+  coefficients are checked to be finite, and a soft limiter runs where the
+  signal could have been pushed past full scale -- never on a transparent
+  chain at unity, so bit-perfect playback is unchanged.
+- **`Include` stays beside its preset**, is measured before it is read, and
+  parses each file once. A skin archive's entries are size-bounded, and every
+  image is decoded with explicit dimension limits.
+- **A library URI cannot leave the library.** A playlist line or an index row
+  naming `/etc/shadow` or `../../..` is refused where the bytes would be read,
+  rather than opened. Such a line is still preserved on save.
+- **A downloaded index is treated as untrusted:** opened with SQLite's
+  defensive settings, its schema version checked, and its download bounded by
+  the size the far end advertised.
+- **Catalog links are checked properly.** The Metal Archives host test ended
+  the authority at the first `/`, so a URL from a MusicBrainz relationship
+  could send a click somewhere else entirely.
+- **The command line no longer prints unfiltered tag text**, `staramp query`
+  no longer panics on a non-ASCII error, and the query parser has a depth
+  limit. Integer overflow panics in release rather than wrapping.
+- **The build is pinned.** The AppImage runtime came from a rolling tag with
+  no checksum, and it is the first code that runs when an AppImage is opened.
+  Every CI action is pinned to a commit.
+- **Fifteen property tests** generate malformed input for the cue, playlist,
+  ID3, skin, preset, query, config and SFTP parsers.
+
 ## [0.1.0] - 2026-09-11
 
 First release.

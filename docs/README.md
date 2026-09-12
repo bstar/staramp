@@ -29,4 +29,5 @@ grouped by what you are trying to do.
 ## About the project
 
 - [Status and the numbers](status.md): what is done, what is partial, and the library the numbers come from.
+- [Security review](security-review.md): the September 2026 review of everything staramp parses, launches and downloads.
 - [Contributing](../CONTRIBUTING.md), [Security](../SECURITY.md), [Changelog](../CHANGELOG.md).

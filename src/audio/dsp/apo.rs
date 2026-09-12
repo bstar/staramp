@@ -939,3 +939,68 @@ mod tests {
         assert!(Profile::parse_file(&root).is_ok());
     }
 }
+
+/// Generated adversarial input.
+///
+/// A preset is a text file people download, and what it compiles to is
+/// multipliers and filter coefficients on the way to an output device.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_preset_lines_never_panic_and_never_escape_the_limits(
+            lines in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "Preamp: -6 dB", "Preamp: 400 dB", "Preamp: -1e308 dB",
+                    "Preamp: nan dB", "Preamp: inf dB", "Preamp:",
+                    "Filter 1: ON PK Fc 1000 Hz Gain 6 dB Q 1.4",
+                    "Filter 1: ON PK Fc 0 Hz Gain 6 dB Q 0",
+                    "Filter 1: ON PK Fc 1e308 Hz Gain 1e308 dB Q 1e308",
+                    "Filter 1: ON LS Fc 100 Hz Gain -40 dB Q 0.7",
+                    "Filter 1: ON PK Fc 1000 Hz Gain 6 dB BW Oct 1e308",
+                    "Filter 1: OFF NO Fc 50 Hz",
+                    "GraphicEQ: 20 -5; 20000 5", "GraphicEQ: 1e308 1e308",
+                    "Channel: L R", "Channel:", "Include: /etc/shadow",
+                    "Include: ../../x", "# comment", "", "nonsense: 1",
+                ]),
+                0..30,
+            ),
+        ) {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("preset.txt");
+            std::fs::write(&path, lines.join("\n")).unwrap();
+
+            let Ok(profile) = Profile::parse_file(&path) else { return Ok(()) };
+
+            // Anything that parses has to be inside the limits, and has to
+            // compile to coefficients that are numbers.
+            for stage in &profile.stages {
+                if let Filter::Preamp { gain_db } = &stage.filter {
+                    prop_assert!(gain_db.abs() <= MAX_GAIN_DB, "{gain_db} dB got through");
+                }
+            }
+            let settings =
+                crate::audio::dsp::eq::EqSettings::from_profile(true, &profile, 44_100);
+            for stage in &settings.stages {
+                match &stage.filter {
+                    crate::audio::dsp::eq::CompiledFilter::Gain(g) => {
+                        prop_assert!(g.is_finite(), "a non-finite gain reached the audio path");
+                        prop_assert!(
+                            *g <= 10f64.powf(MAX_GAIN_DB / 20.0) * 1.001,
+                            "a gain of {g} reached the audio path"
+                        );
+                    }
+                    crate::audio::dsp::eq::CompiledFilter::Biquad(c) => {
+                        for v in [c.b0, c.b1, c.b2, c.a1, c.a2] {
+                            prop_assert!(v.is_finite(), "a NaN coefficient reached the audio path");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}

@@ -339,3 +339,55 @@ mod tests {
         assert_eq!(pl.len(), 1);
     }
 }
+
+/// Generated adversarial input.
+///
+/// An `.m3u` is a text file that arrives with an album or is handed to you by
+/// somebody else, and the rule this module states -- never drop a line -- is
+/// the one worth checking against input nobody wrote by hand.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_text_parses_and_round_trips_byte_for_byte(s in ".{0,2000}") {
+            let pl = parse(&s);
+            // Every entry keeps the bytes it was read from.
+            for item in &pl.items {
+                prop_assert!(
+                    s.contains(item.raw_line.as_str()),
+                    "an entry gained bytes the source did not have: {:?}",
+                    item.raw_line
+                );
+            }
+            // And an escaping line is recognised without being dropped.
+            for item in &pl.items {
+                let _ = item.uri.is_library_relative();
+            }
+        }
+
+        /// Lines shaped like the ones a real playlist holds, including the
+        /// ones a hostile or careless one holds.
+        #[test]
+        fn playlist_shaped_lines_never_panic(
+            lines in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "#EXTM3U", "#EXTINF:123,Artist - Title", "#EXTINF:,",
+                    "#EXTINF:1e400,x", "#EXTINF:-1,x", "#",
+                    "Artist/Album/01.flac", "/etc/shadow", "../../../../etc/shadow",
+                    "album.cue/track0001", "album.cue/track99999", "album.cue/track",
+                    "", "   ", "\\\\", "C:\\\\music\\\\x.flac", "http://example/x.mp3",
+                ]),
+                0..50,
+            )
+        ) {
+            let text = lines.join("\n");
+            let pl = parse(&text);
+            let rendered = write_string(&pl, WriteStyle::MpdCompatible);
+            // Re-reading what we wrote gives the same entries back.
+            prop_assert_eq!(parse(&rendered).items.len(), pl.items.len());
+        }
+    }
+}

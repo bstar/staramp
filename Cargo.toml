@@ -128,6 +128,20 @@ tempfile = "3"
 [dev-dependencies]
 tempfile = "3"
 
+# Adversarial input for the parsers, generated rather than imagined. Every one
+# of them reads a file somebody else wrote -- a cue sheet, a playlist, a skin,
+# a preset, an ID3 frame, a packet off a link -- and a hand-written test only
+# covers the malformed input its author thought of.
+#
+# `fork` and `timeout` are what make a case that hangs or overflows the stack
+# report itself instead of taking the test binary down with it.
+proptest = { version = "1", default-features = false, features = [
+    "std",
+    "bit-set",
+    "fork",
+    "timeout",
+] }
+
 # MPRIS, and only where there is a D-Bus to publish it on.
 #
 # Target-gated rather than always-on: zbus does compile on macOS, so this is

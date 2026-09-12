@@ -898,3 +898,56 @@ mod tests {
         assert!(parse("not not loved").is_ok());
     }
 }
+
+/// Generated adversarial input.
+///
+/// The expression comes from whoever typed it, so this is less about malice
+/// than about the shapes nobody thinks to write a test for -- and the caller
+/// slices the source with whatever span comes back.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_input_never_panics_and_spans_stay_on_boundaries(s in ".{0,300}") {
+            match parse(&s) {
+                Ok(_) => {}
+                Err(e) => {
+                    let (a, b) = e.span;
+                    prop_assert!(a <= b, "span {}..{} is inverted", a, b);
+                    prop_assert!(b <= s.len(), "span end {} past {} bytes", b, s.len());
+                    prop_assert!(s.is_char_boundary(a), "span start {} splits a character", a);
+                    prop_assert!(s.is_char_boundary(b), "span end {} splits a character", b);
+                    // Exactly what the CLI does to draw its caret.
+                    let _ = (&s[..a], &s[a..b]);
+                }
+            }
+        }
+
+        /// Token soup out of the real vocabulary, which reaches the operator
+        /// and value parsing that random text never gets to.
+        #[test]
+        fn query_shaped_input_never_panics(
+            words in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "artist", "year", "genre", "duration", "playcount", "nosuchfield",
+                    "=", "!=", ">", "<", ">=", "<=", "~", "!~", "!",
+                    "and", "or", "not", "(", ")", ",",
+                    "sort", "limit", "desc", "asc", "added", "random",
+                    "loved", "never", "cue", "lossless",
+                    "\"quoted value\"", "2015", "-1e300", "1e400", "today",
+                    "thisweek", "30d", "0", "4294967296", "é",
+                ]),
+                0..40,
+            )
+        ) {
+            let s = words.join(" ");
+            if let Err(e) = parse(&s) {
+                let (a, b) = e.span;
+                prop_assert!(s.is_char_boundary(a) && s.is_char_boundary(b));
+            }
+        }
+    }
+}

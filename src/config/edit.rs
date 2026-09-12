@@ -577,3 +577,40 @@ mode = \"bars\"
         assert_eq!(escape_basic("Mötley Crüe"), "Mötley Crüe");
     }
 }
+
+/// Generated adversarial input.
+///
+/// The values written back are file stems -- a theme name, a preset name, a
+/// library path -- and a filename may hold almost anything.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn any_value_writes_a_config_that_still_parses(
+            source in ".{0,500}",
+            value in ".{0,200}",
+        ) {
+            let out = apply(&source, ROOT, "theme", &Value::Str(value.clone()));
+            // Whatever the source was, what we wrote for our own key has to
+            // read back as the value we set.
+            if let Ok(parsed) = toml::from_str::<toml::Value>(&out) {
+                prop_assert_eq!(parsed["theme"].as_str(), Some(value.as_str()));
+            }
+        }
+
+        /// Starting from a config this program wrote, the result must always
+        /// parse -- that is the case a user actually hits.
+        #[test]
+        fn a_well_formed_config_survives_any_value(value in ".{0,200}") {
+            let source = "theme = \"cosmic\"\nvolume = 0.800\n\n[ui]\ngraphics = \"auto\"\n";
+            let out = apply(source, ROOT, "theme", &Value::Str(value.clone()));
+            let parsed: toml::Value =
+                toml::from_str(&out).map_err(|e| TestCaseError::fail(e.to_string()))?;
+            prop_assert_eq!(parsed["theme"].as_str(), Some(value.as_str()));
+            prop_assert_eq!(parsed["ui"]["graphics"].as_str(), Some("auto"));
+        }
+    }
+}

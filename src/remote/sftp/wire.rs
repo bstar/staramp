@@ -389,7 +389,7 @@ mod tests {
 
     /// Collects whatever arrives, and can be told where DATA should land.
     #[derive(Default)]
-    struct Collect {
+    pub(super) struct Collect {
         dest: Vec<(u32, Vec<u8>)>,
         others: Vec<(u8, Vec<u8>)>,
         /// Ids to refuse, standing in for reads dropped after a seek.
@@ -610,6 +610,50 @@ mod tests {
             framed.push((rand() % 256) as u8);
             framed.extend_from_slice(&body);
             let _ = read_frame(&mut &framed[..], &mut Vec::new(), &mut Collect::default());
+        }
+    }
+}
+
+/// Generated adversarial input.
+///
+/// There is a hand-rolled random-bytes test above this. Generated framing
+/// reaches further: a length prefix that lies about the body is the shape that
+/// actually matters, and it is hard to hit by chance.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn a_lying_length_prefix_is_refused_rather_than_believed(
+            claimed in any::<u32>(),
+            kind in any::<u8>(),
+            body in proptest::collection::vec(any::<u8>(), 0..512),
+        ) {
+            let mut packet = claimed.to_be_bytes().to_vec();
+            packet.push(kind);
+            packet.extend_from_slice(&body);
+
+            let mut scratch = Vec::new();
+            // Either it reads a frame or it errors; it never allocates for a
+            // four-gigabyte claim and never panics.
+            let _ = read_frame(&mut &packet[..], &mut scratch, &mut super::tests::Collect::default());
+            prop_assert!(
+                scratch.len() <= MAX_PACKET,
+                "allocated {} bytes for a claim of {claimed}",
+                scratch.len()
+            );
+        }
+
+        #[test]
+        fn arbitrary_bodies_parse_or_decline(body in proptest::collection::vec(any::<u8>(), 0..1024)) {
+            let mut c = Cursor::new(&body);
+            let _ = c.u32();
+            let _ = c.u64();
+            let _ = c.string();
+            let _ = c.bytes();
+            let _ = c.attrs();
         }
     }
 }

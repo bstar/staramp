@@ -402,3 +402,61 @@ FILE "disc - 2.wv" WAVE
         assert_eq!(t.cd_frames(), 60 * 75);
     }
 }
+
+/// Generated adversarial input.
+///
+/// A cue sheet arrives with an album, in whatever encoding whoever ripped it
+/// happened to use, and every hand-written test only covers the malformed
+/// shape its author thought of.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_bytes_decode_and_parse_without_panicking(
+            bytes in proptest::collection::vec(any::<u8>(), 0..4096)
+        ) {
+            let (text, encoding) = decode_bytes(&bytes);
+            prop_assert!(!encoding.is_empty(), "every decode names the encoding it used");
+            let sheet = parse_str(&text);
+
+            // The arithmetic a sheet drives, at the highest rate anything
+            // plays at: minutes are parsed as a bare u32, so a large enough
+            // INDEX overflows the multiply unless it is checked.
+            for file in &sheet.files {
+                for track in &file.tracks {
+                    if let Some(msf) = track.start() {
+                        let _ = msf.to_audio_frames(2_822_400);
+                    }
+                }
+            }
+        }
+
+        /// Token soup, which reaches deeper than random bytes: the words are
+        /// the ones the parser branches on.
+        #[test]
+        fn arbitrary_cue_commands_parse_without_panicking(
+            lines in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "FILE", "TRACK", "INDEX", "REM", "TITLE", "PERFORMER",
+                    "FLAGS", "PREGAP", "POSTGAP", "ISRC", "CATALOG",
+                    "\"", "WAVE", "AUDIO", "00:00:00", "99999999:99:99",
+                    "4294967295", "-1", "", "0:0:0", "\\",
+                ]),
+                0..40,
+            )
+        ) {
+            let text = lines.join(" ");
+            let sheet = parse_str(&text);
+            for file in &sheet.files {
+                for track in &file.tracks {
+                    if let Some(msf) = track.start() {
+                        let _ = msf.to_audio_frames(2_822_400);
+                    }
+                }
+            }
+        }
+    }
+}

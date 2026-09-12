@@ -442,3 +442,43 @@ mod tests {
         assert_eq!(p.data, jpeg);
     }
 }
+
+/// Generated adversarial input.
+///
+/// This reader exists because a tag can be malformed in a way lofty gets
+/// wrong, so it is exactly the code that meets the worst files in a library.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_bytes_never_panic(bytes in proptest::collection::vec(any::<u8>(), 0..4096)) {
+            if let Some(p) = picture(&bytes) {
+                prop_assert!(
+                    p.data.len() <= bytes.len(),
+                    "the picture came out larger than the tag it was in"
+                );
+            }
+        }
+
+        /// A real ID3 header in front, so the frame walk is actually entered
+        /// rather than rejected at the magic.
+        #[test]
+        fn a_plausible_tag_header_never_panics(
+            version in 2u8..=4,
+            flags in any::<u8>(),
+            size in proptest::collection::vec(0u8..=0x7f, 4..=4),
+            body in proptest::collection::vec(any::<u8>(), 0..2048),
+        ) {
+            let mut bytes = b"ID3".to_vec();
+            bytes.push(version);
+            bytes.push(0);
+            bytes.push(flags);
+            bytes.extend_from_slice(&size);
+            bytes.extend_from_slice(&body);
+            let _ = picture(&bytes);
+        }
+    }
+}

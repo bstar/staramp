@@ -447,3 +447,45 @@ mod tests {
         assert_ne!(parsed["meta"]["id"].as_str(), Some("stolen"));
     }
 }
+
+/// Generated adversarial input.
+///
+/// Both of these read text out of a zip somebody downloaded.
+#[cfg(test)]
+mod fuzz {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn arbitrary_viscolor_text_never_panics(s in ".{0,2000}") {
+            let (colors, _) = parse_viscolor(&s);
+            prop_assert!(colors.len() <= 24, "more colours than the format has");
+        }
+
+        #[test]
+        fn arbitrary_pledit_text_never_panics(s in ".{0,2000}") {
+            let _ = parse_pledit(&s);
+        }
+
+        /// Lines shaped like the real files, which is where the number parsing
+        /// actually gets exercised.
+        #[test]
+        fn colour_shaped_lines_never_panic(
+            lines in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "0,0,0", "255,255,255", "999,999,999", "-1,-1,-1",
+                    "1,2", "1,2,3,4", "a,b,c", "", "// comment",
+                    "0,0,0 // comment", "4294967296,0,0", "1e10,0,0",
+                    "Normal=#FF00FF", "Current=#00FF00", "NormalBG=",
+                    "SelectedBG=#zzz", "=", "[Text]",
+                ]),
+                0..40,
+            )
+        ) {
+            let text = lines.join("\n");
+            let _ = parse_viscolor(&text);
+            let _ = parse_pledit(&text);
+        }
+    }
+}

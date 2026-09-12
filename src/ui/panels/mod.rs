@@ -1,0 +1,15 @@
+pub mod album;
+pub mod chooser;
+pub mod equalizer;
+pub mod faces;
+pub mod files;
+pub mod frame;
+pub mod header;
+pub mod history;
+pub mod library;
+pub mod picker;
+pub mod player;
+pub mod playlist;
+pub mod resume;
+pub mod settings;
+pub mod visualizer;

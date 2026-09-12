@@ -321,7 +321,7 @@ fn main() -> Result<()> {
 fn cmd_probe(input: PathBuf) -> Result<()> {
     let uri = playlist::uri::TrackUri::parse(&input.to_string_lossy());
     // The CLI names a file directly, so the URI is already absolute.
-    let opened = audio::source::open(&vfs::Vfs::local(""), None, &uri)?;
+    let opened = audio::source::open(&vfs::Vfs::local_files(), None, &uri)?;
     let backend = decode::backend_for_path(&opened.backing_path);
     let spec = opened.decoder.spec();
     let frames = opened.decoder.total_frames();
@@ -1353,13 +1353,19 @@ fn build_queue(
                             | "opus"
                     )
                 ) {
+                    // Relative to the directory that was opened, so the
+                    // queue holds library URIs like every other queue does
+                    // rather than absolute paths with a root of `/`. It also
+                    // reads better: one album's worth of file names instead
+                    // of the same long prefix on every row.
+                    let rel = p.strip_prefix(t).unwrap_or(p);
                     items.push(QueueItem::new(TrackUri::File {
-                        rel_path: p.to_string_lossy().into_owned(),
+                        rel_path: rel.to_string_lossy().into_owned(),
                     }));
                 }
             }
             items.sort_by_key(|a| a.uri.to_string());
-            return Ok((PathBuf::from("/"), items));
+            return Ok((t.to_path_buf(), items));
         }
     }
 
@@ -1504,6 +1510,15 @@ impl TrackMeta {
 /// Fill in what the index knows, and flag what it has never heard of.
 fn enrich_from_index(items: &mut [playlist::queue::QueueItem]) {
     use std::collections::HashMap;
+
+    // Whatever the index can or cannot say, a line that is not a library path
+    // is not playable. Every early return below leaves the rest of the list
+    // alone, so this has to come first rather than at the end.
+    for item in items.iter_mut() {
+        if !item.uri.is_library_relative() {
+            item.unplayable = true;
+        }
+    }
 
     let Ok(path) = index_path() else { return };
     let Ok(db) = library::db::Db::open_readonly(&path) else {

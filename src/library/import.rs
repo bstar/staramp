@@ -143,11 +143,18 @@ pub fn import(
         ".staramp-import-{stamp}-{}.partial",
         std::process::id()
     ));
-    anyhow::ensure!(
-        !partial.exists(),
-        "unfinished import already exists: {}",
-        partial.display()
-    );
+    // Created rather than ensured, and 0700. The name is predictable -- a
+    // timestamp and a pid -- and `create_dir_all` succeeds on a directory that
+    // is already there, so testing `exists()` first and creating it later left
+    // room for somebody to put one in place in between, with a symlink inside
+    // it for the copy to write through. `create` fails if anything is already
+    // at the path, which is the whole check, atomically.
+    create_private_dir(&partial).with_context(|| {
+        format!(
+            "preparing the staging directory {}; an unfinished import may already be there",
+            partial.display()
+        )
+    })?;
     if let Err(error) = copy_verified(&source, &partial) {
         let _ = fs::remove_dir_all(&partial);
         return Err(error).context("copying staged album");
@@ -211,6 +218,13 @@ pub fn import(
 pub fn reject(staging: &Path, library: &Path, quarantine: &Path, album: &Album) -> Result<PathBuf> {
     validate_roots(staging, library, Some(quarantine))?;
     let source = contained(staging, &staging.join(&album.source_rel))?;
+    // `source_rel` comes out of the staging index, and every other use of it
+    // is validated. This one relied on it being relative and `..`-free rather
+    // than checking, which is a different thing.
+    anyhow::ensure!(
+        crate::playlist::uri::is_library_relative(&album.source_rel.to_string_lossy()),
+        "album path is not inside the staging library"
+    );
     let destination = unique_path(&quarantine.join(&album.source_rel));
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)?;
@@ -351,9 +365,15 @@ fn validate_roots(staging: &Path, library: &Path, quarantine: Option<&Path>) -> 
     if let Some(quarantine) = quarantine {
         fs::create_dir_all(quarantine)?;
         let quarantine = quarantine.canonicalize()?;
+        // Both directions. Quarantine inside the library was already refused;
+        // the library inside quarantine was not, which would file rejects and
+        // replaced albums into the live collection.
         anyhow::ensure!(
-            !quarantine.starts_with(&staging) && !quarantine.starts_with(&library),
-            "quarantine must be outside staging and the permanent library"
+            !quarantine.starts_with(&staging)
+                && !quarantine.starts_with(&library)
+                && !staging.starts_with(&quarantine)
+                && !library.starts_with(&quarantine),
+            "quarantine must be separate from staging and the permanent library"
         );
     }
     Ok(())
@@ -417,6 +437,21 @@ fn move_verified(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Create a directory that must not already exist, readable only by its owner.
+///
+/// `create_dir_all` is the wrong call for anything an import writes into: it
+/// succeeds on a directory that is already there, which is exactly the case
+/// worth refusing.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
+}
+
 fn copy_verified(from: &Path, to: &Path) -> Result<()> {
     anyhow::ensure!(
         !from.symlink_metadata()?.file_type().is_symlink(),
@@ -424,7 +459,7 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
         from.display()
     );
     if from.is_dir() {
-        fs::create_dir_all(to)?;
+        create_private_dir(to)?;
         for entry in fs::read_dir(from)? {
             let entry = entry?;
             copy_verified(&entry.path(), &to.join(entry.file_name()))?;
@@ -432,7 +467,9 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
         return Ok(());
     }
     let mut input = fs::File::open(from)?;
-    let mut output = fs::File::create(to)?;
+    // `create_new`, so a symlink planted at the destination is not written
+    // through. Nothing should be there: the parent was just created.
+    let mut output = fs::File::options().write(true).create_new(true).open(to)?;
     let mut source_hash = blake3::Hasher::new();
     let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
@@ -458,6 +495,18 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
         "checksum mismatch copying {}",
         from.display()
     );
+    // The staged file's mode is not carried into the library wholesale: a
+    // download can arrive group- or world-writable, or setuid, and none of
+    // that means anything for an audio file. Readable, and writable by its
+    // owner, is what a music file is.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(from)?.permissions().mode();
+        let masked = (mode & 0o644) | 0o600;
+        fs::set_permissions(to, fs::Permissions::from_mode(masked))?;
+    }
+    #[cfg(not(unix))]
     fs::set_permissions(to, fs::metadata(from)?.permissions())?;
     Ok(())
 }
@@ -527,5 +576,74 @@ mod tests {
         assert_eq!(contained_or_new_child(&root, &wanted).unwrap(), wanted);
         assert!(!wanted.exists());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    /// The staging directory's name is a timestamp and a pid, so it is
+    /// guessable. Testing `exists()` and creating it later left room to put
+    /// one there in between, with a symlink inside for the copy to write
+    /// through. `create` is the check and the creation at once.
+    #[test]
+    fn a_staging_directory_that_already_exists_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial");
+        create_private_dir(&path).expect("the first create should succeed");
+        assert!(
+            create_private_dir(&path).is_err(),
+            "an existing directory was adopted instead of refused"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_staging_directory_is_private_to_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("partial");
+        create_private_dir(&path).unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700, "staged album was readable by others");
+    }
+
+    /// A download can arrive group-writable, or setuid, and neither means
+    /// anything for an audio file.
+    #[cfg(unix)]
+    #[test]
+    fn a_copied_file_does_not_carry_odd_permissions_into_the_library() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("track.flac");
+        std::fs::write(&from, b"not really a flac").unwrap();
+        std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o4777)).unwrap();
+
+        let to = dir.path().join("copied.flac");
+        copy_verified(&from, &to).unwrap();
+
+        let mode = std::fs::metadata(&to).unwrap().permissions().mode();
+        assert_eq!(mode & 0o7000, 0, "setuid or sticky bits were carried over");
+        assert_eq!(mode & 0o022, 0, "the file was group- or world-writable");
+        assert_eq!(mode & 0o600, 0o600, "the owner cannot read and write it");
+    }
+
+    /// Rejects and replaced albums must not be filed into the live library,
+    /// which is what a library inside the quarantine root would mean.
+    #[test]
+    fn the_three_roots_must_be_separate_in_both_directions() {
+        let dir = tempfile::tempdir().unwrap();
+        let staging = dir.path().join("inbox");
+        let library = dir.path().join("quarantine/library");
+        let quarantine = dir.path().join("quarantine");
+        for p in [&staging, &library, &quarantine] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        assert!(
+            validate_roots(&staging, &library, Some(&quarantine)).is_err(),
+            "a library inside the quarantine root was accepted"
+        );
+
+        let separate = dir.path().join("rejects");
+        std::fs::create_dir_all(&separate).unwrap();
+        let library = dir.path().join("music");
+        std::fs::create_dir_all(&library).unwrap();
+        assert!(validate_roots(&staging, &library, Some(&separate)).is_ok());
     }
 }

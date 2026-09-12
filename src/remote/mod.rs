@@ -103,11 +103,16 @@ impl Library {
     /// is how a file that exists becomes a file that cannot be opened. It
     /// matters more than it looks: macOS filenames are commonly NFD and Linux
     /// ones are whatever wrote them.
-    fn absolute(&self, rel: &str) -> String {
-        if rel.starts_with('/') {
-            return rel.to_string();
-        }
-        format!("{}/{}", self.root.trim_end_matches('/'), rel)
+    fn absolute(&self, rel: &str) -> Result<String> {
+        // The far machine's index is a file this machine did not write, so a
+        // URI out of it is as much somebody else's text as a playlist line is.
+        // Confined for the same reason and by the same rule, even though what
+        // it would reach is the peer's own filesystem rather than ours.
+        anyhow::ensure!(
+            crate::playlist::uri::is_library_relative(rel),
+            "{rel} is not inside the remote library"
+        );
+        Ok(format!("{}/{}", self.root.trim_end_matches('/'), rel))
     }
 
     /// A session, reopened if the last one died.
@@ -131,7 +136,7 @@ impl Library {
     /// Open a track for playback.
     pub fn media(&self, rel: &str) -> Result<crate::vfs::Media> {
         let session = self.session(false)?;
-        let path = self.absolute(rel);
+        let path = self.absolute(rel)?;
         let file = stream::RemoteFile::open(session, &path, self.window)
             .with_context(|| format!("opening {}:{path}", self.host()))?;
         let len = crate::vfs::RemoteRead::len(&file);
@@ -144,7 +149,7 @@ impl Library {
     /// A standalone reader, for a tag library that wants to seek about.
     pub fn reader(&self, rel: &str) -> Result<Box<dyn crate::vfs::RemoteRead>> {
         let session = self.session(true)?;
-        let path = self.absolute(rel);
+        let path = self.absolute(rel)?;
         Ok(Box::new(stream::RemoteFile::open(
             session,
             &path,
@@ -174,7 +179,7 @@ impl Library {
     }
 
     pub fn stat(&self, rel: &str) -> Result<Option<wire::Attrs>> {
-        self.session(true)?.stat(&self.absolute(rel))
+        self.session(true)?.stat(&self.absolute(rel)?)
     }
 
     /// Resolve a path on the far machine, expanding `~`.
@@ -219,7 +224,11 @@ impl Library {
     /// audible at every track change. Called well before the boundary, this
     /// moves that cost somewhere nobody can hear it.
     pub fn warm(&self, rel: &str) {
-        let path = self.absolute(rel);
+        // Best-effort, so a URI that is not a library path is simply not
+        // warmed; whatever tries to play it will refuse it properly.
+        let Ok(path) = self.absolute(rel) else {
+            return;
+        };
         let Ok(session) = self.session(false) else {
             return;
         };

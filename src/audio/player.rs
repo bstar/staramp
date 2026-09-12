@@ -153,7 +153,7 @@ impl Player {
         Self {
             // Nothing here reads a file, but the UI still asks what library
             // it is looking at. An empty local root is the honest answer.
-            vfs: Arc::new(Vfs::local("")),
+            vfs: Arc::new(Vfs::local_files()),
             cmds: tx,
             state: Arc::new(PlayerState::new()),
             eq: Arc::new(EqHandle::new(44_100)),

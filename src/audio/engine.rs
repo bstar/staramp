@@ -87,7 +87,8 @@ impl Playback {
         let uri = TrackUri::parse(&path.to_string_lossy());
         // The CLI names files directly, so the URIs are already absolute and
         // there is no root to resolve them against.
-        let vfs = Vfs::local("");
+        // A file named on the command line, not a library track.
+        let vfs = Vfs::local_files();
         let opened = source::open(&vfs, None, &uri)?;
         let mut dec = opened.decoder;
         let src_spec = dec.spec();

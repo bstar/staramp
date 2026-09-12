@@ -856,7 +856,15 @@ impl Queue {
     }
 
     /// Jump straight to a track index.
+    ///
+    /// Refuses a row that is known not to play. Auto-advance has always
+    /// skipped those; pressing Enter on one went ahead and tried to open it,
+    /// which for a playlist line naming a file outside the library is the one
+    /// press that mattered.
     pub fn jump_to(&mut self, track_index: usize) -> Option<usize> {
+        if !self.is_playable(track_index) {
+            return None;
+        }
         let p = self.order.iter().position(|&i| i == track_index)?;
         self.pos = p;
         self.from_queue = false;
@@ -1735,5 +1743,26 @@ mod tests {
         ]);
         q.set_grouping(Some(false));
         assert_eq!(q.album_gapless_successor(), Some((0, 1)));
+    }
+
+    /// Auto-advance has always skipped a row that cannot play. Pressing Enter
+    /// on one went ahead and opened it, which is the press that matters when
+    /// the row is a playlist line naming a file outside the library.
+    #[test]
+    fn a_row_that_cannot_play_is_not_jumped_to_either() {
+        let mut q = Queue::new();
+        let mut escaping = QueueItem::new(TrackUri::parse("../../etc/passwd"));
+        escaping.unplayable = true;
+        q.set_tracks(vec![
+            QueueItem::new(TrackUri::parse("a.flac")),
+            escaping,
+            QueueItem::new(TrackUri::parse("b.flac")),
+        ]);
+
+        assert_eq!(q.jump_to(0), Some(0));
+        assert_eq!(q.jump_to(1), None, "an unplayable row was jumped to");
+        // And the cursor did not move to it.
+        assert_eq!(q.current_index(), Some(0));
+        assert_eq!(q.jump_to(2), Some(2));
     }
 }

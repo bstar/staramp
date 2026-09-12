@@ -47,6 +47,18 @@ pub trait RemoteRead: Read + Seek + Send + Sync + 'static {
 pub enum Vfs {
     Local {
         root: PathBuf,
+        /// Whether URIs are confined to `root`.
+        ///
+        /// True for a library, which is what almost every `Vfs` is: a URI
+        /// there comes from the index or from a playlist line, and neither is
+        /// a statement about what may be opened. An `.m3u` is a text file that
+        /// arrives with an album and a remote index is written by another
+        /// machine, so `/etc/shadow` and `../../../../etc/shadow` both have to
+        /// stop here.
+        ///
+        /// False only for files named on the command line, which are absolute
+        /// by construction and were chosen by the person typing them.
+        confined: bool,
     },
     /// A library reached over SSH. The index is a local copy; the audio is
     /// read on demand.
@@ -54,21 +66,34 @@ pub enum Vfs {
 }
 
 impl Vfs {
+    /// A library at `root`. URIs under it cannot leave it.
     pub fn local(root: impl Into<PathBuf>) -> Self {
-        Vfs::Local { root: root.into() }
+        Vfs::Local {
+            root: root.into(),
+            confined: true,
+        }
+    }
+
+    /// Files named on the command line: `staramp play`, `staramp probe`.
+    ///
+    /// Not confined, because there is no library to be confined to and the
+    /// path came from the person who typed it.
+    pub fn local_files() -> Self {
+        Vfs::Local {
+            root: PathBuf::new(),
+            confined: false,
+        }
     }
 
     /// A root-relative URI as a local filesystem path, when there is one.
     ///
-    /// An absolute path is used as-is, which is what the CLI passes: `staramp
-    /// ui /path/to/album` builds URIs that are already absolute and a root of
-    /// `""` that must not be joined onto them.
-    ///
     /// `None` for a remote library, and every caller has to mean it: this is
-    /// the boundary where "read the file yourself" stops being possible.
+    /// the boundary where "read the file yourself" stops being possible. Also
+    /// `None` for a URI that tries to leave a confined root, which is a
+    /// playlist line or an index row that should never have been followed.
     pub fn local_path(&self, rel: &str) -> Option<PathBuf> {
         match self {
-            Vfs::Local { root } => Some(absolutise(root, rel)),
+            Vfs::Local { root, confined } => absolutise(root, rel, *confined).ok(),
             Vfs::Remote(_) => None,
         }
     }
@@ -104,7 +129,7 @@ impl Vfs {
     /// A root-relative URI as a decoder input.
     pub fn media(&self, rel: &str) -> Result<Media> {
         match self {
-            Vfs::Local { root } => Ok(Media::Local(absolutise(root, rel))),
+            Vfs::Local { root, confined } => Ok(Media::Local(absolutise(root, rel, *confined)?)),
             Vfs::Remote(l) => l.media(rel),
         }
     }
@@ -112,7 +137,7 @@ impl Vfs {
     /// A whole small file: a cue sheet, a playlist, a cover.
     pub fn read(&self, rel: &str) -> Result<Vec<u8>> {
         match self {
-            Vfs::Local { root } => Ok(std::fs::read(absolutise(root, rel))?),
+            Vfs::Local { root, confined } => Ok(std::fs::read(absolutise(root, rel, *confined)?)?),
             Vfs::Remote(l) => l.read(rel),
         }
     }
@@ -120,10 +145,10 @@ impl Vfs {
     /// The first `n` bytes and no more.
     pub fn read_head(&self, rel: &str, n: usize) -> Result<Vec<u8>> {
         match self {
-            Vfs::Local { root } => {
+            Vfs::Local { root, confined } => {
                 use std::io::Read;
                 let mut out = Vec::new();
-                std::fs::File::open(absolutise(root, rel))?
+                std::fs::File::open(absolutise(root, rel, *confined)?)?
                     .take(n as u64)
                     .read_to_end(&mut out)?;
                 Ok(out)
@@ -135,12 +160,13 @@ impl Vfs {
     /// A seekable reader, for a tag library that wants to wander.
     pub fn reader(&self, rel: &str) -> Result<Box<dyn RemoteRead>> {
         match self {
-            Vfs::Local { root } => Ok(Box::new(LocalFile {
-                len: std::fs::metadata(absolutise(root, rel))
-                    .map(|m| m.len())
-                    .unwrap_or(0),
-                file: std::fs::File::open(absolutise(root, rel))?,
-            })),
+            Vfs::Local { root, confined } => {
+                let path = absolutise(root, rel, *confined)?;
+                Ok(Box::new(LocalFile {
+                    len: std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0),
+                    file: std::fs::File::open(&path)?,
+                }))
+            }
             Vfs::Remote(l) => l.reader(rel),
         }
     }
@@ -180,13 +206,25 @@ impl RemoteRead for LocalFile {
     }
 }
 
-fn absolutise(root: &Path, p: &str) -> PathBuf {
+/// Turn a URI into a path, refusing one that leaves a confined root.
+///
+/// The check is on the URI as written rather than on the joined path, and it
+/// happens before any filesystem call: `canonicalize` would need the file to
+/// exist, and a probe for whether a file exists is itself worth denying.
+fn absolutise(root: &Path, p: &str, confined: bool) -> Result<PathBuf> {
     let path = Path::new(p);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        root.join(path)
+    if !confined {
+        return Ok(if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            root.join(path)
+        });
     }
+    anyhow::ensure!(
+        crate::playlist::uri::is_library_relative(p),
+        "{p} is not inside the library"
+    );
+    Ok(root.join(path))
 }
 
 /// A [`RemoteRead`] as something symphonia will accept.
@@ -235,19 +273,40 @@ mod tests {
         );
     }
 
-    /// The CLI passes absolute URIs with an empty root, and joining those onto
-    /// anything would break `staramp ui /path/to/album`.
+    /// Files named on the command line are absolute and are not a library, so
+    /// there is nothing for them to be confined to.
     #[test]
-    fn an_absolute_uri_ignores_the_root() {
-        let v = Vfs::local("");
+    fn a_named_file_is_opened_wherever_it_is() {
+        let v = Vfs::local_files();
         assert_eq!(
             v.local_path("/elsewhere/a.flac").unwrap(),
             PathBuf::from("/elsewhere/a.flac")
         );
+    }
+
+    /// A library URI comes from the index or from a playlist line. Neither is
+    /// a statement about what may be opened: an `.m3u` arrives with an album,
+    /// and a remote index is written by another machine entirely.
+    #[test]
+    fn a_library_uri_cannot_leave_the_library() {
         let v = Vfs::local("/music");
+        for escape in [
+            "/etc/shadow",
+            "../../../../etc/shadow",
+            "Artist/../../../etc/shadow",
+            "..",
+        ] {
+            assert!(
+                v.local_path(escape).is_none(),
+                "{escape} resolved to a path outside the library"
+            );
+            assert!(v.media(escape).is_err(), "{escape} was opened for decoding");
+            assert!(v.read(escape).is_err(), "{escape} was read");
+        }
+        // And an ordinary track still resolves.
         assert_eq!(
-            v.local_path("/elsewhere/a.flac").unwrap(),
-            PathBuf::from("/elsewhere/a.flac")
+            v.local_path("Artist/Album/01.flac").unwrap(),
+            PathBuf::from("/music/Artist/Album/01.flac")
         );
     }
 }

@@ -42,6 +42,14 @@ pub const MAX_IN_FLIGHT: usize = 64;
 pub const READ_LEN: u32 = 32 * 1024;
 
 /// How long a caller waits for one reply before calling the link dead.
+/// The most entries one directory listing may hold.
+///
+/// The far end is under someone else's control and READDIR is a loop: without
+/// a bound, a server that keeps answering with names is an out-of-memory
+/// condition on this machine. A hundred thousand is far past any real music
+/// directory.
+const MAX_DIR_ENTRIES: usize = 100_000;
+
 const REPLY_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// A reply, filed by request id.
@@ -391,12 +399,27 @@ impl Session {
         loop {
             let id = self.next_id();
             match self.call(id, wire::readdir(id, &handle.0), path) {
-                Ok(Reply::Names(n)) if !n.is_empty() => {
-                    out.extend(n.into_iter().filter(|(n, _)| n != "." && n != ".."))
-                }
+                Ok(Reply::Names(n)) if !n.is_empty() => out.extend(
+                    n.into_iter()
+                        // A name is one component of a directory, and the far
+                        // end is a program we did not write: one containing a
+                        // separator or a NUL is not a filename, it is an
+                        // attempt to be read as a path somewhere else.
+                        .filter(|(n, _)| !n.is_empty() && !n.contains(['/', '\0']))
+                        .filter(|(n, _)| n != "." && n != ".."),
+                ),
                 // `readdir` answers EOF with a status, which `call` turns into
                 // an error -- that is the loop's exit, not a failure.
                 _ => break,
+            }
+            // A server that answers READDIR with names forever is not a
+            // directory listing, and `out` grows until the machine gives up.
+            // No real directory comes near this.
+            if out.len() > MAX_DIR_ENTRIES {
+                self.close(&handle);
+                return Err(anyhow!(
+                    "{path}: more than {MAX_DIR_ENTRIES} entries; refusing to keep reading"
+                ));
             }
         }
         self.close(&handle);

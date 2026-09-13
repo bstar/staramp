@@ -140,6 +140,24 @@
             version = cargoToml.package.version;
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
+            # starkit comes from a git tag rather than from crates.io, and
+            # `cargoLock.lockFile` alone cannot fetch it: nix wants a hash for
+            # every source it downloads. Two ways to give it one.
+            #
+            # `outputHashes` is the reproducible one, and it means a new hash
+            # to compute and commit on every starkit tag -- a second place the
+            # version lives, which is exactly the kind of copy that goes stale
+            # between the bump and the person who notices.
+            #
+            # This asks nix's builtin `fetchGit` for it instead. The tag is
+            # immutable and `Cargo.lock` records the revision it resolved to,
+            # so what is fetched is still pinned; what is given up is the
+            # fixed-output hash, which means this fetch happens outside the
+            # sandbox and a build with no network cannot do it. That is the
+            # right trade here: the lockfile is the pin, and a stale hash
+            # nobody bumped is a worse failure than a build that needs the
+            # network it was already going to use.
+            cargoLock.allowBuiltinFetchGit = true;
 
             nativeBuildInputs = with pkgsFor; [ pkg-config clang ];
             buildInputs = [ pkgsFor.ffmpeg ] ++ linuxLibs pkgsFor;

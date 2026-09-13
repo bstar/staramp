@@ -6,7 +6,7 @@
 //! different things. Here the help overlay and the dispatcher read the same
 //! table, so they cannot drift.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {

@@ -66,7 +66,17 @@ multiple-versions = "allow"
 wildcards = "deny"
 
 [sources]
-# Nothing from a git URL or a private registry: everything comes from
-# crates.io, so a compromised or vanished repository cannot reach a build.
+# Nothing from a private registry, and nothing from a git URL except the one
+# named below: a compromised or vanished repository must not be able to reach
+# a build, and `unknown-git = "deny"` is what keeps that true for every other
+# URL somebody might add later.
 unknown-registry = "deny"
 unknown-git = "deny"
+
+# starkit is this project's own code, lifted out of this repository so that
+# starcord can use the same theme engine and picture rendering rather than a
+# copy of them that drifts. It is not published to crates.io -- there is no
+# third consumer to publish it for -- so the dependency is a git tag, and an
+# allowlist of exactly one URL is the way to say that without weakening the
+# rule for anything else.
+allow-git = ["https://github.com/bstar/starkit"]

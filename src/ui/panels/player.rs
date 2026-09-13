@@ -1,10 +1,10 @@
 //! The Winamp main window.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;

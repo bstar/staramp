@@ -84,9 +84,9 @@ pub fn playlist_words(tagged: usize, copied: usize) -> Vec<Item> {
 mod tests {
     use super::*;
     use crate::theme::builtin;
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
-    use ratatui::widgets::{Block, Borders, Widget};
+    use starkit::ratatui::buffer::Buffer;
+    use starkit::ratatui::layout::Rect;
+    use starkit::ratatui::widgets::{Block, Borders, Widget};
 
     /// Draw a panel with a header and return its rows as text.
     fn draw(w: u16, h: u16, items: &[Item]) -> Vec<String> {

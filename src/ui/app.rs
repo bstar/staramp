@@ -10,14 +10,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{
+use starkit::crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
 };
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
-use ratatui::widgets::Widget;
 use starkit::mouse::{hit, ClickTracker};
+use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use starkit::ratatui::style::{Color, Style};
+use starkit::ratatui::widgets::Widget;
 
 use crate::audio::dsp::eq;
 use crate::audio::player::{Command, PlayState, Player};
@@ -637,7 +637,12 @@ fn codec_label(codec: &str) -> String {
 ///
 /// A free function taking what it draws from rather than a method, so the test
 /// that pins the rendering can render it without standing up a player.
-fn draw_help_overlay(t: &Theme, scroll: u16, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+fn draw_help_overlay(
+    t: &Theme,
+    scroll: u16,
+    area: Rect,
+    buf: &mut starkit::ratatui::buffer::Buffer,
+) {
     starkit::keymap::HelpView {
         theme: t,
         bindings: keymap::BINDINGS,
@@ -662,7 +667,7 @@ mod tests {
     };
     use crate::playlist::queue::RepeatMode;
     use crate::vis::mode::VisMode;
-    use ratatui::layout::Rect;
+    use starkit::ratatui::layout::Rect;
     use std::path::PathBuf;
 
     /// The help overlay, cell for cell, against a recorded rendering.
@@ -678,7 +683,7 @@ mod tests {
     /// `STARAMP_UPDATE_GOLDEN=1 cargo test the_help_overlay_is_drawn_as_recorded`.
     #[test]
     fn the_help_overlay_is_drawn_as_recorded() {
-        use ratatui::buffer::Buffer;
+        use starkit::ratatui::buffer::Buffer;
 
         let theme = crate::theme::builtin::load("cosmic").unwrap();
         let mut out = String::new();
@@ -728,9 +733,9 @@ mod tests {
     ///
     /// Two grids rather than one cell per line: eighty by forty-four is three
     /// thousand cells, and a diff nobody can read is a test nobody trusts.
-    fn dump(buf: &ratatui::buffer::Buffer) -> String {
+    fn dump(buf: &starkit::ratatui::buffer::Buffer) -> String {
         let area = *buf.area();
-        let mut styles: Vec<ratatui::style::Style> = Vec::new();
+        let mut styles: Vec<starkit::ratatui::style::Style> = Vec::new();
         let mut out = String::new();
         let mut letters = String::new();
         for y in area.y..area.y + area.height {
@@ -790,7 +795,7 @@ mod tests {
 
     #[test]
     fn only_two_plain_g_keys_go_to_the_first_visible_track() {
-        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let mut pending = false;
         let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
@@ -1963,9 +1968,9 @@ impl App {
     /// Raw filesystem-browser keys. Like the music library, this view owns
     /// navigation while it is open and leaves global playback keys alone only
     /// after it closes.
-    fn file_browser_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
+    fn file_browser_key(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
         use crate::ui::panels::files::Purpose;
-        use crossterm::event::KeyCode;
+        use starkit::crossterm::event::KeyCode;
         let Some(browser) = &mut self.over.files else {
             return false;
         };
@@ -2039,8 +2044,8 @@ impl App {
     ///
     /// Raw keys, like the search line and the resume prompt, because while a
     /// name is being typed every letter is a letter.
-    fn name_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn name_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let Some(name) = &mut self.edit.naming else {
             return false;
         };
@@ -2091,8 +2096,8 @@ impl App {
     /// Enter takes what was typed as the filter -- nothing at all clears it
     /// -- and Esc leaves the filter as it was. Raw keys, like the name box:
     /// while words are being typed every letter is a letter.
-    fn import_artist_type(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn import_artist_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let is_typing =
             self.over.playlist_add.as_ref().is_some_and(|state| {
                 matches!(state.step, PlaylistAddStep::ImportArtistName { .. })
@@ -2163,8 +2168,8 @@ impl App {
         true
     }
 
-    fn filter_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn filter_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let Some(text) = &mut self.edit.typing else {
             return false;
         };
@@ -2203,8 +2208,8 @@ impl App {
         true
     }
 
-    fn auth_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn auth_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         if self.edit.auth.is_none() {
             return false;
         }
@@ -2350,8 +2355,8 @@ impl App {
     /// reason: while a box is being typed into, `j` has to be a letter rather
     /// than a cursor move, and that cannot be expressed in a table keyed only
     /// on the key event.
-    fn library_type(&mut self, k: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn library_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let Some(lib) = &mut self.over.library else {
             return false;
         };
@@ -3341,8 +3346,8 @@ impl App {
     /// Returns true when the key was consumed. Anything unrecognised declines
     /// and falls through, so a press of `space` starts playing rather than
     /// being swallowed by a prompt the user has already answered by acting.
-    fn answer_resume(&mut self, k: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::KeyCode;
+    fn answer_resume(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::KeyCode;
         match k.code {
             KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                 self.accept_resume();
@@ -6256,8 +6261,8 @@ impl App {
         self.edit.eq_value = Some(EqInput { field, value });
     }
 
-    fn eq_value_type(&mut self, key: crossterm::event::KeyEvent) -> bool {
-        use crossterm::event::{KeyCode, KeyModifiers};
+    fn eq_value_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
+        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let Some(input) = &mut self.edit.eq_value else {
             return false;
         };
@@ -6862,7 +6867,7 @@ impl App {
         })
     }
 
-    fn draw(&mut self, full: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw(&mut self, full: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         // Cheap when nothing has changed, and it covers both a new track and
         // the panel simply being opened.
         self.pump_album();
@@ -6973,7 +6978,7 @@ impl App {
         self.draw_overlays(area, buf);
     }
 
-    fn draw_library(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_library(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         use crate::ui::panels::library::{self as lib, Column, LibraryView};
         let Some(l) = &self.over.library else { return };
 
@@ -7217,7 +7222,7 @@ impl App {
     }
 
     /// Everything that draws over the top, whichever view is underneath.
-    fn draw_overlays(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_overlays(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         if let Some(input) = &self.edit.eq_value {
             let label = match input.field {
                 EqField::Frequency => "frequency (Hz)",
@@ -7393,7 +7398,7 @@ impl App {
         }
     }
 
-    fn draw_player(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_player(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         // Taken first: it needs `&mut self`, and everything below borrows the
         // player immutably for the rest of the function.
         let dropouts = self.dropouts_now();
@@ -7533,13 +7538,13 @@ impl App {
                             buf[(x, y)].set_symbol(" ").set_style(panel);
                         }
                     }
-                    ratatui_image::Image::new(p).render(rect, buf);
+                    starkit::ratatui_image::Image::new(p).render(rect, buf);
                 }
             }
         }
     }
 
-    fn draw_playlist(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_playlist(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         let q = self.player.queue.lock().unwrap();
         // Shown in play order, not storage order. With shuffle on those differ,
         // Nothing is highlighted until a track is actually loaded.
@@ -7673,7 +7678,7 @@ impl App {
                 .then(|| self.graphics.picture(mark, rect, fg, bg, bg))
                 .flatten()
             {
-                ratatui_image::Image::new(p).render(rect, buf);
+                starkit::ratatui_image::Image::new(p).render(rect, buf);
                 crate::ui::graphics::mend_unit_placeholder(buf, x, y);
             }
         }
@@ -7700,7 +7705,7 @@ impl App {
         self.buttons != crate::ui::graphics::Buttons::Text && self.graphics.pictures_available()
     }
 
-    fn draw_album(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_album(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         let item = self.player.current_item();
         let album = self
             .current_uri()
@@ -9379,7 +9384,7 @@ impl App {
         self.art_uri = uri;
     }
 
-    fn draw_status(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_status(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         let t = &self.look.theme;
         let bg = Color::Rgb(t.status_bg.r, t.status_bg.g, t.status_bg.b);
         for x in 0..area.width {
@@ -9444,7 +9449,7 @@ impl App {
         }
     }
 
-    fn draw_help(&self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    fn draw_help(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         draw_help_overlay(&self.look.theme, self.panels.help_scroll, area, buf)
     }
 }

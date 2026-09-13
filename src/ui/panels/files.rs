@@ -5,9 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::color::Rgb;
 use crate::theme::Theme;

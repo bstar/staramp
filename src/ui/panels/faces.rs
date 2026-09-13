@@ -80,8 +80,8 @@ fn polygons(b: Button) -> &'static [Poly] {
 // Rasterising.
 // ---------------------------------------------------------------------------
 
-fn rgba(c: Rgb) -> image::Rgba<u8> {
-    image::Rgba([c.r, c.g, c.b, 255])
+fn rgba(c: Rgb) -> starkit::image::Rgba<u8> {
+    starkit::image::Rgba([c.r, c.g, c.b, 255])
 }
 
 /// Rasterise one button: panel behind, a square plate on it, the icon on that.
@@ -96,7 +96,14 @@ fn rgba(c: Rgb) -> image::Rgba<u8> {
 /// transparent pixel is the cell's background, which is whatever style the
 /// placeholder cell happened to keep, and painting the panel colour in
 /// ourselves is the only way to be sure of it.
-pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image::RgbaImage {
+pub fn raster(
+    b: Button,
+    w: u32,
+    h: u32,
+    fg: Rgb,
+    plate: Rgb,
+    bg: Rgb,
+) -> starkit::image::RgbaImage {
     let side = w.min(h) as f32;
     let ox = (w as f32 - side) / 2.0;
     let oy = (h as f32 - side) / 2.0;
@@ -104,7 +111,7 @@ pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image:
     let scale = side / GRID;
     let on_plate = move |x: f32, y: f32| raster::in_rounded_square(x - ox, y - oy, side, radius);
 
-    let mut img = image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
+    let mut img = starkit::image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
     raster::fill(&mut img, rgba(plate), on_plate);
     // Masked by the plate rather than merely drawn after it: the icon is
     // fitted to the plate's grid, so anything of it that fell outside would be
@@ -124,7 +131,7 @@ pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image:
 /// then centred, and it is `fg` on `bg` -- the row's own colours, read from
 /// the cell the text marker was drawn in, so a cursor bar over the playing
 /// row carries through.
-pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> image::RgbaImage {
+pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> starkit::image::RgbaImage {
     // The triangle's box on the 24-unit grid.
     let (x0, y0, x1, y1) = (8.0f32, 5.14f32, 19.0f32, 19.14f32);
     let (uw, uh) = (x1 - x0, y1 - y0);
@@ -136,7 +143,7 @@ pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> image::RgbaImage {
     let ox = (wf - uw * scale) / 2.0 - x0 * scale;
     let oy = (hf - uh * scale) / 2.0 - y0 * scale;
 
-    let mut img = image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
+    let mut img = starkit::image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
     raster::fill_polygons(&mut img, rgba(fg), PLAY, |x, y| {
         Some(((x - ox) / scale, (y - oy) / scale))
     });

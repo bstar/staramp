@@ -13,16 +13,33 @@ categories = ["multimedia::audio", "command-line-utilities"]
 [dependencies]
 # The shared foundation, lifted out of this repository so starcord can use the
 # same theme engine, picture rendering and docked panels rather than a copy of
-# them that drifts. A path dependency while the extraction is in progress; it
-# becomes a pinned git tag once the last module has moved.
+# them that drifts. It also re-exports ratatui, crossterm, ratatui-image and
+# image, which is why none of those appear below any more: a widget built
+# against a second copy of ratatui does not satisfy a signature expecting the
+# first, and the compiler reports that as two identical version numbers
+# disagreeing, which explains nothing to whoever reads it.
 #
 # `wsz` is Winamp skin import and `net` the HTTP client, both of which only
 # this application wants; `image` is on by default and draws the cover art.
 #
-# The version requirement is here alongside the path so this is not a wildcard
+# Pinned to a tag rather than to a branch or a revision. A branch would make
+# the build depend on what that branch happened to hold this morning, and a
+# bare revision says nothing about compatibility; a tag is a release someone
+# decided to make, and moving to a new one is its own commit ("Take starkit
+# 0.Y") with its own `Cargo.lock` change to read.
+#
+# To try a starkit change from here before it is tagged, put this in an
+# untracked `.cargo/config.toml` and delete it once the tag exists:
+#
+#     [patch."https://github.com/bstar/starkit"]
+#     starkit = { path = "../starkit" }
+#
+# The version requirement is here alongside the tag so this is not a wildcard
 # dependency -- `deny.toml` refuses those, and rightly: a dependency with no
-# stated version is one nobody can tell has moved.
-starkit = { path = "../starkit", version = "0.1", features = [
+# stated version is one nobody can tell has moved. It also makes the `[patch]`
+# above fail loudly rather than silently if the local checkout has drifted to
+# a version this no longer accepts.
+starkit = { git = "https://github.com/bstar/starkit", tag = "v0.1.0", version = "0.1", features = [
     "image",
     "wsz",
     "net",
@@ -39,9 +56,6 @@ thiserror = "2"
 # subscriber and the file writer are starkit's, which is where `init` is; what
 # is needed here is the macros that write the lines.
 tracing = "0.1"
-
-# XDG paths
-etcetera = "0.10"
 
 # Universal decode path: libavformat/libavcodec linked in-process. Not a
 # subprocess -- real seeking, no respawn, no spawn latency per track, and no
@@ -105,23 +119,15 @@ lofty = "0.22"
 # Content-addressed cache keys for album art.
 blake3 = "1"
 
-# Winamp .wsz skins are plain ZIP archives of BMPs plus two text files.
-zip = { version = "2", default-features = false, features = ["deflate"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "bmp"] }
-
 # Config and themes. A real parser -- the reference implementation hand-rolls a
 # line scanner for both and silently ignores anything it does not recognise.
 serde = { version = "1", features = ["derive"] }
 toml = "0.9"
 
-# TUI. crossterm as a direct dependency, not only via ratatui's re-export,
-# because we need raw mode, the alternate screen and a panic hook that restores
-# the terminal when something goes wrong.
-ratatui = "0.30"
-crossterm = "0.29"
-
 # Marquee scrolling and column truncation break badly on CJK and emoji titles
-# without real width measurement.
+# without real width measurement. Named here rather than reached through
+# starkit because starkit does not re-export it: nothing in its API hands a
+# `UnicodeWidthStr` back, so there is no type to keep the two copies of.
 unicode-width = "0.2"
 
 # Real-input FFT for the analyzer: about twice the throughput of a complex FFT
@@ -129,7 +135,11 @@ unicode-width = "0.2"
 realfft = "3"
 rustfft = "6"
 
-ratatui-image = { version = "11.0.6", default-features = false, features = ["crossterm"] }
+# The HTTP client, named here as well as reached through starkit because the
+# scrobble and cover-art code reads and writes JSON bodies and starkit's `net`
+# feature does not turn ureq's `json` on -- a theme engine has no use for it.
+# Cargo unifies the two into one copy of one version, which is what matters:
+# an `Agent` built by `starkit::net::agent` is this crate's `Agent`.
 ureq = { version = "3", features = ["json"] }
 serde_json = "1.0.151"
 md5 = "0.8"

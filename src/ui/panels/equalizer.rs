@@ -1,10 +1,10 @@
 //! The ordered parametric equalizer window.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::audio::dsp::apo::{BiquadKind, Filter, Profile, Stage, Width};
 use crate::theme::color::Rgb;

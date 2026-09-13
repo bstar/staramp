@@ -1,10 +1,10 @@
 //! The playlist editor window.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use std::collections::HashSet;
 
@@ -562,8 +562,11 @@ impl<'a> Widget for PlaylistView<'a> {
             })))
             .title(Span::styled(title, Style::default().fg(rgb(t.header_fg))))
             .title_top(
-                ratatui::text::Line::from(Span::styled(count, Style::default().fg(rgb(t.dim))))
-                    .right_aligned(),
+                starkit::ratatui::text::Line::from(Span::styled(
+                    count,
+                    Style::default().fg(rgb(t.dim)),
+                ))
+                .right_aligned(),
             )
             .style(Style::default().bg(rgb(t.panel_bg)));
 
@@ -1531,10 +1534,10 @@ mod tests {
         use crate::playlist::queue::QueueItem;
         use crate::playlist::uri::TrackUri;
         use crate::theme::Theme;
-        use ratatui::buffer::Buffer;
-        use ratatui::layout::Rect;
-        use ratatui::style::Color;
-        use ratatui::widgets::Widget;
+        use starkit::ratatui::buffer::Buffer;
+        use starkit::ratatui::layout::Rect;
+        use starkit::ratatui::style::Color;
+        use starkit::ratatui::widgets::Widget;
         use std::collections::HashSet;
 
         fn draw_tagged(

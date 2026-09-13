@@ -12,11 +12,11 @@
 //! Ballads` closely enough that MusicBrainz calls it relevant, and it is the
 //! wrong record; that is the judgement this hands back to the user.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::theme::color::Rgb;
 use crate::theme::Theme;

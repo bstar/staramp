@@ -5,8 +5,8 @@
 //! player: which pictures it draws, and the setting that says whether the
 //! transport buttons are pictures at all.
 
-use ratatui::layout::Rect;
-use ratatui_image::protocol::Protocol;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui_image::protocol::Protocol;
 
 pub use starkit::graphics::{
     halfblocks, mend_unit_placeholder, placeholder, Graphics, ImageId, Mode,

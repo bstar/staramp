@@ -70,7 +70,7 @@ pub struct Album {
     /// 3000px scan and a frame has 16 milliseconds. Shrinking to
     /// [`THUMB_MAX`] costs a few hundred kilobytes and makes drawing a matter
     /// of sampling.
-    pub image: Option<Arc<image::RgbaImage>>,
+    pub image: Option<Arc<starkit::image::RgbaImage>>,
     pub source: Option<Source>,
     /// Which candidate is showing, and how many there are. The panel says so
     /// when there is more than one, because an alternative nobody knows about
@@ -468,11 +468,11 @@ fn original_path(
 }
 
 fn guessed_extension(bytes: &[u8]) -> Option<&'static str> {
-    match image::guess_format(bytes).ok()? {
-        image::ImageFormat::Png => Some("png"),
-        image::ImageFormat::Bmp => Some("bmp"),
-        image::ImageFormat::Gif => Some("gif"),
-        image::ImageFormat::WebP => Some("webp"),
+    match starkit::image::guess_format(bytes).ok()? {
+        starkit::image::ImageFormat::Png => Some("png"),
+        starkit::image::ImageFormat::Bmp => Some("bmp"),
+        starkit::image::ImageFormat::Gif => Some("gif"),
+        starkit::image::ImageFormat::WebP => Some("webp"),
         _ => Some("jpg"),
     }
 }
@@ -735,7 +735,7 @@ fn load(
     detail: &AlbumDetail,
     candidate: &cover::Candidate,
     embedded: Option<&Vec<u8>>,
-) -> Option<Arc<image::RgbaImage>> {
+) -> Option<Arc<starkit::image::RgbaImage>> {
     match candidate {
         cover::Candidate::Embedded => {
             // Gathered with the candidate list. The fallback is for an entry
@@ -809,7 +809,7 @@ fn save_choice(
 /// Failure is silent and returns `None`: a corrupt or truncated JPEG in a
 /// music folder is common enough, and it is not worth a message on the status
 /// line every time a track changes.
-fn decode(path: &std::path::Path) -> Option<Arc<image::RgbaImage>> {
+fn decode(path: &std::path::Path) -> Option<Arc<starkit::image::RgbaImage>> {
     match crate::util::image::open_limited(path, crate::util::image::MAX_DIMENSION) {
         Ok(i) => shrink(Some(i)),
         Err(e) => {
@@ -820,14 +820,18 @@ fn decode(path: &std::path::Path) -> Option<Arc<image::RgbaImage>> {
 }
 
 /// Bring a decoded cover down to something a panel can hold.
-fn shrink(img: Option<image::DynamicImage>) -> Option<Arc<image::RgbaImage>> {
+fn shrink(img: Option<starkit::image::DynamicImage>) -> Option<Arc<starkit::image::RgbaImage>> {
     let img = img?;
     let (w, h) = (img.width(), img.height());
     let img = if w.max(h) > THUMB_MAX {
         // Triangle rather than Lanczos: the result is being sampled down to
         // cells anyway, and this is on a worker that a track change is waiting
         // on.
-        img.resize(THUMB_MAX, THUMB_MAX, image::imageops::FilterType::Triangle)
+        img.resize(
+            THUMB_MAX,
+            THUMB_MAX,
+            starkit::image::imageops::FilterType::Triangle,
+        )
     } else {
         img
     };

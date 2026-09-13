@@ -1,0 +1,335 @@
+== 100x44 scroll 0
+                                                                                                    
+                                                                                                    
+                                                                                                    
+          ╔ HELP — more below ═══════════════════════════════════════════════════════════╗          
+          ║  transport                          playlist                                 ║          
+          ║  space / c     play or pause        wheel                scroll the list     ║          
+          ║  v             stop                 click                select a track      ║          
+          ║  z             previous track       double click         play it             ║          
+          ║  b             next track           right click          track actions       ║          
+          ║  ctrl+up       volume up            click `sorting`      order the playlist  ║          
+          ║  ctrl+down     volume down          click `gravity`      create a related    ║          
+          ║  s             shuffle            list                                       ║          
+          ║  r             repeat off/all/one   player                                   ║          
+          ║  F             crossfade            click the transport  transport           ║          
+          ║  visualizer                         click footer status  toggle its mode     ║          
+          ║  w             next visualizer      click or drag bar    seek                ║          
+          ║  W             previous one         wheel over bar       seek 5s             ║          
+          ║  + / -         bar width            click or drag VOL    set volume          ║          
+          ║  progress bar                       wheel over VOL       volume 5%           ║          
+          ║  left          seek back 5s         click analyzer       next visualization  ║          
+          ║  right         seek forward 5s      right click          play or pause       ║          
+          ║  shift+left    seek back 30s        equalizer                                ║          
+          ║  shift+right   seek forward 30s     click [ON ]          enable or bypass    ║          
+          ║  d             seek bar style       click the chevrons   change preset       ║          
+          ║  o             button style         click a filter       select it           ║          
+          ║  playlist                           wheel over the panel previous / next     ║          
+          ║  up / k        move up            filter                                     ║          
+          ║  shift+up/down ten rows             album                                    ║          
+          ║  down / j      move down            click cover          open full image     ║          
+          ║  pgup          page up              click < / >          previous / next art ║          
+          ║  pgdn          page down            click title / artist open music database ║          
+          ║  home / gg     first track          overlays                                 ║          
+          ║  end / G       last track           click outside        close the picker    ║          
+          ║  enter         play selected        click `close`        close a panel       ║          
+          ║  f             order the playlist   click `settings`     what that panel     ║          
+          ║  /             filter the playlistcontrols                                   ║          
+          ║  alt+up        record up                                                     ║          
+          ║  alt+down      record down                                                   ║          
+          ║  tagging                                                                     ║          
+          ║  t             tag this row                                                  ║          
+          ╚══════════════════════════════════════════════════════════════════════════════╝          
+                                                                                                    
+                                                                                                    
+                                                                                                    
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaabcccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggeeeeeeeeeeeeeeefffffffffffffffffffffffggggggggggggggeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggggeeeeefffffffffffffffffffffffgggggggeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggeeeeeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffggggggggggggggggggeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeeggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggggggggeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggggeeeefffffffffffffffffffffffggggeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffgggggggeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffggggggggggeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddddddeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffggggggggggggggggggeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggggeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeedddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggggggeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggggeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddeeeeeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeeggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggeeeeeeeeeeedddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggggggebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggggggggggggebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggeeeeeeeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggggggggefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+a fg Some(Reset) bg Some(Reset) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+== 100x44 scroll 7
+                                                                                                    
+                                                                                                    
+                                                                                                    
+          ╔ HELP — more below ═══════════════════════════════════════════════════════════╗          
+          ║  s             shuffle              playlist                                 ║          
+          ║  r             repeat off/all/one   wheel                scroll the list     ║          
+          ║  F             crossfade            click                select a track      ║          
+          ║  visualizer                         double click         play it             ║          
+          ║  w             next visualizer      right click          track actions       ║          
+          ║  W             previous one         click `sorting`      order the playlist  ║          
+          ║  + / -         bar width            click `gravity`      create a related    ║          
+          ║  progress bar                     list                                       ║          
+          ║  left          seek back 5s         player                                   ║          
+          ║  right         seek forward 5s      click the transport  transport           ║          
+          ║  shift+left    seek back 30s        click footer status  toggle its mode     ║          
+          ║  shift+right   seek forward 30s     click or drag bar    seek                ║          
+          ║  d             seek bar style       wheel over bar       seek 5s             ║          
+          ║  o             button style         click or drag VOL    set volume          ║          
+          ║  playlist                           wheel over VOL       volume 5%           ║          
+          ║  up / k        move up              click analyzer       next visualization  ║          
+          ║  shift+up/down ten rows             right click          play or pause       ║          
+          ║  down / j      move down            equalizer                                ║          
+          ║  pgup          page up              click [ON ]          enable or bypass    ║          
+          ║  pgdn          page down            click the chevrons   change preset       ║          
+          ║  home / gg     first track          click a filter       select it           ║          
+          ║  end / G       last track           wheel over the panel previous / next     ║          
+          ║  enter         play selected      filter                                     ║          
+          ║  f             order the playlist   album                                    ║          
+          ║  /             filter the playlist  click cover          open full image     ║          
+          ║  alt+up        record up            click < / >          previous / next art ║          
+          ║  alt+down      record down          click title / artist open music database ║          
+          ║  tagging                            overlays                                 ║          
+          ║  t             tag this row         click outside        close the picker    ║          
+          ║  T             clear every tag      click `close`        close a panel       ║          
+          ║  y             copy                 click `settings`     what that panel     ║          
+          ║  u             put them here      controls                                   ║          
+          ║  m             move here                                                     ║          
+          ║  del / D       remove them                                                   ║          
+          ║  album                                                                       ║          
+          ║  o / enter     open full image                                               ║          
+          ╚══════════════════════════════════════════════════════════════════════════════╝          
+                                                                                                    
+                                                                                                    
+                                                                                                    
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaabcccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeffffffbaaaaaaaaaa
+aaaaaaaaaabggggggggggggfffffffffffffffffffffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabggggggggggggggfffffffffffffffffffffeeeefffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffggggggggfffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeefffdddddddddddddddddddddddeeeeffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeffffffffffbaaaaaaaaaa
+aaaaaaaaaabggggggggggfffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeefffffffffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffgggggggggggffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffeeeeeefffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefgggggggffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
+aaaaaaaaaabgggggggggffffffffffffffffffffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeefffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffeeeeeeeefffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabgggggggfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+a fg Some(Reset) bg Some(Reset) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+== 70x20 scroll 0
+╔ HELP — more below ═════════════════════════════════════════════════╗
+║  transport                      playlist                           ║
+║  space / c     play or pause    wheel                scroll the    ║
+║  v             stop           list                                 ║
+║  z             previous track   click                select a track║
+║  b             next track       double click         play it       ║
+║  ctrl+up       volume up        right click          track actions ║
+║  ctrl+down     volume down      click `sorting`      order the     ║
+║  s             shuffle        playlist                             ║
+║  r             repeat           click `gravity`      create a      ║
+║off/all/one                    related list                         ║
+║  F             crossfade        player                             ║
+║  visualizer                     click the transport  transport     ║
+║  w             next visualizer  click footer status  toggle its    ║
+║  W             previous one   mode                                 ║
+║  + / -         bar width        click or drag bar    seek          ║
+║  progress bar                   wheel over bar       seek 5s       ║
+║  left          seek back 5s     click or drag VOL    set volume    ║
+║  right         seek forward 5s  wheel over VOL       volume 5%     ║
+╚════════════════════════════════════════════════════════════════════╝
+abbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+acccccccccccddddddddddddddddddddccccccccccddddddddddddddddddddddddddda
+aeeeeeeeeeeeeeeeefffffffffffffddeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
+aeeeeeeeeeeeeeeeeffffdddddddddddffffddddddddddddddddddddddddddddddddda
+aeeeeeeeeeeeeeeeeffffffffffffffdeeeeeeeeeeeeeeeeeeeeeeeffffffffffffffa
+aeeeeeeeeeeeeeeeeffffffffffdddddeeeeeeeeeeeeeeeeeeeeeeefffffffddddddda
+aeeeeeeeeeeeeeeeefffffffffddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffffffda
+aeeeeeeeeeeeeeeeefffffffffffddddeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
+aeeeeeeeeeeeeeeeefffffffddddddddffffffffddddddddddddddddddddddddddddda
+aeeeeeeeeeeeeeeeeffffffdddddddddeeeeeeeeeeeeeeeeeeeeeeeffffffffdddddda
+afffffffffffddddddddddddddddddddffffffffffffddddddddddddddddddddddddda
+aeeeeeeeeeeeeeeeefffffffffddddddccccccccddddddddddddddddddddddddddddda
+accccccccccccdddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
+aeeeeeeeeeeeeeeeefffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
+aeeeeeeeeeeeeeeeeffffffffffffdddffffddddddddddddddddddddddddddddddddda
+aeeeeeeeeeeeeeeeefffffffffddddddeeeeeeeeeeeeeeeeeeeeeeeffffdddddddddda
+accccccccccccccdddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffddddddda
+aeeeeeeeeeeeeeeeeffffffffffffdddeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
+aeeeeeeeeeeeeeeeefffffffffffffffeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+a fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+c fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+== 100x44 scroll 999
+                                                                                                    
+                                                                                                    
+                                                                                                    
+          ╔ HELP — the end ══════════════════════════════════════════════════════════════╗          
+          ║  right         next image           playlist                                 ║          
+          ║  windows                            wheel                scroll the list     ║          
+          ║  alt+g         show/hide equalizer  click                select a track      ║          
+          ║  i             album info on/off    double click         play it             ║          
+          ║  alt+i         choose a cover       right click          track actions       ║          
+          ║  alt+r         look the cover up    click `sorting`      order the playlist  ║          
+          ║  p             playlist on/off      click `gravity`      create a related    ║          
+          ║  alt+s         listening activity list                                       ║          
+          ║  alt+e         choose a playlist    player                                   ║          
+          ║  tab           next pane            click the transport  transport           ║          
+          ║  shift+tab     previous pane        click footer status  toggle its mode     ║          
+          ║  alt+1..5      focus a pane         click or drag bar    seek                ║          
+          ║  appearance                         wheel over bar       seek 5s             ║          
+          ║  alt+t         next theme           click or drag VOL    set volume          ║          
+          ║  a             animations on/off    wheel over VOL       volume 5%           ║          
+          ║  equalizer                          click analyzer       next visualization  ║          
+          ║  e             equalizer on/off     right click          play or pause       ║          
+          ║  ]             next preset          equalizer                                ║          
+          ║  up/down, j/k  choose a filter      click [ON ]          enable or bypass    ║          
+          ║  left/right    filter gain, 1 dB    click the chevrons   change preset       ║          
+          ║  shift+left/rightfilter gain, 10    click a filter       select it           ║          
+          ║dB                                   wheel over the panel previous / next     ║          
+          ║  enter         bypass the filter  filter                                     ║          
+          ║  a             add a filter         album                                    ║          
+          ║  d             remove it            click cover          open full image     ║          
+          ║  [             previous preset      click < / >          previous / next art ║          
+          ║  library                            click title / artist open music database ║          
+          ║  l             browse the library   overlays                                 ║          
+          ║  /             search it            click outside        close the picker    ║          
+          ║  space         add the selection    click `close`        close a panel       ║          
+          ║  a             add the record       click `settings`     what that panel     ║          
+          ║  ctrl+s        save the playlist  controls                                   ║          
+          ║  ← / →         change column                                                 ║          
+          ║  general                                                                     ║          
+          ║  esc           close what is open                                            ║          
+          ║  ? / F1        this help                                                     ║          
+          ╚══════════════════════════════════════════════════════════════════════════════╝          
+                                                                                                    
+                                                                                                    
+                                                                                                    
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabgggggggggffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddeeeeeeeeeeeeeeffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefeeeefffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffggggggggfffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabggggggggggggfffffffffffffffffffffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffdddddddddddddddddddddddeeeeeeeeeeffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabgggggggggggffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeefffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffgggggggggggffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddddeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
+aaaaaaaaaabeefffffffffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffeeeeeefffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffgggggggffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
+aaaaaaaaaabgggggggggffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffeeeeeeeefffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabgggggggggfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabddddddddddddddddeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+a fg Some(Reset) bg Some(Reset) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD

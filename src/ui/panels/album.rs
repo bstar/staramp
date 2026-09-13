@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::library::art::{Album, Source};
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
 

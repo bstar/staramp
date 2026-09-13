@@ -18,7 +18,7 @@ use ratatui::style::Style;
 use ratatui::widgets::{Block, Borders};
 
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 
 fn rgb(c: Rgb) -> ratatui::style::Color {
     ratatui::style::Color::Rgb(c.r, c.g, c.b)

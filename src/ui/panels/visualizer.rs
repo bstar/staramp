@@ -10,7 +10,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::vis::mode::VisMode;
 
 /// How wide the bars are and how much space is between them.

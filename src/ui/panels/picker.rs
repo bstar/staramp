@@ -11,7 +11,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
 
 fn rgb(c: Rgb) -> Color {

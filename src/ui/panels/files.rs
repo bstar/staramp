@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 
 fn rgb(c: Rgb) -> Color {
     Color::Rgb(c.r, c.g, c.b)

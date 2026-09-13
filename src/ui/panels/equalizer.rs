@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::audio::dsp::apo::{BiquadKind, Filter, Profile, Stage, Width};
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 
 fn rgb(c: Rgb) -> Color {
     Color::Rgb(c.r, c.g, c.b)

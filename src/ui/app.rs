@@ -28,7 +28,7 @@ use crate::mirror::Mirror;
 use crate::playlist::queue::QueueItem;
 use crate::session::{self, Session};
 use crate::theme::builtin;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::keymap::{self, Action};
 use crate::ui::panels::album;
 use crate::ui::panels::chooser::{self, ChooserView};

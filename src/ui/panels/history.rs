@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::activity::Snapshot;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 
 pub const PANEL_ROWS: u16 = 8;
 pub const VISIBLE_ROWS: usize = 5;

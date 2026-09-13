@@ -22,6 +22,9 @@ const APP: &str = "staramp";
 const DIR_ENV: &str = "STARAMP_DIR";
 const CONFIG_DIR_ENV: &str = "STARAMP_CONFIG_DIR";
 
+/// staramp's directories, in the terms anything shared understands.
+pub const PATHS: starkit::paths::Paths = starkit::paths::Paths::new(APP, DIR_ENV, CONFIG_DIR_ENV);
+
 /// The one directory everything hangs off.
 pub fn base_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os(DIR_ENV) {

@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use crate::playlist::queue::QueueItem;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
 
@@ -1530,7 +1530,7 @@ mod tests {
         use super::super::*;
         use crate::playlist::queue::QueueItem;
         use crate::playlist::uri::TrackUri;
-        use crate::theme::resolve::Theme;
+        use crate::theme::Theme;
         use ratatui::buffer::Buffer;
         use ratatui::layout::Rect;
         use ratatui::style::Color;

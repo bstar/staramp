@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Widget};
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 
 fn rgb(c: Rgb) -> Color {

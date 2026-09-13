@@ -1961,7 +1961,7 @@ fn cmd_theme(cmd: ThemeCmd) -> Result<()> {
 }
 
 /// Load a theme by id: user themes override built-ins of the same name.
-fn load_theme(id: &str) -> Result<theme::resolve::Theme> {
+fn load_theme(id: &str) -> Result<theme::Theme> {
     let (t, why) = theme::builtin::resolve_named(id);
     if why.starts_with("no theme") {
         anyhow::bail!("{why} — try `staramp theme list`");

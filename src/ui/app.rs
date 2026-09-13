@@ -15,8 +15,8 @@ use crossterm::event::{
     MouseEventKind,
 };
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::Widget;
 use starkit::mouse::{hit, ClickTracker};
 
 use crate::audio::dsp::eq;
@@ -635,105 +635,17 @@ fn codec_label(codec: &str) -> String {
 
 /// The help overlay: every binding and every gesture, in two columns.
 ///
-/// A free function taking what it draws from rather than a method, so a test
-/// can render it without standing up a player.
+/// A free function taking what it draws from rather than a method, so the test
+/// that pins the rendering can render it without standing up a player.
 fn draw_help_overlay(t: &Theme, scroll: u16, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    let fg = Color::Rgb(t.fg.r, t.fg.g, t.fg.b);
-    let key = Color::Rgb(t.accent.r, t.accent.g, t.accent.b);
-    let head = Color::Rgb(t.warn.r, t.warn.g, t.warn.b);
-
-    // Two columns, because the key list alone is longer than most
-    // terminals are tall and used to be silently clipped.
-    let w = area.width.min(80);
-    let h = area.height.min(38);
-    let rect = Rect {
-        x: area.x + (area.width - w) / 2,
-        y: area.y + (area.height - h) / 2,
-        width: w,
-        height: h,
-    };
-    Clear.render(rect, buf);
-
-    let heading = |g: &str| {
-        ratatui::text::Line::from(ratatui::text::Span::styled(
-            format!("  {g}"),
-            Style::default().fg(head).add_modifier(Modifier::BOLD),
-        ))
-    };
-    let entry = |k: &str, label: &str, pad: usize| {
-        ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled(format!("  {k:<pad$}"), Style::default().fg(key)),
-            ratatui::text::Span::styled(label.to_string(), Style::default().fg(fg)),
-        ])
-    };
-
-    let mut keys: Vec<ratatui::text::Line> = Vec::new();
-    let mut group = "";
-    for b in keymap::BINDINGS {
-        if b.group != group {
-            group = b.group;
-            keys.push(heading(group));
-        }
-        keys.push(entry(b.keys, b.label, 14));
+    starkit::keymap::HelpView {
+        theme: t,
+        bindings: keymap::BINDINGS,
+        mouse: keymap::MOUSE,
+        scroll,
+        title: "HELP",
     }
-
-    let mut mouse: Vec<ratatui::text::Line> = Vec::new();
-    group = "";
-    for m in keymap::MOUSE {
-        if m.group != group {
-            group = m.group;
-            mouse.push(heading(group));
-        }
-        mouse.push(entry(m.gesture, m.label, 21));
-    }
-
-    // Clamped here rather than where the key is handled, because only the
-    // draw knows how tall the box came out and how many lines went in it.
-    let inner_h = h.saturating_sub(2);
-    let over = (keys.len() as u16).saturating_sub(inner_h);
-    let at = scroll.min(over);
-    let title = if over == 0 {
-        " HELP ".to_string()
-    } else if at == 0 {
-        " HELP \u{2014} more below ".to_string()
-    } else if at == over {
-        " HELP \u{2014} the end ".to_string()
-    } else {
-        " HELP \u{2014} more below ".to_string()
-    };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(Color::Rgb(
-            t.border_focused.r,
-            t.border_focused.g,
-            t.border_focused.b,
-        )))
-        // Styled rather than inherited: an untitled `title` takes the
-        // block's border colour, which is chrome and reads as chrome. The
-        // other overlays all name themselves in `header_fg`, and this is
-        // the one you open when you cannot find something.
-        .title(ratatui::text::Span::styled(
-            title,
-            Style::default()
-                .fg(Color::Rgb(t.header_fg.r, t.header_fg.g, t.header_fg.b))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .style(Style::default().bg(Color::Rgb(t.bg.r, t.bg.g, t.bg.b)));
-    let inner = block.inner(rect);
-    block.render(rect, buf);
-
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(inner);
-    Paragraph::new(keys)
-        .wrap(Wrap { trim: false })
-        .scroll((at, 0))
-        .render(cols[0], buf);
-    Paragraph::new(mouse)
-        .wrap(Wrap { trim: false })
-        .render(cols[1], buf);
+    .render(area, buf)
 }
 
 #[cfg(test)]

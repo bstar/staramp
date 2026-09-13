@@ -97,11 +97,7 @@ pub enum Action {
 ///
 /// Same single-table rule as the key bindings: the help overlay reads this, so
 /// a gesture cannot be implemented and left undocumented in a second place.
-pub struct MouseHelp {
-    pub gesture: &'static str,
-    pub label: &'static str,
-    pub group: &'static str,
-}
+pub use starkit::keymap::MouseHelp;
 
 pub const MOUSE: &[MouseHelp] = &[
     MouseHelp {
@@ -226,12 +222,13 @@ pub const MOUSE: &[MouseHelp] = &[
     },
 ];
 
-pub struct Binding {
-    pub action: Action,
-    pub keys: &'static str,
-    pub label: &'static str,
-    pub group: &'static str,
-}
+/// One action, the keys that reach it, and how the help overlay describes it.
+///
+/// The table below is the only place a key is written down. Dispatch is the
+/// hand-written `resolve`/`module`/`library` match further on rather than
+/// `starkit::keymap::Keymap`, because the same key means different things
+/// depending on which panel has focus and a flat map cannot say that.
+pub type Binding = starkit::keymap::Binding<Action>;
 
 /// Displayed in the help overlay, in this order.
 pub const BINDINGS: &[Binding] = &[

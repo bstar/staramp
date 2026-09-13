@@ -5,6 +5,19 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-12
+
+### Fixed
+
+- The next-track button drew at half its width, with the lit pause icon left
+  over from an earlier frame showing in the half it did not cover. A picture
+  is transmitted as pixels and placed over a number of cells, and the cache
+  kept only the first of those two facts, so a button spanning four cells
+  could be served a picture built to cover two.
+- A read-ahead test counted the reads the server had got round to serving
+  rather than the reads the client issued. The two differ by whatever is in
+  flight, which made it fail at random.
+
 ### Security
 
 A review of everything staramp parses, launches and downloads, written up in
@@ -142,5 +155,6 @@ First release.
   PKGBUILD, an AppImage carrying its own ffmpeg, and a portable tarball built
   against glibc 2.31.
 
-[Unreleased]: https://github.com/bstar/staramp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/bstar/staramp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/bstar/staramp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/bstar/staramp/releases/tag/v0.1.0

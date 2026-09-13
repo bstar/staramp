@@ -29,6 +29,7 @@ use crate::playlist::queue::QueueItem;
 use crate::session::{self, Session};
 use crate::theme::builtin;
 use crate::theme::Theme;
+use crate::ui::graphics::GraphicsExt as _;
 use crate::ui::keymap::{self, Action};
 use crate::ui::panels::album;
 use crate::ui::panels::chooser::{self, ChooserView};
@@ -1636,8 +1637,14 @@ pub struct App {
     retrying: Option<u64>,
     /// How far the highlight has travelled across the retry word.
     retry_phase: f32,
-    /// Whether covers are drawn as real pixels, and the encoded one if so.
+    /// Whether covers are drawn as real pixels, and the encoded ones if so.
     graphics: crate::ui::graphics::Graphics,
+    /// Whether the transport buttons may be pictures.
+    ///
+    /// Here rather than in `graphics` because it is this player's setting
+    /// rather than the terminal's capability: `[ui] graphics = off` turns
+    /// covers off and says nothing about buttons.
+    buttons: crate::ui::graphics::Buttons,
     /// Whether the art worker may ask the archive. Shared with the worker so
     /// the setting can be changed while the player is running.
     art_fetch: Arc<std::sync::atomic::AtomicBool>,
@@ -2702,6 +2709,7 @@ impl App {
             retrying: None,
             retry_phase: 0.0,
             graphics: crate::ui::graphics::Graphics::disabled(),
+            buttons: crate::ui::graphics::Buttons::Auto,
             art_fetch: Arc::new(std::sync::atomic::AtomicBool::new(cfg.art.fetch)),
             art_viewer: cfg.art.viewer.clone(),
             // Whichever panel is open to be focused. A cursor in a panel that
@@ -3722,7 +3730,7 @@ impl App {
             volume: self.player.volume(),
             seek_style: self.look.seek_style.name().to_string(),
             graphics: self.graphics.mode().name().to_string(),
-            buttons: self.graphics.buttons_mode().name().to_string(),
+            buttons: self.buttons.name().to_string(),
             show_album: self.panels.album,
             show_equalizer: self.panels.eq,
             show_playlist: self.panels.playlist,
@@ -5209,7 +5217,7 @@ impl App {
                 } else {
                     // Kitty holds uploaded images in the terminal's own
                     // memory; letting the protocol go is what releases one.
-                    self.graphics.forget();
+                    self.graphics.forget_all();
                     if self.panels.focus == Focus::Album {
                         self.panels.focus = Focus::Player;
                     }
@@ -5281,8 +5289,8 @@ impl App {
                 self.note(format!("seek bar: {name}"));
             }
             NextButtons => {
-                let next = self.graphics.buttons_mode().next();
-                self.graphics.set_buttons_mode(next);
+                let next = self.buttons.next();
+                self.set_buttons_mode(next);
                 // Say what was actually got, not what was asked for: on a
                 // terminal with no protocol `auto` and `text` look the same,
                 // and a toggle that reports a change nobody can see is worse
@@ -5792,7 +5800,7 @@ impl App {
                     match header::hit(rect, header::PLAIN, x, y) {
                         Some(header::Item::Close) => {
                             self.panels.album = false;
-                            self.graphics.forget();
+                            self.graphics.forget_all();
                             if self.panels.focus == Focus::Album {
                                 self.panels.focus = Focus::Player;
                             }
@@ -7381,6 +7389,8 @@ impl App {
         );
         if let Some(g) = player::geometry(area, position, duration, repeat, self.look.glyphs) {
             use crate::ui::panels::faces::Button;
+            // Read before the protocol borrows `self.graphics` mutably.
+            let pictures = self.pictures();
             let c = &g.controls;
             let buttons = [
                 (Button::Prev, c.prev, false),
@@ -7396,7 +7406,10 @@ impl App {
                     (ink, plate)
                 };
                 let which = crate::ui::graphics::Picture::Button(which);
-                if let Some(p) = self.graphics.picture(which, rect, fg, on, bg) {
+                if let Some(p) = pictures
+                    .then(|| self.graphics.picture(which, rect, fg, on, bg))
+                    .flatten()
+                {
                     // The placeholder row is written from the first cell and
                     // carries that cell's style, so the text plate's colours
                     // would show wherever the picture did not reach. Panel
@@ -7536,13 +7549,17 @@ impl App {
             Color::Rgb(r, g, b) => Some(crate::theme::color::Rgb { r, g, b }),
             _ => None,
         };
+        let pictures = self.pictures();
         for (x, y) in playlist::marker_cells(area, &self.queue.rows, self.queue.scroll, playing) {
             let cell = &buf[(x, y)];
             let fg = solid(cell.fg).unwrap_or(self.look.theme.row_playing_fg);
             let bg = solid(cell.bg).unwrap_or(self.look.theme.panel_bg);
             let rect = Rect::new(x, y, 1, 1);
             let mark = crate::ui::graphics::Picture::PlayMark;
-            if let Some(p) = self.graphics.picture(mark, rect, fg, bg, bg) {
+            if let Some(p) = pictures
+                .then(|| self.graphics.picture(mark, rect, fg, bg, bg))
+                .flatten()
+            {
                 ratatui_image::Image::new(p).render(rect, buf);
                 crate::ui::graphics::mend_unit_placeholder(buf, x, y);
             }
@@ -7552,6 +7569,22 @@ impl App {
     /// Adopt a probe made before the alternate screen was entered.
     pub fn set_graphics(&mut self, g: crate::ui::graphics::Graphics) {
         self.graphics = g;
+    }
+
+    /// Choose whether the transport buttons are pictures.
+    ///
+    /// Nothing built is dropped. A picture is held against which one it is and
+    /// the colours and size it was drawn at, none of which this changes, and
+    /// while the setting is `text` none of them is asked for -- so turning the
+    /// pictures back on shows the ones already uploaded rather than paying for
+    /// them again.
+    pub fn set_buttons_mode(&mut self, buttons: crate::ui::graphics::Buttons) {
+        self.buttons = buttons;
+    }
+
+    /// Whether a rasterised picture would be drawn if one were asked for.
+    fn pictures(&self) -> bool {
+        self.buttons != crate::ui::graphics::Buttons::Text && self.graphics.pictures_available()
     }
 
     fn draw_album(&mut self, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -7570,10 +7603,10 @@ impl App {
             &album,
             crate::ui::panels::album::geometry(area, show_cover, self.cell_aspect()),
         ) {
-            (Some(a), Some(g)) => a
-                .image
-                .as_ref()
-                .and_then(|img| self.graphics.protocol(img, g.art)),
+            (Some(a), Some(g)) => a.image.as_ref().and_then(|img| {
+                let id = crate::ui::graphics::ImageId::of_arc(img);
+                self.graphics.protocol(id, img, g.art)
+            }),
             _ => None,
         };
 
@@ -7653,7 +7686,7 @@ impl App {
             return self.note("no library index to look anything up in".into());
         };
         self.panels.album = true;
-        self.graphics.forget();
+        self.graphics.forget_all();
         // Taken before asking, so an answer that arrives immediately -- a
         // cached cover, say -- still counts as having arrived.
         self.retrying = Some(w.serial());
@@ -9138,7 +9171,7 @@ impl App {
             return;
         };
         let Some(w) = &self.art else { return };
-        self.graphics.forget();
+        self.graphics.forget_all();
 
         if c.cursor < c.local {
             // An image already here: step the album's own choice to it.
@@ -9162,9 +9195,10 @@ impl App {
         match w.album_for(&uri).map(|a| a.choices) {
             Some(n) if n > 1 => {
                 w.cycle(&uri, delta);
-                // The protocol is built from the old picture; letting it go is
-                // what makes the new one appear.
-                self.graphics.forget();
+                // Not what makes the new one appear -- a different picture is
+                // a different entry -- but what gives the terminal back the
+                // memory the old one is still sitting in.
+                self.graphics.forget_all();
             }
             _ => self.note("no other cover for this album".into()),
         }

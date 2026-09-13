@@ -70,7 +70,7 @@ pub struct Album {
     /// 3000px scan and a frame has 16 milliseconds. Shrinking to
     /// [`THUMB_MAX`] costs a few hundred kilobytes and makes drawing a matter
     /// of sampling.
-    pub image: Option<Arc<image::RgbImage>>,
+    pub image: Option<Arc<image::RgbaImage>>,
     pub source: Option<Source>,
     /// Which candidate is showing, and how many there are. The panel says so
     /// when there is more than one, because an alternative nobody knows about
@@ -735,7 +735,7 @@ fn load(
     detail: &AlbumDetail,
     candidate: &cover::Candidate,
     embedded: Option<&Vec<u8>>,
-) -> Option<Arc<image::RgbImage>> {
+) -> Option<Arc<image::RgbaImage>> {
     match candidate {
         cover::Candidate::Embedded => {
             // Gathered with the candidate list. The fallback is for an entry
@@ -809,7 +809,7 @@ fn save_choice(
 /// Failure is silent and returns `None`: a corrupt or truncated JPEG in a
 /// music folder is common enough, and it is not worth a message on the status
 /// line every time a track changes.
-fn decode(path: &std::path::Path) -> Option<Arc<image::RgbImage>> {
+fn decode(path: &std::path::Path) -> Option<Arc<image::RgbaImage>> {
     match crate::util::image::open_limited(path, crate::util::image::MAX_DIMENSION) {
         Ok(i) => shrink(Some(i)),
         Err(e) => {
@@ -820,7 +820,7 @@ fn decode(path: &std::path::Path) -> Option<Arc<image::RgbImage>> {
 }
 
 /// Bring a decoded cover down to something a panel can hold.
-fn shrink(img: Option<image::DynamicImage>) -> Option<Arc<image::RgbImage>> {
+fn shrink(img: Option<image::DynamicImage>) -> Option<Arc<image::RgbaImage>> {
     let img = img?;
     let (w, h) = (img.width(), img.height());
     let img = if w.max(h) > THUMB_MAX {
@@ -831,7 +831,10 @@ fn shrink(img: Option<image::DynamicImage>) -> Option<Arc<image::RgbImage>> {
     } else {
         img
     };
-    Some(Arc::new(img.to_rgb8()))
+    // RGBA rather than RGB: this is what the terminal graphics layer encodes
+    // from, and converting per frame would allocate a copy of every cover on
+    // every draw.
+    Some(Arc::new(img.to_rgba8()))
 }
 
 #[cfg(test)]

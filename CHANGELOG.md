@@ -19,6 +19,22 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   `warm_max_mb` caps it at 512 MiB so a hi-res album image is covered but a
   track nobody resumes is not a long burst of I/O.
 
+### Changed
+
+- **The shared foundation now lives in its own crate, STAR/KIT**, and STAR/AMP
+  depends on a tag of it rather than carrying it. The theme engine, the
+  directory rule, file logging, terminal graphics, the panel chrome, the key
+  table and help overlay, the atomic and mode-0600 file writes, marquee and
+  truncation, and the HTTP defaults all moved across; what is left here is the
+  music player. None of it is visible from the outside: the sixteen built-in
+  themes resolve to the same colours role by role, pinned by a golden test at
+  both ends, and the help overlay is drawn character for character as it was.
+  The reason for the move is STAR/CORD, a terminal Discord client built on the
+  same foundation -- two applications sharing one copy rather than two copies
+  drifting apart. STAR/KIT also re-exports ratatui, crossterm, ratatui-image
+  and image, so there is exactly one copy of each in the build and a widget
+  written in one repository fits a signature declared in the other.
+
 ## [0.1.1] - 2026-09-12
 
 ### Fixed

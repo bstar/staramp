@@ -40,6 +40,26 @@ too:
 export BINDGEN_EXTRA_CLANG_ARGS="-I/opt/ffmpeg/include"
 ```
 
+The build also fetches [starkit](https://github.com/bstar/starkit) from git --
+it is this project's own shared foundation, pinned to a tag rather than
+published to crates.io, and it brings ratatui, crossterm, ratatui-image and
+image with it. So the first build needs network, and `nix build` needs it too:
+the flake sets `cargoLock.allowBuiltinFetchGit`, which fetches outside the
+sandbox rather than carrying a hash that would have to be recomputed on every
+starkit tag.
+
+To work on starkit and this at the same time, check it out beside this
+repository and point the build at it with an untracked `.cargo/config.toml`:
+
+```toml
+[patch."https://github.com/bstar/starkit"]
+starkit = { path = "../starkit" }
+```
+
+It is in `.gitignore`, because a committed one points CI at a path that does
+not exist. Delete it once the change is tagged and this repository has taken
+the new tag.
+
 ## What CI will run
 
 ```sh
@@ -82,6 +102,22 @@ purpose is to catch this coming back.
 It has to be containers: cargo-deb's `$auto` dependency resolution reads a dpkg
 database, makepkg is not packaged for most systems, and a binary built on NixOS
 asks for a loader no other distribution has.
+
+## Taking a new starkit
+
+Its own commit, "Take starkit 0.Y", and nothing else in it:
+
+1. Change the `tag` and the `version` requirement on the `starkit` dependency
+   in `Cargo.toml`.
+2. `cargo update -p starkit` so `Cargo.lock` records the new revision.
+3. Run the checks above. starkit's own CI has a job that builds both of its
+   consumers against the tip of the library, so a break should have been
+   caught there first, but the version this repository actually pins is the
+   one that matters.
+
+Keeping it separate is the point: what arrived with the new version is then
+one diff to read rather than a line buried in a feature commit. starkit is
+0.x, so a minor bump may change an API and a patch bump may not.
 
 ## Releasing
 

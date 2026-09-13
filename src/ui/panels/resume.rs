@@ -3,15 +3,15 @@
 //! Shown rather than done silently: dropping straight into the middle of a
 //! track on launch is startling, and there is no way to decline it afterwards.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::session::{self, Session};
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
 
 fn rgb(c: Rgb) -> Color {

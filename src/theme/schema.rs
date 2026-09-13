@@ -1,112 +1,16 @@
-//! Theme file format.
+//! The tables that mean something to a music player.
 //!
-//! Every colour role is optional. A minimal theme is a handful of lines and the
-//! rest is derived; a maximal one specifies everything. That is the opposite of
-//! the reference implementation, whose seven colours cannot express "selected
-//! row" and "playing row" as different things, and where one `accent` value
-//! drives the title, the selection, the seek bar and the key pills at once.
+//! The format itself is starkit's, and so are the tables every application
+//! has: the palette, the chrome around a panel, the rows inside one, and the
+//! status line. What is left is what only a player has -- a marquee, a time readout, a seek
+//! bar, a volume slider, an equaliser, transport buttons and an analyzer --
+//! and those are read out of the theme file's unknown-table bag on demand.
+//! A theme file that carries them is still a perfectly good theme for anything
+//! else that reads it.
 
 use serde::{Deserialize, Serialize};
 
 use super::color::Rgb;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum Variant {
-    #[default]
-    Dark,
-    Light,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Meta {
-    pub name: String,
-    #[serde(default)]
-    pub id: String,
-    #[serde(default)]
-    pub author: String,
-    #[serde(default)]
-    pub variant: Variant,
-    /// Inherit from another theme, then override.
-    #[serde(default)]
-    pub extends: Option<String>,
-    /// Where an imported theme came from, e.g. a `.wsz` filename.
-    #[serde(default)]
-    pub source: Option<String>,
-}
-
-/// A base16 scheme, which can stand in for the whole palette.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[allow(non_snake_case)]
-pub struct Base16 {
-    pub base00: Rgb,
-    pub base01: Rgb,
-    pub base02: Rgb,
-    pub base03: Rgb,
-    pub base04: Rgb,
-    pub base05: Rgb,
-    pub base06: Rgb,
-    pub base07: Rgb,
-    pub base08: Rgb,
-    pub base09: Rgb,
-    pub base0A: Rgb,
-    pub base0B: Rgb,
-    pub base0C: Rgb,
-    pub base0D: Rgb,
-    pub base0E: Rgb,
-    pub base0F: Rgb,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct AppColors {
-    pub bg: Option<Rgb>,
-    pub fg: Option<Rgb>,
-    pub dim: Option<Rgb>,
-    pub accent: Option<Rgb>,
-    pub ok: Option<Rgb>,
-    pub warn: Option<Rgb>,
-    pub error: Option<Rgb>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ChromeColors {
-    pub titlebar_active_fg: Option<Rgb>,
-    pub titlebar_active_bg: Option<Rgb>,
-    pub titlebar_inactive_fg: Option<Rgb>,
-    pub titlebar_inactive_bg: Option<Rgb>,
-    pub border: Option<Rgb>,
-    pub border_focused: Option<Rgb>,
-    pub divider: Option<Rgb>,
-    #[serde(default)]
-    pub border_style: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct RowColors {
-    pub fg: Option<Rgb>,
-    pub bg: Option<Rgb>,
-    pub index_fg: Option<Rgb>,
-    pub duration_fg: Option<Rgb>,
-    pub meta_fg: Option<Rgb>,
-    pub selected_fg: Option<Rgb>,
-    pub selected_bg: Option<Rgb>,
-    pub cursor_fg: Option<Rgb>,
-    pub cursor_bg: Option<Rgb>,
-    pub playing_fg: Option<Rgb>,
-    pub playing_bg: Option<Rgb>,
-    pub marked_fg: Option<Rgb>,
-    pub missing_fg: Option<Rgb>,
-    pub virtual_fg: Option<Rgb>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PanelColors {
-    pub bg: Option<Rgb>,
-    pub fg: Option<Rgb>,
-    pub header_fg: Option<Rgb>,
-    pub header_bg: Option<Rgb>,
-    pub empty_fg: Option<Rgb>,
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TimeColors {
@@ -181,51 +85,4 @@ pub struct VisColors {
     pub osc: Option<Vec<Rgb>>,
     #[serde(default)]
     pub grid: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct StatusColors {
-    pub fg: Option<Rgb>,
-    pub bg: Option<Rgb>,
-    pub hint_key_fg: Option<Rgb>,
-    pub hint_key_bg: Option<Rgb>,
-    pub hint_desc_fg: Option<Rgb>,
-}
-
-/// A theme file, before derivation.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ThemeFile {
-    pub meta: Meta,
-    #[serde(default)]
-    pub base16: Option<Base16>,
-    #[serde(default)]
-    pub app: AppColors,
-    #[serde(default)]
-    pub chrome: ChromeColors,
-    #[serde(default)]
-    pub panel: PanelColors,
-    #[serde(default)]
-    pub row: RowColors,
-    #[serde(default)]
-    pub marquee: MarqueeColors,
-    #[serde(default)]
-    pub time: TimeColors,
-    #[serde(default)]
-    pub seek: SeekColors,
-    #[serde(default)]
-    pub volume: VolumeColors,
-    #[serde(default)]
-    pub eq: EqColors,
-    #[serde(default)]
-    pub transport: TransportColors,
-    #[serde(default)]
-    pub vis: VisColors,
-    #[serde(default)]
-    pub status: StatusColors,
-}
-
-impl ThemeFile {
-    pub fn parse(text: &str) -> Result<Self, toml::de::Error> {
-        toml::from_str(text)
-    }
 }

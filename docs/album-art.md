@@ -86,7 +86,7 @@ followed only when you click them.
 The metal detection recognises subgenres and common family names such as
 NWOBHM, djent, thrash, doom, sludge, grindcore and deathcore, including
 compound and Cyrillic tags; plain classic rock and hard rock remain
-non-metal. When identifiers or genre are missing, star/amp uses the
+non-metal. When identifiers or genre are missing, STAR/AMP uses the
 artist-and-album combination to discover a curated Metal Archives
 relationship through MusicBrainz before falling back.
 
@@ -115,7 +115,7 @@ How it behaves once on:
 
 A box-set disc, a compilation, a rip whose album tag names something no
 catalogue has heard of: the album itself cannot be found, but the artist and
-the song title usually still can be. star/amp asks what record the _song_
+the song title usually still can be. STAR/AMP asks what record the _song_
 originally came from and uses that cover. Playing `To Be With You` off a
 `Monster Ballads` compilation shows _Lean Into It_; `High Enough` shows _Damn
 Yankees_.

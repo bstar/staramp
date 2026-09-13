@@ -1,15 +1,15 @@
 //! The Winamp main window.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 
 fn rgb(c: Rgb) -> Color {
@@ -993,43 +993,10 @@ fn render_controls(
     }
 }
 
-/// Scroll a string that does not fit, looping with a separator.
-pub fn marquee(s: &str, width: usize, offset: usize) -> String {
-    use unicode_width::UnicodeWidthStr;
-    if width == 0 {
-        return String::new();
-    }
-    if s.width() <= width {
-        return s.to_string();
-    }
-    let padded = format!("{s}   ***   ");
-    let chars: Vec<char> = padded.chars().collect();
-    let start = offset % chars.len();
-    chars.iter().cycle().skip(start).take(width).collect()
-}
-
-/// Truncate to a display width, with an ellipsis.
-pub fn truncate(s: &str, width: usize) -> String {
-    use unicode_width::UnicodeWidthStr;
-    if width == 0 {
-        return String::new();
-    }
-    if s.width() <= width {
-        return s.to_string();
-    }
-    let mut out = String::new();
-    let mut w = 0;
-    for c in s.chars() {
-        let cw = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
-        if w + cw > width.saturating_sub(1) {
-            break;
-        }
-        out.push(c);
-        w += cw;
-    }
-    out.push('…');
-    out
-}
+/// Moved to starkit: a chat view scrolls a long channel topic the same way a
+/// player scrolls a long title, and both break on CJK without real width
+/// measurement.
+pub use starkit::text::{marquee, truncate};
 
 #[cfg(test)]
 mod tests {
@@ -1992,47 +1959,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn short_titles_are_left_alone() {
-        assert_eq!(marquee("Short", 20, 0), "Short");
-        assert_eq!(marquee("Short", 20, 7), "Short", "offset is irrelevant");
-    }
-
-    #[test]
-    fn long_titles_scroll_and_wrap_around() {
-        let s = "A Very Long Track Title That Does Not Fit At All";
-        let a = marquee(s, 10, 0);
-        let b = marquee(s, 10, 1);
-        assert_eq!(a.chars().count(), 10);
-        assert_eq!(b.chars().count(), 10);
-        assert_ne!(a, b, "it should actually move");
-    }
-
-    #[test]
-    fn truncate_respects_display_width_not_byte_length() {
-        assert_eq!(truncate("hello", 10), "hello");
-        let t = truncate("hello world", 8);
-        assert!(t.ends_with('…'));
-        use unicode_width::UnicodeWidthStr;
-        assert!(t.width() <= 8);
-    }
-
-    #[test]
-    fn truncate_handles_wide_characters_without_overflowing() {
-        // A CJK title is two cells per character; counting chars would overrun
-        // the column and corrupt the row.
-        use unicode_width::UnicodeWidthStr;
-        let s = "君の名は。星を追う子ども";
-        for w in [4, 7, 10, 13] {
-            assert!(truncate(s, w).width() <= w, "width {w} overflowed");
-        }
-    }
-
-    #[test]
-    fn zero_width_produces_nothing_rather_than_panicking() {
-        assert_eq!(truncate("anything", 0), "");
-        assert_eq!(marquee("anything", 0, 3), "");
-    }
     #[test]
     fn a_dropout_is_named_for_what_it_sounded_like() {
         // `xrun` is the driver's word for it. What the listener heard was a

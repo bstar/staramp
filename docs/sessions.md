@@ -40,7 +40,7 @@ window taking over already had the queue and the view in front of it.
 
 ## Opening a playlist while something is playing
 
-star/amp asks what you meant, in the window you just opened, rather than
+STAR/AMP asks what you meant, in the window you just opened, rather than
 guessing or expecting you to have known to pass a flag:
 
 ```
@@ -53,7 +53,7 @@ guessing or expecting you to have known to pass a flag:
 
 ## Resuming
 
-On the next start, star/amp offers to pick up where you left off: the
+On the next start, STAR/AMP offers to pick up where you left off: the
 playlist, the track and the position it was at. `session.toml` in the
 [staramp directory](configuration.md#where-it-keeps-things) is where that is
 remembered.

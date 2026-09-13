@@ -171,32 +171,7 @@ impl Credentials {
 
     fn save(&self) -> Result<()> {
         let path = crate::paths::credentials_file()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension(format!("toml.{}", std::process::id()));
-        let text = toml::to_string_pretty(self)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .mode(0o600)
-                .open(&tmp)?;
-            f.write_all(text.as_bytes())?;
-            f.sync_all()?;
-        }
-        #[cfg(not(unix))]
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, &path)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        Ok(())
+        starkit::fs::write_private(&path, toml::to_string_pretty(self)?.as_bytes())
     }
 }
 
@@ -1090,20 +1065,7 @@ fn submit_now_playing(
 }
 
 fn http_agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .user_agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
-        .http_status_as_error(false)
-        // Every endpoint this talks to is https, and a redirect is the one
-        // place that could quietly stop being true: without this, a
-        // compromised or intercepted service can answer 302 to an http:// URL
-        // and the request goes out again in the clear. Three hops is more than
-        // any of these need -- the Cover Art Archive's own chain is the
-        // longest at two -- and ten was room for a redirect loop to spend.
-        .https_only(true)
-        .max_redirects(5)
-        .timeout_global(Some(Duration::from_secs(15)))
-        .build()
-        .into()
+    starkit::net::agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
 }
 
 fn lastfm_signature(fields: &[(String, String)], secret: &str) -> String {

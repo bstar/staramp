@@ -11,3 +11,7 @@
 .idea/
 *.swp
 *~
+
+# Pointing the build at a local starkit checkout. Per-machine, and a
+# committed one would send CI to a path that does not exist there.
+.cargo/

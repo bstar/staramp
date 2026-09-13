@@ -15,6 +15,12 @@
 //! `skip-next`. They are Apache-2.0, from the Pictogrammers collection, and
 //! are carried here as the polygons on their 24-unit grid rather than as
 //! glyphs, which is what makes drawing them at any size possible.
+//!
+//! The scan conversion itself is `starkit::graphics::raster`, which knows
+//! nothing about transport buttons; what is left here is the five shapes and
+//! where they sit on the plate.
+
+use starkit::graphics::raster;
 
 use crate::theme::color::Rgb;
 
@@ -70,29 +76,13 @@ fn polygons(b: Button) -> &'static [Poly] {
     }
 }
 
-/// Even-odd point-in-polygon.
-fn inside(poly: Poly, x: f32, y: f32) -> bool {
-    let mut hit = false;
-    let n = poly.len();
-    let mut j = n - 1;
-    for i in 0..n {
-        let (xi, yi) = poly[i];
-        let (xj, yj) = poly[j];
-        if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
-            hit = !hit;
-        }
-        j = i;
-    }
-    hit
-}
-
 // ---------------------------------------------------------------------------
 // Rasterising.
 // ---------------------------------------------------------------------------
 
-/// Supersamples per pixel edge. Sixteen samples a pixel is enough that a
-/// slanted edge shows no steps at cell sizes up to a few dozen pixels.
-const SS: u32 = 4;
+fn rgba(c: Rgb) -> starkit::image::Rgba<u8> {
+    starkit::image::Rgba([c.r, c.g, c.b, 255])
+}
 
 /// Rasterise one button: panel behind, a square plate on it, the icon on that.
 ///
@@ -106,37 +96,29 @@ const SS: u32 = 4;
 /// transparent pixel is the cell's background, which is whatever style the
 /// placeholder cell happened to keep, and painting the panel colour in
 /// ourselves is the only way to be sure of it.
-pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image::RgbImage {
+pub fn raster(
+    b: Button,
+    w: u32,
+    h: u32,
+    fg: Rgb,
+    plate: Rgb,
+    bg: Rgb,
+) -> starkit::image::RgbaImage {
     let side = w.min(h) as f32;
     let ox = (w as f32 - side) / 2.0;
     let oy = (h as f32 - side) / 2.0;
     let radius = side * 0.12;
     let scale = side / GRID;
-    let polys = polygons(b);
+    let on_plate = move |x: f32, y: f32| raster::in_rounded_square(x - ox, y - oy, side, radius);
 
-    let mut img = image::RgbImage::new(w.max(1), h.max(1));
-    for (px, py, p) in img.enumerate_pixels_mut() {
-        let mut plate_hits = 0u32;
-        let mut ink_hits = 0u32;
-        for sy in 0..SS {
-            for sx in 0..SS {
-                let x = px as f32 + (sx as f32 + 0.5) / SS as f32;
-                let y = py as f32 + (sy as f32 + 0.5) / SS as f32;
-                if !in_rounded_square(x - ox, y - oy, side, radius) {
-                    continue;
-                }
-                plate_hits += 1;
-                let (ux, uy) = ((x - ox) / scale, (y - oy) / scale);
-                if polys.iter().any(|poly| inside(poly, ux, uy)) {
-                    ink_hits += 1;
-                }
-            }
-        }
-        let total = (SS * SS) as f32;
-        let c = mix(bg, plate, plate_hits as f32 / total);
-        let c = mix(c, fg, ink_hits as f32 / total);
-        *p = image::Rgb([c.r, c.g, c.b]);
-    }
+    let mut img = starkit::image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
+    raster::fill(&mut img, rgba(plate), on_plate);
+    // Masked by the plate rather than merely drawn after it: the icon is
+    // fitted to the plate's grid, so anything of it that fell outside would be
+    // a rounding error rather than part of the shape.
+    raster::fill_polygons(&mut img, rgba(fg), polygons(b), |x, y| {
+        on_plate(x, y).then(|| ((x - ox) / scale, (y - oy) / scale))
+    });
     img
 }
 
@@ -149,7 +131,7 @@ pub fn raster(b: Button, w: u32, h: u32, fg: Rgb, plate: Rgb, bg: Rgb) -> image:
 /// then centred, and it is `fg` on `bg` -- the row's own colours, read from
 /// the cell the text marker was drawn in, so a cursor bar over the playing
 /// row carries through.
-pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> image::RgbImage {
+pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> starkit::image::RgbaImage {
     // The triangle's box on the 24-unit grid.
     let (x0, y0, x1, y1) = (8.0f32, 5.14f32, 19.0f32, 19.14f32);
     let (uw, uh) = (x1 - x0, y1 - y0);
@@ -161,44 +143,11 @@ pub fn mark(w: u32, h: u32, fg: Rgb, bg: Rgb) -> image::RgbImage {
     let ox = (wf - uw * scale) / 2.0 - x0 * scale;
     let oy = (hf - uh * scale) / 2.0 - y0 * scale;
 
-    let mut img = image::RgbImage::new(w.max(1), h.max(1));
-    for (px, py, p) in img.enumerate_pixels_mut() {
-        let mut hits = 0u32;
-        for sy in 0..SS {
-            for sx in 0..SS {
-                let x = (px as f32 + (sx as f32 + 0.5) / SS as f32 - ox) / scale;
-                let y = (py as f32 + (sy as f32 + 0.5) / SS as f32 - oy) / scale;
-                if inside(PLAY[0], x, y) {
-                    hits += 1;
-                }
-            }
-        }
-        let c = mix(bg, fg, hits as f32 / (SS * SS) as f32);
-        *p = image::Rgb([c.r, c.g, c.b]);
-    }
+    let mut img = starkit::image::RgbaImage::from_pixel(w.max(1), h.max(1), rgba(bg));
+    raster::fill_polygons(&mut img, rgba(fg), PLAY, |x, y| {
+        Some(((x - ox) / scale, (y - oy) / scale))
+    });
     img
-}
-
-/// Is `(x, y)` inside the `side`-by-`side` square at the origin whose corners
-/// are rounded to `radius`?
-fn in_rounded_square(x: f32, y: f32, side: f32, radius: f32) -> bool {
-    if x < 0.0 || y < 0.0 || x >= side || y >= side {
-        return false;
-    }
-    // Distance from the nearest corner's centre of curvature, when in a
-    // corner's square at all.
-    let dx = (radius - x).max(x - (side - radius)).max(0.0);
-    let dy = (radius - y).max(y - (side - radius)).max(0.0);
-    dx * dx + dy * dy <= radius * radius
-}
-
-fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
-    let f = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-    Rgb {
-        r: f(a.r, b.r),
-        g: f(a.g, b.g),
-        b: f(a.b, b.b),
-    }
 }
 
 #[cfg(test)]
@@ -222,13 +171,17 @@ mod tests {
         let img = raster(Button::Play, 32, 51, INK, PLATE, BG);
         assert_eq!((img.width(), img.height()), (32, 51));
         for (x, y) in [(0, 0), (31, 0), (0, 50), (31, 50)] {
-            assert_eq!(img.get_pixel(x, y).0, [0, 0, 0], "corner {x},{y}");
+            assert_eq!(img.get_pixel(x, y).0, [0, 0, 0, 255], "corner {x},{y}");
         }
         // The plate is square and vertically centred: rows above and below
         // it are panel, its own rows are plate at the middle column.
-        assert_eq!(img.get_pixel(16, 2).0, [0, 0, 0], "above the plate");
-        assert_eq!(img.get_pixel(16, 48).0, [0, 0, 0], "below the plate");
-        assert_eq!(img.get_pixel(1, 25).0, [100, 100, 100], "plate's left edge");
+        assert_eq!(img.get_pixel(16, 2).0, [0, 0, 0, 255], "above the plate");
+        assert_eq!(img.get_pixel(16, 48).0, [0, 0, 0, 255], "below the plate");
+        assert_eq!(
+            img.get_pixel(1, 25).0,
+            [100, 100, 100, 255],
+            "plate's left edge"
+        );
     }
 
     #[test]
@@ -241,23 +194,39 @@ mod tests {
         };
         assert_eq!(
             at(Button::Stop, 12.0, 12.0),
-            [255, 255, 255],
+            [255, 255, 255, 255],
             "stop's middle"
         );
         assert_eq!(
             at(Button::Pause, 12.0, 12.0),
-            [100, 100, 100],
+            [100, 100, 100, 255],
             "pause's gap"
         );
         assert_eq!(
             at(Button::Pause, 8.0, 12.0),
-            [255, 255, 255],
+            [255, 255, 255, 255],
             "pause's left bar"
         );
-        assert_eq!(at(Button::Play, 10.0, 12.0), [255, 255, 255], "inside play");
-        assert_eq!(at(Button::Play, 18.0, 6.0), [100, 100, 100], "outside play");
-        assert_eq!(at(Button::Next, 17.0, 12.0), [255, 255, 255], "next's bar");
-        assert_eq!(at(Button::Prev, 7.0, 12.0), [255, 255, 255], "prev's bar");
+        assert_eq!(
+            at(Button::Play, 10.0, 12.0),
+            [255, 255, 255, 255],
+            "inside play"
+        );
+        assert_eq!(
+            at(Button::Play, 18.0, 6.0),
+            [100, 100, 100, 255],
+            "outside play"
+        );
+        assert_eq!(
+            at(Button::Next, 17.0, 12.0),
+            [255, 255, 255, 255],
+            "next's bar"
+        );
+        assert_eq!(
+            at(Button::Prev, 7.0, 12.0),
+            [255, 255, 255, 255],
+            "prev's bar"
+        );
     }
 
     #[test]
@@ -267,11 +236,15 @@ mod tests {
         // A pixel of margin each side, so the tip's column and the base's
         // column are inside the cell, and the corners are background.
         for (x, y) in [(0, 0), (7, 0), (0, 16), (7, 16)] {
-            assert_eq!(img.get_pixel(x, y).0, [0, 0, 0], "corner {x},{y}");
+            assert_eq!(img.get_pixel(x, y).0, [0, 0, 0, 255], "corner {x},{y}");
         }
-        assert_eq!(img.get_pixel(0, 8).0, [0, 0, 0], "the left margin");
-        assert_eq!(img.get_pixel(2, 8).0, [255, 255, 255], "inside the base");
-        assert_eq!(img.get_pixel(6, 2).0, [0, 0, 0], "above the tip");
+        assert_eq!(img.get_pixel(0, 8).0, [0, 0, 0, 255], "the left margin");
+        assert_eq!(
+            img.get_pixel(2, 8).0,
+            [255, 255, 255, 255],
+            "inside the base"
+        );
+        assert_eq!(img.get_pixel(6, 2).0, [0, 0, 0, 255], "above the tip");
         // Centred vertically: the same amount of background above and below.
         let column = |x: u32| {
             (0..17)
@@ -288,41 +261,16 @@ mod tests {
     #[test]
     fn a_short_wide_cell_fits_the_marker_to_its_height() {
         let img = mark(20, 6, INK, BG);
-        assert_eq!(img.get_pixel(10, 0).0, [0, 0, 0], "the top margin holds");
-        assert_eq!(img.get_pixel(10, 5).0, [0, 0, 0], "the bottom margin holds");
+        assert_eq!(
+            img.get_pixel(10, 0).0,
+            [0, 0, 0, 255],
+            "the top margin holds"
+        );
+        assert_eq!(
+            img.get_pixel(10, 5).0,
+            [0, 0, 0, 255],
+            "the bottom margin holds"
+        );
         assert!(img.pixels().any(|p| p.0[0] == 255), "some ink");
-    }
-
-    #[test]
-    fn slanted_edges_are_blended_rather_than_stepped() {
-        let img = raster(Button::Play, 48, 48, INK, PLATE, BG);
-        // Somewhere along the triangle's hypotenuse a pixel is part ink and
-        // part plate.
-        let partial = img.pixels().any(|p| p.0[0] > 100 && p.0[0] < 255);
-        assert!(partial, "no anti-aliased pixel anywhere");
-    }
-
-    #[test]
-    fn the_polygon_test_agrees_with_geometry() {
-        let square: Poly = &[(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)];
-        assert!(inside(square, 1.0, 1.0));
-        assert!(!inside(square, 3.0, 1.0));
-        let tri: Poly = &[(0.0, 0.0), (0.0, 2.0), (2.0, 1.0)];
-        assert!(inside(tri, 0.5, 1.0));
-        assert!(!inside(tri, 1.5, 0.2));
-    }
-
-    #[test]
-    fn rounded_corners_are_cut_and_edges_are_kept() {
-        assert!(!in_rounded_square(0.1, 0.1, 10.0, 2.0), "the corner");
-        assert!(
-            in_rounded_square(5.0, 0.1, 10.0, 2.0),
-            "the top edge's middle"
-        );
-        assert!(in_rounded_square(5.0, 5.0, 10.0, 2.0), "the centre");
-        assert!(
-            !in_rounded_square(10.0, 5.0, 10.0, 2.0),
-            "just past the right"
-        );
     }
 }

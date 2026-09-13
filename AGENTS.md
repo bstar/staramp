@@ -19,6 +19,47 @@ developed on feature branches and folded in for the 0.1.0 release on
 pre-flatten commits exist only on local `backup/*` branches on the machine
 that did it; nothing on GitHub refers to them. Start new work from `main`.
 
+## STAR/KIT
+
+Everything that is not about playing music lives in a separate crate,
+[starkit](https://github.com/bstar/starkit), checked out beside this one: the
+theme engine and the sixteen theme files, the directory rule, file logging,
+terminal graphics and the picture cache, the panel frame and the settings
+list, the key table and the help overlay, atomic and mode-0600 file writes,
+marquee and truncation, the HTTP agent defaults, and the layout engine and
+text field written there for STAR/CORD. It also re-exports `ratatui`,
+`crossterm`, `ratatui_image` and `image`, which is why none of those are
+dependencies here any more and why every import spells them
+`starkit::ratatui::` and so on. There is one copy of each in the build, and a
+widget written in one repository fits a signature declared in the other.
+
+It exists because of STAR/CORD, a terminal Discord client on the same
+foundation. **That is the rule to remember: every public item in starkit has
+two callers, and a change to one of its signatures has to be checked against
+both.** They are `grep -rn "starkit::" ../staramp/src ../starcord/src`. A
+change that is awkward at one and impossible at the other is a new function,
+not a refactor.
+
+The dependency is a git tag, and a local starkit change is invisible here
+until it is tagged. To try one before it is:
+
+```toml
+# .cargo/config.toml -- untracked, and in .gitignore
+[patch."https://github.com/bstar/starkit"]
+starkit = { path = "../starkit" }
+```
+
+Delete it once the tag exists and this repository has moved to it. Moving to
+a new tag is its own commit, "Take starkit 0.Y", carrying nothing but the
+`Cargo.toml` bump and the `Cargo.lock` change, so that what came with the new
+version is one diff to read rather than a line buried in a feature.
+
+`Graphics::probe` must run **before** `term::init` enables raw mode: it writes
+capability queries to the terminal and reads the replies off stdin, and after
+raw mode it reads the user's keystrokes instead. starkit debug-asserts the
+ordering across the crate boundary; a release build degrades to
+`Graphics::disabled()` rather than corrupting the session.
+
 ## Building on Linux
 
 Use the Nix flake for all builds and checks. Do not assume `cargo` or the

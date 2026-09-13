@@ -1,16 +1,16 @@
 //! The playlist editor window.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use std::collections::HashSet;
 
 use crate::playlist::queue::QueueItem;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
 
@@ -519,17 +519,13 @@ pub struct PlaylistView<'a> {
 
 impl<'a> PlaylistView<'a> {
     /// Keep the cursor on screen, returning the scroll offset to use.
+    ///
+    /// An associated function rather than a bare call to
+    /// `starkit::list::clamp_scroll`, because the queue reaches it through
+    /// `PlaylistView::` from half a dozen places and that spelling is what
+    /// says which list is being scrolled.
     pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-        if height == 0 {
-            return 0;
-        }
-        if cursor < scroll {
-            cursor
-        } else if cursor >= scroll + height {
-            cursor + 1 - height
-        } else {
-            scroll
-        }
+        starkit::list::clamp_scroll(cursor, scroll, height)
     }
 }
 
@@ -562,8 +558,11 @@ impl<'a> Widget for PlaylistView<'a> {
             })))
             .title(Span::styled(title, Style::default().fg(rgb(t.header_fg))))
             .title_top(
-                ratatui::text::Line::from(Span::styled(count, Style::default().fg(rgb(t.dim))))
-                    .right_aligned(),
+                starkit::ratatui::text::Line::from(Span::styled(
+                    count,
+                    Style::default().fg(rgb(t.dim)),
+                ))
+                .right_aligned(),
             )
             .style(Style::default().bg(rgb(t.panel_bg)));
 
@@ -1530,11 +1529,11 @@ mod tests {
         use super::super::*;
         use crate::playlist::queue::QueueItem;
         use crate::playlist::uri::TrackUri;
-        use crate::theme::resolve::Theme;
-        use ratatui::buffer::Buffer;
-        use ratatui::layout::Rect;
-        use ratatui::style::Color;
-        use ratatui::widgets::Widget;
+        use crate::theme::Theme;
+        use starkit::ratatui::buffer::Buffer;
+        use starkit::ratatui::layout::Rect;
+        use starkit::ratatui::style::Color;
+        use starkit::ratatui::widgets::Widget;
         use std::collections::HashSet;
 
         fn draw_tagged(

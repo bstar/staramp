@@ -1,14 +1,14 @@
 //! The album window: the cover, and what the record is.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::library::art::{Album, Source};
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
 
@@ -341,7 +341,7 @@ pub struct AlbumView<'a> {
     pub fallback_artist: Option<&'a str>,
     /// A real-pixel rendering of the cover, when the terminal can take one.
     /// `None` falls back to half blocks, which every terminal can.
-    pub protocol: Option<&'a ratatui_image::protocol::Protocol>,
+    pub protocol: Option<&'a starkit::ratatui_image::protocol::Protocol>,
     /// False for `graphics = "off"`: the details, and no picture at all.
     pub show_cover: bool,
     /// Whether a lookup asked for by hand is in flight, and how far the
@@ -396,9 +396,9 @@ impl<'a> Widget for AlbumView<'a> {
                     width: w,
                     height: h,
                 };
-                ratatui_image::Image::new(p).render(fitted, buf)
+                starkit::ratatui_image::Image::new(p).render(fitted, buf)
             }
-            (None, Some(img)) => draw_cover(g.art, buf, img, t),
+            (None, Some(img)) => crate::ui::graphics::halfblocks(img, g.art, buf),
             (None, None) => draw_placeholder(g.art, buf, t),
         }
 
@@ -506,50 +506,10 @@ fn file_name(p: &str) -> Option<&str> {
     p.rsplit('/').next().filter(|n| !n.is_empty())
 }
 
-/// Upper half block: two rows of pixels in one cell, the top from the
-/// foreground and the bottom from the background.
-const HALF: char = '\u{2580}';
-
-/// Draw the cover by sampling it into half-block cells.
-///
-/// Every cell carries two pixels, so a six-row rect is twelve pixels tall. It
-/// is coarse, and it works in every terminal without a graphics protocol,
-/// which is what makes it the floor rather than the ceiling.
-fn draw_cover(area: Rect, buf: &mut Buffer, img: &image::RgbImage, t: &Theme) {
-    if area.width == 0 || area.height == 0 || img.width() == 0 || img.height() == 0 {
-        return;
-    }
-    let (iw, ih) = (img.width(), img.height());
-    let rows = area.height as u32 * 2;
-
-    for cy in 0..area.height {
-        for cx in 0..area.width {
-            // Two samples per cell: the upper and lower halves.
-            let sample = |half: u32| {
-                let py = cy as u32 * 2 + half;
-                let sx = (cx as u32 * iw / area.width as u32).min(iw - 1);
-                let sy = (py * ih / rows).min(ih - 1);
-                let p = img.get_pixel(sx, sy);
-                Color::Rgb(p[0], p[1], p[2])
-            };
-            buf[(area.x + cx, area.y + cy)]
-                .set_char(HALF)
-                .set_style(Style::default().fg(sample(0)).bg(sample(1)));
-        }
-    }
-    let _ = t;
-}
-
 /// A quiet stand-in when there is no cover, rather than a hole in the panel.
 fn draw_placeholder(area: Rect, buf: &mut Buffer, t: &Theme) {
     let style = Style::default().fg(rgb(t.vis_grid_fg)).bg(rgb(t.vis_bg));
-    for y in 0..area.height {
-        for x in 0..area.width {
-            buf[(area.x + x, area.y + y)]
-                .set_char('\u{2591}')
-                .set_style(style);
-        }
-    }
+    crate::ui::graphics::placeholder(area, buf, style);
 }
 
 #[cfg(test)]
@@ -557,6 +517,7 @@ mod tests {
     use super::*;
     use crate::library::db::AlbumDetail;
     use crate::theme::builtin;
+    use starkit::graphics::HALF;
 
     fn detail() -> AlbumDetail {
         AlbumDetail {
@@ -601,7 +562,7 @@ mod tests {
             .collect()
     }
 
-    fn album_with(detail: Option<AlbumDetail>, img: Option<image::RgbImage>) -> Album {
+    fn album_with(detail: Option<AlbumDetail>, img: Option<starkit::image::RgbaImage>) -> Album {
         Album {
             uri: "A/B/01.flac".into(),
             detail,
@@ -739,7 +700,7 @@ mod tests {
 
         // One that already has a cover, and one that is not in the index at
         // all. Retrying either achieves nothing.
-        let mut has_cover = album_with(Some(detail()), Some(image::RgbImage::new(2, 2)));
+        let mut has_cover = album_with(Some(detail()), Some(starkit::image::RgbaImage::new(2, 2)));
         has_cover.source = Some(Source::Sidecar);
         assert!(!can_retry(Some(&has_cover)));
         assert!(!can_retry(Some(&album_with(None, None))));
@@ -914,7 +875,8 @@ mod tests {
 
     #[test]
     fn a_cover_fills_its_rect_with_half_blocks() {
-        let img = image::RgbImage::from_pixel(8, 8, image::Rgb([200, 40, 40]));
+        let img =
+            starkit::image::RgbaImage::from_pixel(8, 8, starkit::image::Rgba([200, 40, 40, 255]));
         let rows = draw(Some(album_with(Some(detail()), Some(img))), 60, PANEL_ROWS);
         let g = geometry(Rect::new(0, 0, 60, PANEL_ROWS), true, CELL_ASPECT).unwrap();
         for y in g.art.y..g.art.y + g.art.height {
@@ -932,12 +894,12 @@ mod tests {
     fn a_cover_reproduces_its_colours() {
         // Two solid halves: the top of the image must reach the top of the
         // rect, and sampling must not smear one into the other.
-        let mut img = image::RgbImage::new(4, 4);
+        let mut img = starkit::image::RgbaImage::new(4, 4);
         for (_, y, p) in img.enumerate_pixels_mut() {
             *p = if y < 2 {
-                image::Rgb([255, 0, 0])
+                starkit::image::Rgba([255, 0, 0, 255])
             } else {
-                image::Rgb([0, 0, 255])
+                starkit::image::Rgba([0, 0, 255, 255])
             };
         }
         let theme = builtin::load("cosmic").unwrap();

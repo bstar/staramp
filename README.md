@@ -1,4 +1,4 @@
-# star/amp
+# STAR/AMP
 
 [![ci](https://github.com/bstar/staramp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/ci.yml)
 [![nix](https://github.com/bstar/staramp/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/nix.yml)
@@ -11,7 +11,7 @@ A terminal player for a more civilized age.
 No streaming. No radio stations. No account required. Winamp inspired. It plays
 the files on your disk, and it plays _all_ of them.
 
-[![star/amp playing a FLAC album bit-perfect, with the analyzer, album art, listening activity and a library timeline playlist](docs/screenshot.png)](docs/screenshot.png)
+[![STAR/AMP playing a FLAC album bit-perfect, with the analyzer, album art, listening activity and a library timeline playlist](docs/screenshot.png)](docs/screenshot.png)
 
 ## Get it
 

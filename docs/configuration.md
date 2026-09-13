@@ -1,6 +1,6 @@
 # Configuration
 
-Everything star/amp keeps lives under one directory, and everything it can be
+Everything STAR/AMP keeps lives under one directory, and everything it can be
 told lives in one file there. This page covers the file, the themes, the
 directory layout, and the terminal-side choices about fonts and drawing.
 
@@ -10,7 +10,7 @@ directory layout, and the terminal-side choices about fonts and drawing.
 
 Settings changed from inside the player are written back here. The write is a
 line edit rather than a re-serialisation, so comments, ordering and any key
-star/amp does not know about survive it byte for byte.
+STAR/AMP does not know about survive it byte for byte.
 
 ### Library and playlists
 
@@ -65,7 +65,7 @@ All of these are off until you turn them on.
 
 ## Theming
 
-`theme = "system"` follows the desktop. star/amp reads Stylix's
+`theme = "system"` follows the desktop. STAR/AMP reads Stylix's
 `~/.config/stylix/palette.json`, so whatever base16 scheme the rest of the
 desktop is set to, the player matches it, analyzer ramp included.
 
@@ -93,7 +93,7 @@ selected rows and dim text all have to clear 4.5:1.
 
 ## Where it keeps things
 
-Everything lives under one directory, so a whole star/amp setup can be backed
+Everything lives under one directory, so a whole STAR/AMP setup can be backed
 up, moved, or deleted by moving one folder:
 
 ```
@@ -119,18 +119,18 @@ up, moved, or deleted by moving one folder:
 ### Playlists and MPD
 
 Point `playlist_dir` at MPD's own playlist directory if you want the two to
-share one set. star/amp writes the same URI form MPD does, including
+share one set. STAR/AMP writes the same URI form MPD does, including
 `Album/rip.cue/track0007`, so they stay in sync.
 
 Saving from the player (`ctrl+s`) writes the order you are looking at, not the
 internal one, so a queue you have grouped, shuffled or arranged by hand saves
 the way it reads on screen. It writes bare library-relative paths, which is
-what MPD reads and writes. A line star/amp could not resolve is copied through
+what MPD reads and writes. A line STAR/AMP could not resolve is copied through
 exactly as it was found rather than being dropped or rewritten.
 
 ## Fonts
 
-star/amp cannot choose the font it is drawn in. That is your terminal's
+STAR/AMP cannot choose the font it is drawn in. That is your terminal's
 setting, and no terminal program can override it. Three things follow from
 that.
 
@@ -172,7 +172,7 @@ above or below them, since blocks anchor to a cell edge. Both shade their
 leading cell between the groove and the fill, so the bar moves smoothly
 without taking a full row of height.
 
-Everything else star/amp draws (box drawing, block elements, braille) is
+Everything else STAR/AMP draws (box drawing, block elements, braille) is
 covered by any font shipped as a terminal font. The packages install a
 suitable one where the distribution has it (`fonts-noto-core` on Debian,
 `noto-fonts` on Arch). Installing it is all a package can do; selecting it in

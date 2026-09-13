@@ -17,7 +17,7 @@ Run once; it sets the setting for you.
 Two commands split the problem in half:
 
 ```sh
-staramp probe  <file>              # what star/amp sees in it
+staramp probe  <file>              # what STAR/AMP sees in it
 staramp decode <file> -o out.wav   # the samples, without the audio device
 ```
 

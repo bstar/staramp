@@ -9,7 +9,6 @@ mod fx;
 mod ipc;
 mod journey;
 mod library;
-mod logging;
 mod mirror;
 // MPRIS is D-Bus, which exists on Linux and nowhere else this runs. The stub
 // has the same shape, so nothing downstream needs to know which one it got.
@@ -263,7 +262,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let _guard = logging::init(cli.verbose)?;
+    let _guard = starkit::logging::init(&paths::PATHS, cli.verbose)?;
 
     match cli.command {
         Some(Command::Decode {
@@ -725,11 +724,12 @@ fn cmd_remote(host: Option<String>, root: Option<String>, refresh: bool) -> Resu
         anyhow::bail!("{host} has an index but no playable tracks in it");
     }
 
-    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
-    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
-    graphics.log_capabilities();
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
+    ui::graphics::log_capabilities(&graphics, buttons);
     let mut app = ui::app::App::on(vfs, items, &cfg)?;
     app.set_graphics(graphics);
+    app.set_buttons_mode(buttons);
     app.run()
 }
 
@@ -837,10 +837,11 @@ fn cmd_import(staging: Option<PathBuf>, quarantine: Option<PathBuf>) -> Result<(
         })
         .collect();
 
-    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
-    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
     let mut app = ui::app::App::new(staging.clone(), items, &cfg)?;
     app.set_graphics(graphics);
+    app.set_buttons_mode(buttons);
     app.set_import_mode(staging, library, quarantine, albums);
     app.run()
 }
@@ -1052,10 +1053,11 @@ fn audition_import_album(
     album: &library::import::Album,
     cfg: &config::Config,
 ) -> Result<()> {
-    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
-    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
     let mut app = ui::app::App::new(staging.to_path_buf(), album.tracks.clone(), cfg)?;
     app.set_graphics(graphics);
+    app.set_buttons_mode(buttons);
     app.set_source_playlist(None);
     app.run()
 }
@@ -1637,9 +1639,9 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
     // Before anything touches the terminal. Detecting a graphics protocol
     // means writing a query and reading the answer off stdin, and once the app
     // has the keyboard that answer arrives as keystrokes.
-    let mut graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
-    graphics.set_buttons_mode(ui::graphics::Buttons::parse(&cfg.ui.buttons));
-    graphics.log_capabilities();
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
+    ui::graphics::log_capabilities(&graphics, buttons);
 
     // Another instance already owns the audio device. Rather than fighting it
     // for the sound card, mirror it: render its state and forward every key.
@@ -1663,6 +1665,7 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
             .unwrap_or_else(|| PathBuf::from("/"));
         let mut app = ui::app::App::mirroring(player_root, &cfg)?;
         app.set_graphics(graphics);
+        app.set_buttons_mode(buttons);
         app.set_mirror(m);
         // A playlist was named and something is already playing. Neither
         // guess: the argument used to be dropped in silence here, and
@@ -1691,6 +1694,7 @@ fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
 
     let mut app = ui::app::App::new(root, items, &cfg)?;
     app.set_graphics(graphics);
+    app.set_buttons_mode(buttons);
     app.set_playlists(playlists);
     if let Some(t) = target.as_ref().filter(|t| t.is_file()) {
         app.set_source_playlist(Some(t.clone()));
@@ -1961,7 +1965,7 @@ fn cmd_theme(cmd: ThemeCmd) -> Result<()> {
 }
 
 /// Load a theme by id: user themes override built-ins of the same name.
-fn load_theme(id: &str) -> Result<theme::resolve::Theme> {
+fn load_theme(id: &str) -> Result<theme::Theme> {
     let (t, why) = theme::builtin::resolve_named(id);
     if why.starts_with("no theme") {
         anyhow::bail!("{why} — try `staramp theme list`");

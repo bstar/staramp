@@ -4,14 +4,14 @@
 //! playlist is almost always a better starting point than thirty thousand
 //! tracks in album order.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
 
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
 
 fn rgb(c: Rgb) -> Color {
@@ -147,29 +147,6 @@ impl<'a> Widget for PickerView<'a> {
     }
 }
 
-/// Keep the cursor visible.
-pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-    if height == 0 {
-        return 0;
-    }
-    if cursor < scroll {
-        cursor
-    } else if cursor >= scroll + height {
-        cursor + 1 - height
-    } else {
-        scroll
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scroll_follows_the_cursor() {
-        assert_eq!(clamp_scroll(0, 0, 8), 0);
-        assert_eq!(clamp_scroll(9, 0, 8), 2);
-        assert_eq!(clamp_scroll(1, 5, 8), 1);
-        assert_eq!(clamp_scroll(3, 0, 0), 0);
-    }
-}
+/// Keep the cursor visible. Moved to starkit, where every list that scrolls
+/// needs it.
+pub use starkit::list::clamp_scroll;

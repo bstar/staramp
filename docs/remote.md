@@ -1,6 +1,6 @@
 # A library on another machine
 
-The music is on the machine under the desk; you are on the laptop. star/amp
+The music is on the machine under the desk; you are on the laptop. STAR/AMP
 opens one SSH connection and plays the files through it.
 
 ```sh
@@ -13,7 +13,7 @@ That is the whole setup.
 
 - `ssh music-server` already works without asking you anything. Use a key or
   an agent.
-- star/amp is installed and has been scanned on the far machine, so there is
+- STAR/AMP is installed and has been scanned on the far machine, so there is
   an index to copy:
 
   ```sh
@@ -22,9 +22,9 @@ That is the whole setup.
   ```
 
 There is **nothing to install or leave running** on the far machine beyond
-star/amp itself: no daemon, no listening port, no streaming server. `sshd`
+STAR/AMP itself: no daemon, no listening port, no streaming server. `sshd`
 and its `sftp` subsystem do all of the work, and your own `~/.ssh/config`,
-keys and agent do all of the deciding. star/amp runs `ssh`; it does not
+keys and agent do all of the deciding. STAR/AMP runs `ssh`; it does not
 reimplement it.
 
 Write the host down and `staramp remote` takes no arguments:
@@ -67,7 +67,7 @@ the reverse.
   decoder sees, so a WavPack cue album played over SSH is the same
   bit-perfect read it would be locally.
 - **Ask for a password.** There is a full-screen UI on the terminal and
-  nowhere to put a prompt. If the host key is unknown, star/amp says so and
+  nowhere to put a prompt. If the host key is unknown, STAR/AMP says so and
   tells you to run `ssh <host>` once by hand.
 - **Analyze audio for Gravity on the laptop.** A remote library is analyzed
   on the machine that owns it, so no whole file is pulled across the link to

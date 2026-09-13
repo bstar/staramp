@@ -75,7 +75,7 @@ indexed library out in date order, oldest album first.
    | Choice | Uses |
    | --- | --- |
    | **filesystem date** | file creation time, with modification time as the fallback |
-   | **first indexed** | the date star/amp first indexed each file |
+   | **first indexed** | the date STAR/AMP first indexed each file |
    | **release year from tags** | the tagged year |
 
 2. Choose **all years**, or one year for just that slice of the collection.

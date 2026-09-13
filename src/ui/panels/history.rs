@@ -1,14 +1,14 @@
 //! Compact listening-history panel with network-delivery status.
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Span;
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::Span;
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::activity::Snapshot;
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 
 pub const PANEL_ROWS: u16 = 8;
 pub const VISIBLE_ROWS: usize = 5;

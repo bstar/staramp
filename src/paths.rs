@@ -8,6 +8,12 @@
 //! `$STARAMP_DIR` overrides the location entirely. `$STARAMP_CONFIG_DIR` is
 //! honoured as well, for anyone who wants the config somewhere else.
 //!
+//! The rule, and every location both applications have, is starkit's
+//! [`Paths`]; what is here is the player's own — the index, the listening
+//! history, the playlists, the equaliser profiles and the control socket —
+//! and free functions over [`PATHS`] for the rest, because forty-seven call
+//! sites already spell them that way.
+//!
 //! Nothing here hardcodes a library path. On the author's machine the music is
 //! on a removable disk under `/run/media`, which is exactly why that has to be
 //! configuration rather than a constant.
@@ -16,79 +22,45 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use starkit::paths::Paths;
 
 const APP: &str = "staramp";
 const DIR_ENV: &str = "STARAMP_DIR";
 const CONFIG_DIR_ENV: &str = "STARAMP_CONFIG_DIR";
 
+/// staramp's directories, in the terms anything shared understands.
+pub const PATHS: Paths = Paths::new(APP, DIR_ENV, CONFIG_DIR_ENV);
+
 /// The one directory everything hangs off.
 pub fn base_dir() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os(DIR_ENV) {
-        return Ok(PathBuf::from(dir));
-    }
-    let home = home_dir().context("cannot determine the home directory")?;
-    Ok(home.join(".local").join(APP))
-}
-
-/// Make a directory staramp owns readable by nobody else.
-///
-/// `create_dir_all` takes the umask, which on most systems means 0755, and
-/// what lives under here is not a matter of taste: `index.sqlite` lists every
-/// path in the library, `activity.sqlite` is a complete listening history, and
-/// the log names whatever is playing. On a shared machine that is all readable
-/// by every other account.
-///
-/// Applied to a directory that already exists as well as a new one, because
-/// installs that predate this run with the old mode and would otherwise keep
-/// it forever. Best-effort by design: a directory that cannot be chmodded --
-/// one on a filesystem with no Unix modes, most likely -- is not a reason to
-/// refuse to start.
-pub fn own_dir(dir: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-    }
-    Ok(())
+    PATHS.base_dir()
 }
 
 /// Create the directories staramp keeps its own files in, privately.
 ///
 /// Called once at startup, before anything opens a database or a log.
 pub fn init_private_dirs() {
-    for dir in [base_dir(), config_dir(), cache_dir()]
-        .into_iter()
-        .flatten()
-    {
-        if let Err(e) = own_dir(&dir) {
-            tracing::debug!("could not prepare {}: {e}", dir.display());
-        }
-    }
+    PATHS.init_private_dirs()
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
+/// Move anything left in the old XDG directories into the single base dir.
+pub fn migrate_legacy() -> Vec<String> {
+    PATHS.migrate_legacy()
 }
 
 /// Config lives at the base, unless pointed elsewhere.
 pub fn config_dir() -> Result<PathBuf> {
-    if let Some(dir) = std::env::var_os(CONFIG_DIR_ENV) {
-        return Ok(PathBuf::from(dir));
-    }
-    base_dir()
+    PATHS.config_dir()
 }
 
 pub fn config_file() -> Result<PathBuf> {
-    Ok(config_dir()?.join("config.toml"))
+    PATHS.config_file()
 }
 
 /// The index and anything else that must not be lost.
 pub fn data_dir() -> Result<PathBuf> {
-    base_dir()
+    PATHS.data_dir()
 }
 
 pub fn index_file() -> Result<PathBuf> {
@@ -107,7 +79,7 @@ pub fn activity_file() -> Result<PathBuf> {
 
 /// Provider tokens and Last.fm application credentials.
 pub fn credentials_file() -> Result<PathBuf> {
-    Ok(data_dir()?.join("credentials.toml"))
+    PATHS.credentials_file()
 }
 
 /// Playlists staramp reads and writes when no `playlist_dir` is configured.
@@ -116,7 +88,7 @@ pub fn playlist_dir() -> Result<PathBuf> {
 }
 
 pub fn themes_dir() -> Result<PathBuf> {
-    Ok(config_dir()?.join("themes"))
+    PATHS.themes_dir()
 }
 
 /// Editable Equalizer APO profiles managed by the player.
@@ -126,28 +98,19 @@ pub fn equalizer_dir() -> Result<PathBuf> {
 
 /// Album art thumbnails and logs. Safe to delete.
 pub fn cache_dir() -> Result<PathBuf> {
-    Ok(base_dir()?.join("cache"))
+    PATHS.cache_dir()
 }
 
 pub fn log_dir() -> Result<PathBuf> {
-    cache_dir()
+    PATHS.log_dir()
 }
 
 /// Volatile per-user state: sockets, and nothing that should survive a reboot.
 ///
-/// `$XDG_RUNTIME_DIR` where there is one, which on Linux is a tmpfs the
-/// session owns. macOS has no such variable, so the cache directory stands in;
-/// it is on disk rather than in memory, which for a socket that is recreated
-/// every run costs nothing.
+/// This holds the control socket and the ssh multiplexer socket, so it is
+/// created 0700 whether it lands in `$XDG_RUNTIME_DIR` or in the cache.
 pub fn runtime_dir() -> Result<PathBuf> {
-    let dir = match std::env::var_os("XDG_RUNTIME_DIR") {
-        Some(d) => PathBuf::from(d).join("staramp"),
-        None => cache_dir()?.join("run"),
-    };
-    // 0700: this holds the control socket and the ssh multiplexer socket. The
-    // XDG runtime directory is already private, but the cache fallback is not.
-    own_dir(&dir).with_context(|| format!("creating {}", dir.display()))?;
-    Ok(dir)
+    PATHS.runtime_dir()
 }
 
 /// The longest an `ssh` ControlPath may be.
@@ -183,89 +146,6 @@ pub fn control_socket(alias: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Legacy XDG locations, checked once so an existing install is not orphaned.
-fn legacy_locations() -> Vec<(PathBuf, PathBuf)> {
-    let Some(home) = home_dir() else {
-        return Vec::new();
-    };
-    let old_config = home.join(".config").join(APP);
-    let old_data = home.join(".local").join("share").join(APP);
-    let Ok(base) = base_dir() else {
-        return Vec::new();
-    };
-    vec![(old_config, base.clone()), (old_data, base)]
-}
-
-/// Move anything left in the old XDG directories into the single base dir.
-///
-/// Runs once at startup and is a no-op afterwards. Silent when there is nothing
-/// to do; existing files at the destination are never overwritten, so a repeat
-/// run cannot clobber newer state.
-pub fn migrate_legacy() -> Vec<String> {
-    let mut moved = Vec::new();
-    let Ok(base) = base_dir() else {
-        return moved;
-    };
-
-    for (old, new) in legacy_locations() {
-        if !old.is_dir() || old == new {
-            continue;
-        }
-        let Ok(entries) = std::fs::read_dir(&old) else {
-            continue;
-        };
-        if std::fs::create_dir_all(&new).is_err() {
-            continue;
-        }
-        for entry in entries.flatten() {
-            let from = entry.path();
-            let Some(name) = from.file_name() else {
-                continue;
-            };
-            let to = new.join(name);
-            if to.exists() {
-                continue;
-            }
-            // Rename first; fall back to a copy when the two are on different
-            // filesystems.
-            let ok = std::fs::rename(&from, &to).is_ok() || copy_recursive(&from, &to).is_ok();
-            if ok {
-                moved.push(format!("{} -> {}", from.display(), to.display()));
-            }
-        }
-        // Only remove the old directory if it emptied out.
-        let _ = std::fs::remove_dir(&old);
-    }
-
-    let _ = std::fs::create_dir_all(&base);
-    moved
-}
-
-fn copy_recursive(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
-    // The same refusal the import copier makes, for the same reason: `is_dir`
-    // and `copy` both follow a link, and `remove_file` then deletes the link
-    // rather than what it pointed at. Migrating an old install is a smaller
-    // blast radius than an import, but not a different rule.
-    if from.symlink_metadata()?.file_type().is_symlink() {
-        return Err(std::io::Error::other(format!(
-            "refusing to follow symlink {}",
-            from.display()
-        )));
-    }
-    if from.is_dir() {
-        std::fs::create_dir_all(to)?;
-        for entry in std::fs::read_dir(from)? {
-            let entry = entry?;
-            copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
-        }
-        std::fs::remove_dir(from)?;
-    } else {
-        std::fs::copy(from, to)?;
-        std::fs::remove_file(from)?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,6 +165,8 @@ mod tests {
         assert!(equalizer_dir().unwrap().starts_with(&base));
         assert!(themes_dir().unwrap().starts_with(&base));
         assert!(cache_dir().unwrap().starts_with(&base));
+        assert!(activity_file().unwrap().starts_with(&base));
+        assert!(import_index_file().unwrap().starts_with(&base));
     }
 
     #[test]

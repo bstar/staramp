@@ -19,14 +19,14 @@
 // entry point would need.
 #![allow(dead_code)]
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::buffer::Buffer;
+use starkit::ratatui::layout::Rect;
+use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::text::{Line, Span};
+use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
 
 use crate::theme::color::Rgb;
-use crate::theme::resolve::Theme;
+use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
 
 fn rgb(c: Rgb) -> Color {
@@ -255,9 +255,8 @@ pub struct LibraryView<'a> {
     pub keys: &'a str,
 }
 
-pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-    super::picker::clamp_scroll(cursor, scroll, height)
-}
+/// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
+pub use starkit::list::clamp_scroll;
 
 /// What is drawn when the row is too narrow for all of it.
 ///

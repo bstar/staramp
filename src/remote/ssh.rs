@@ -1,6 +1,6 @@
 //! The `ssh` connection, and keeping it alive.
 //!
-//! star/amp does not speak SSH. It runs OpenSSH, which already knows about the
+//! STAR/AMP does not speak SSH. It runs OpenSSH, which already knows about the
 //! user's `~/.ssh/config`, their keys, their agent, their `known_hosts` and
 //! their jump hosts -- none of which a music player has any business
 //! reimplementing. What we own is the *lifetime*: one multiplexed master that

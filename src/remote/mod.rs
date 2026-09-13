@@ -8,7 +8,7 @@
 //! thousands of times larger than its index row and waiting for a whole file
 //! before playing it is what this design exists to avoid.
 //!
-//! There is nothing to install on the far machine. star/amp is expected to be
+//! There is nothing to install on the far machine. STAR/AMP is expected to be
 //! there and to have scanned, so that an index exists to fetch, but nothing
 //! listens, nothing is a daemon, and no port is opened. `sshd` and its `sftp`
 //! subsystem do all of it.

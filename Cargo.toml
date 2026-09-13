@@ -11,6 +11,15 @@ keywords = ["music", "player", "tui", "winamp", "audio"]
 categories = ["multimedia::audio", "command-line-utilities"]
 
 [dependencies]
+# The shared foundation, lifted out of this repository so starcord can use the
+# same theme engine, picture rendering and docked panels rather than a copy of
+# them that drifts. A path dependency while the extraction is in progress; it
+# becomes a pinned git tag once the last module has moved.
+#
+# `wsz` is Winamp skin import and `net` the HTTP client, both of which only
+# this application wants; `image` is on by default and draws the cover art.
+starkit = { path = "../starkit", features = ["image", "wsz", "net"] }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

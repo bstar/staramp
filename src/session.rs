@@ -66,7 +66,7 @@ pub struct Session {
 
 impl Session {
     pub fn path() -> Result<PathBuf> {
-        Ok(crate::paths::data_dir()?.join("session.toml"))
+        crate::paths::PATHS.session_file()
     }
 
     pub fn load() -> Option<Session> {

@@ -611,21 +611,12 @@ fn agent() -> ureq::Agent {
 /// rule itself is asserted separately, so making it switchable here does not
 /// make it untested.
 fn build_agent(https_only: bool) -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .user_agent(USER_AGENT)
-        // Statuses are read rather than raised, because the body is what
-        // distinguishes a busy server from a rate limit, and an error that has
-        // already thrown the body away cannot tell them apart.
-        .http_status_as_error(false)
+    starkit::net::builder(USER_AGENT)
         // Every endpoint this talks to is https, and a redirect is the one
         // place that could quietly stop being true: without this, a
         // compromised or intercepted service can answer 302 to an http:// URL
-        // and the request goes out again in the clear. Three hops is more than
-        // any of these need -- the Cover Art Archive's own chain is the
-        // longest at two -- and ten was room for a redirect loop to spend.
+        // and the request goes out again in the clear.
         .https_only(https_only)
-        .max_redirects(5)
-        .timeout_global(Some(Duration::from_secs(15)))
         .build()
         .into()
 }

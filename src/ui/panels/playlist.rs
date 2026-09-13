@@ -519,17 +519,13 @@ pub struct PlaylistView<'a> {
 
 impl<'a> PlaylistView<'a> {
     /// Keep the cursor on screen, returning the scroll offset to use.
+    ///
+    /// An associated function rather than a bare call to
+    /// `starkit::list::clamp_scroll`, because the queue reaches it through
+    /// `PlaylistView::` from half a dozen places and that spelling is what
+    /// says which list is being scrolled.
     pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-        if height == 0 {
-            return 0;
-        }
-        if cursor < scroll {
-            cursor
-        } else if cursor >= scroll + height {
-            cursor + 1 - height
-        } else {
-            scroll
-        }
+        starkit::list::clamp_scroll(cursor, scroll, height)
     }
 }
 

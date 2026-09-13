@@ -343,9 +343,9 @@ fn format_stage(index: usize, stage: &Stage, width: usize) -> String {
     crate::ui::panels::player::truncate(&format!("{on} {:>2} {ch:<3} {body}", index + 1), width)
 }
 
-pub fn clamp_scroll(selected: usize, scroll: usize, height: usize) -> usize {
-    super::picker::clamp_scroll(selected, scroll, height)
-}
+/// Keep the selected band visible. One rule, in starkit, for every list that
+/// scrolls.
+pub use starkit::list::clamp_scroll;
 
 #[cfg(test)]
 mod curve_tests {

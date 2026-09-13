@@ -255,9 +255,8 @@ pub struct LibraryView<'a> {
     pub keys: &'a str,
 }
 
-pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-    super::picker::clamp_scroll(cursor, scroll, height)
-}
+/// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
+pub use starkit::list::clamp_scroll;
 
 /// What is drawn when the row is too narrow for all of it.
 ///

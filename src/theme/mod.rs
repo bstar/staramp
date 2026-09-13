@@ -19,6 +19,10 @@ use std::ops::Deref;
 use starkit::theme::color::{ramp, Rgb};
 use starkit::theme::{pick, Resolve, ThemeFile, WHITE};
 
+// `crate::theme::color::Rgb` is spelled that way in forty-odd places, and
+// `safe_id`, the base16 reader and the desktop detection are called from
+// `main`. Re-exported rather than renamed: where they live is not something
+// the call sites should have to know.
 pub use starkit::theme::{base16, color, safe_id, system};
 // Winamp skin import is behind a feature there, and this is the application
 // that turns it on.

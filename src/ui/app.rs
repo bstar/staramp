@@ -17,6 +17,7 @@ use crossterm::event::{
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap};
+use starkit::mouse::{hit, ClickTracker};
 
 use crate::audio::dsp::eq;
 use crate::audio::player::{Command, PlayState, Player};
@@ -444,7 +445,6 @@ fn slider_fraction(v: Rect, x: u16) -> f32 {
     ((x.saturating_sub(v.x) + 1) as f32 / v.width as f32).clamp(0.0, 1.0)
 }
 
-/// Is this cell inside the rect?
 /// How a switch reads in a settings list.
 fn on_off(v: bool) -> &'static str {
     if v {
@@ -454,17 +454,10 @@ fn on_off(v: bool) -> &'static str {
     }
 }
 
-fn hit(r: Rect, x: u16, y: u16) -> bool {
-    x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-}
-
 fn shifted_history_offset(at: usize, delta: i32, len: usize) -> usize {
     let last = len.saturating_sub(crate::ui::panels::history::VISIBLE_ROWS) as i64;
     (at as i64 + delta as i64).clamp(0, last) as usize
 }
-
-/// Two clicks closer together than this, on the same cell, are a double click.
-const DOUBLE_CLICK: Duration = Duration::from_millis(450);
 
 /// What the queue is called before any playlist is loaded into it.
 const DEFAULT_QUEUE_NAME: &str = "queue";
@@ -1469,7 +1462,7 @@ struct Editing {
     /// What a held left button is currently adjusting.
     drag: Option<Drag>,
     /// Where and when the last left click landed, for double-click detection.
-    last_click: Option<(u16, u16, Instant)>,
+    last_click: ClickTracker,
 }
 
 /// One session spread across several windows, and this window's place in it.
@@ -6558,14 +6551,7 @@ impl App {
 
     /// Record a click and say whether it completes a double click.
     fn register_click(&mut self, x: u16, y: u16) -> bool {
-        let now = Instant::now();
-        let double = self.edit.last_click.is_some_and(|(px, py, at)| {
-            px == x && py == y && now.duration_since(at) < DOUBLE_CLICK
-        });
-        // Clear on a double so a third click starts a fresh pair rather than
-        // firing again on every click of a rapid run.
-        self.edit.last_click = (!double).then_some((x, y, now));
-        double
+        self.edit.last_click.click(x, y)
     }
 
     /// Seek to wherever along the bar the pointer is.

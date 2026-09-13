@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,20 +75,14 @@ impl Session {
         toml::from_str(&text).ok()
     }
 
-    /// Write it out, through a temporary file in the same directory.
+    /// Write it out atomically.
     ///
     /// This is saved every few seconds while playing, so an interrupted write
     /// is a real possibility -- and a half-written session file is worse than
     /// none, because it parses as far as it got and then loses your place.
     pub fn save(&self) -> Result<()> {
         let path = Self::path()?;
-        if let Some(p) = path.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let tmp = path.with_extension(format!("toml.{}", std::process::id()));
-        std::fs::write(&tmp, toml::to_string_pretty(self)?)
-            .with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, &path).with_context(|| format!("replacing {}", path.display()))
+        starkit::fs::write_atomic(&path, toml::to_string_pretty(self)?.as_bytes())
     }
 
     pub fn clear() {

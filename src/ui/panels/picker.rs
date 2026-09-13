@@ -147,29 +147,6 @@ impl<'a> Widget for PickerView<'a> {
     }
 }
 
-/// Keep the cursor visible.
-pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-    if height == 0 {
-        return 0;
-    }
-    if cursor < scroll {
-        cursor
-    } else if cursor >= scroll + height {
-        cursor + 1 - height
-    } else {
-        scroll
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn scroll_follows_the_cursor() {
-        assert_eq!(clamp_scroll(0, 0, 8), 0);
-        assert_eq!(clamp_scroll(9, 0, 8), 2);
-        assert_eq!(clamp_scroll(1, 5, 8), 1);
-        assert_eq!(clamp_scroll(3, 0, 0), 0);
-    }
-}
+/// Keep the cursor visible. Moved to starkit, where every list that scrolls
+/// needs it.
+pub use starkit::list::clamp_scroll;

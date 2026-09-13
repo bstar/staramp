@@ -171,32 +171,7 @@ impl Credentials {
 
     fn save(&self) -> Result<()> {
         let path = crate::paths::credentials_file()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension(format!("toml.{}", std::process::id()));
-        let text = toml::to_string_pretty(self)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .mode(0o600)
-                .open(&tmp)?;
-            f.write_all(text.as_bytes())?;
-            f.sync_all()?;
-        }
-        #[cfg(not(unix))]
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, &path)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-        }
-        Ok(())
+        starkit::fs::write_private(&path, toml::to_string_pretty(self)?.as_bytes())
     }
 }
 

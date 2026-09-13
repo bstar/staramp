@@ -175,7 +175,7 @@ Right-clicking a row opens its track actions:
 
 Adding to another playlist writes that M3U immediately. A starred destination
 already contains either the same library entry or a likely alternate encoding
-of it; star/amp warns before adding a duplicate and can replace an alternate
+of it; STAR/AMP warns before adding a duplicate and can replace an alternate
 version at the same playlist position. Removing a track from the current
 playlist is an unsaved queue edit, and `ctrl+s` makes it permanent.
 

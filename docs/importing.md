@@ -45,7 +45,7 @@ An import preserves the album folder name and puts it below the album-artist
 directory. Existing and similarly spelled artist directories are offered
 before a new one is made.
 
-If an apparent copy of the album already exists, star/amp stops and offers to
+If an apparent copy of the album already exists, STAR/AMP stops and offers to
 keep both versions or replace the old one. Replaced albums are quarantined.
 
 ## What an import guarantees

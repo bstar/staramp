@@ -31,7 +31,7 @@ Declaratively, with the home-manager module:
   programs.staramp = {
     enable = true;
     libraryRoot = "/mnt/music";
-    # Read and write MPD's own playlist directory. star/amp writes the same
+    # Read and write MPD's own playlist directory. STAR/AMP writes the same
     # URI form, so both stay in sync.
     playlistDir = "${config.home.homeDirectory}/.config/mpd/playlists";
     stylix.enable = true;   # derive the theme from your base16 scheme

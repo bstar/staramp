@@ -66,5 +66,5 @@ Edited and imported profiles are kept under `equalizers/` in the
 > hides the controls; `e`, or `[eq] enabled`, is what enables or bypasses the
 > chain. Closing the panel never changes what you hear.
 
-The same holds when several star/amp windows share a session: the window that
+The same holds when several STAR/AMP windows share a session: the window that
 owns audio receives and applies EQ changes from follower windows.

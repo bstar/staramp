@@ -68,7 +68,7 @@ application. ListenBrainz wants the user token from your profile.
 
 ## Discord Rich Presence
 
-Discord presence is native, local, and opt-in: star/amp talks directly to the
+Discord presence is native, local, and opt-in: STAR/AMP talks directly to the
 running Discord desktop client's IPC socket. It is not a bot, needs no bot
 token, and does not join or read any server.
 
@@ -105,8 +105,8 @@ panel's settings.
 ### Album art on the card
 
 Album art is sent as a public HTTPS asset, which is the only image form the
-Discord RPC bridge can publish; it cannot read star/amp's local cover files.
-star/amp uses a tagged MusicBrainz release ID when one exists, then falls back
+Discord RPC bridge can publish; it cannot read STAR/AMP's local cover files.
+STAR/AMP uses a tagged MusicBrainz release ID when one exists, then falls back
 to an independent MusicBrainz album lookup.
 
 Discord presence never requires Last.fm configuration or authentication.

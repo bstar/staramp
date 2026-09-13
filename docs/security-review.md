@@ -1,6 +1,6 @@
 # Security review, September 2026
 
-star/amp parses a great deal of input it did not write and did not ask for.
+STAR/AMP parses a great deal of input it did not write and did not ask for.
 That is not incidental to what it is: a music player for a local collection
 reads tags from files of unknown provenance, cue sheets in whatever encoding
 the ripper used, playlists handed over with an album, skins downloaded from

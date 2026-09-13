@@ -58,5 +58,5 @@ until turned on.
 - Playing a file you asked it to play, with the tags it contains.
 - `[art] fetch = true` sending an artist and album name to MusicBrainz. That is
   what the setting does, and it is off by default for exactly this reason.
-- A scrobbling provider or Discord receiving the track you asked star/amp to
+- A scrobbling provider or Discord receiving the track you asked STAR/AMP to
   play, once you have turned that provider on.

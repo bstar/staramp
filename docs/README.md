@@ -1,4 +1,4 @@
-# star/amp documentation
+# STAR/AMP documentation
 
 The [README](../README.md) is the short version. These pages are the long one,
 grouped by what you are trying to do.

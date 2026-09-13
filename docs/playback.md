@@ -1,6 +1,6 @@
 # Playback
 
-star/amp decodes everything a lossless collection tends to contain, opens the
+STAR/AMP decodes everything a lossless collection tends to contain, opens the
 device at the file's own rate, and treats a cue-sheet album as the single file
 it is.
 
@@ -12,7 +12,7 @@ it is.
 | libavformat / libavcodec, linked in-process | Monkey's Audio, WavPack, Musepack, DSD, Opus, WMA |
 
 Monkey's Audio, WavPack, Musepack and DSD are common in lossless collections
-and are missing from nearly every pure-Rust or pure-Go player. star/amp links
+and are missing from nearly every pure-Rust or pure-Go player. STAR/AMP links
 libav **in-process** for them. Not a subprocess: real seeking, no respawn, no
 `ffmpeg` on `PATH` at runtime.
 

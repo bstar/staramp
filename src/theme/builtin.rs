@@ -221,6 +221,56 @@ mod tests {
         );
     }
 
+    /// The whole derivation chain, pinned byte for byte.
+    ///
+    /// `every_builtin_is_legible` says the result is readable; this one says
+    /// it is the *same* result as yesterday. It is what makes moving the
+    /// resolver somewhere else a refactor rather than a rewrite, because a
+    /// single changed byte is a theme that no longer looks the way it did and
+    /// nothing else in the suite would notice.
+    ///
+    /// Regenerate deliberately, after reading the diff:
+    /// `STARAMP_UPDATE_GOLDEN=1 cargo test every_builtin_resolves_as_recorded`.
+    #[test]
+    fn every_builtin_resolves_as_recorded() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/theme-golden");
+        let update = std::env::var_os("STARAMP_UPDATE_GOLDEN").is_some_and(|v| !v.is_empty());
+        if update {
+            std::fs::create_dir_all(&dir).expect("the golden directory has to be writable");
+        }
+
+        for b in BUILTINS {
+            let got = load(b.id).expect("a built-in that no longer loads").dump();
+            let path = dir.join(format!("{}.txt", b.id));
+
+            if update {
+                std::fs::write(&path, &got).expect("writing a golden file");
+                continue;
+            }
+
+            let want = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+                panic!(
+                    "{}: {e} -- regenerate with STARAMP_UPDATE_GOLDEN=1",
+                    path.display()
+                )
+            });
+            if got == want {
+                continue;
+            }
+            // The dumps are eighty lines long, so say which role moved rather
+            // than printing both of them.
+            match got.lines().zip(want.lines()).find(|(g, w)| g != w) {
+                Some((g, w)) => panic!("{}: resolves to `{g}`, recorded as `{w}`", b.id),
+                None => panic!(
+                    "{}: {} roles resolved, {} recorded",
+                    b.id,
+                    got.lines().count(),
+                    want.lines().count()
+                ),
+            }
+        }
+    }
+
     #[test]
     fn every_builtin_is_legible() {
         // Body text against its own background, WCAG AA for normal text.

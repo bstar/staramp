@@ -421,6 +421,119 @@ impl Theme {
             hint_desc_fg: pick(f.status.hint_desc_fg, None, dim),
         }
     }
+
+    /// Every resolved colour, one `field = #rrggbb` line in declaration order.
+    ///
+    /// This is only here for `every_builtin_resolves_as_recorded`, which pins
+    /// the whole derivation chain against `testdata/theme-golden/`. Rewriting
+    /// where resolution happens is only correct if all sixteen of those files
+    /// still match byte for byte, and diffing two dumps says which role moved
+    /// when they do not.
+    pub fn dump(&self) -> String {
+        use std::fmt::Write as _;
+        let mut s = String::new();
+        macro_rules! line {
+            ($f:ident) => {
+                let _ = writeln!(s, "{} = {}", stringify!($f), self.$f);
+            };
+        }
+        // An unset optional role is not the same as one resolved to black, so
+        // it gets a word rather than a colour.
+        macro_rules! maybe {
+            ($f:ident) => {
+                let _ = match self.$f {
+                    Some(c) => writeln!(s, "{} = {}", stringify!($f), c),
+                    None => writeln!(s, "{} = none", stringify!($f)),
+                };
+            };
+        }
+        macro_rules! indexed {
+            ($f:ident) => {
+                for (i, c) in self.$f.iter().enumerate() {
+                    let _ = writeln!(s, "{}[{}] = {}", stringify!($f), i, c);
+                }
+            };
+        }
+
+        line!(bg);
+        line!(fg);
+        line!(dim);
+        line!(accent);
+        line!(ok);
+        line!(warn);
+        line!(error);
+        line!(titlebar_active_fg);
+        line!(titlebar_active_bg);
+        line!(titlebar_inactive_fg);
+        line!(titlebar_inactive_bg);
+        line!(border);
+        line!(border_focused);
+        line!(divider);
+        line!(panel_bg);
+        line!(panel_fg);
+        line!(header_fg);
+        line!(header_bg);
+        line!(empty_fg);
+        line!(row_fg);
+        line!(row_bg);
+        line!(row_index_fg);
+        line!(row_duration_fg);
+        line!(row_meta_fg);
+        line!(row_selected_fg);
+        line!(row_selected_bg);
+        line!(row_cursor_fg);
+        line!(row_cursor_bg);
+        line!(row_playing_fg);
+        maybe!(row_playing_bg);
+        line!(row_marked_fg);
+        line!(row_missing_fg);
+        line!(row_virtual_fg);
+        line!(marquee_fg);
+        line!(marquee_paused_fg);
+        line!(marquee_stopped_fg);
+        line!(time_digit_fg);
+        maybe!(time_digit_dim_fg);
+        line!(time_colon_fg);
+        line!(time_remaining_fg);
+        line!(seek_track_fg);
+        line!(seek_filled_fg);
+        line!(seek_thumb_fg);
+        line!(seek_label_fg);
+        line!(volume_track_fg);
+        line!(volume_filled_fg);
+        line!(volume_thumb_fg);
+        line!(volume_mute_fg);
+        line!(eq_slider_track);
+        line!(eq_slider_thumb);
+        line!(eq_slider_fill_pos);
+        line!(eq_slider_fill_neg);
+        line!(eq_zero_line);
+        line!(eq_band_label);
+        line!(eq_band_value);
+        line!(eq_band_focused);
+        line!(eq_preamp_fg);
+        line!(eq_enabled_fg);
+        line!(eq_disabled_fg);
+        line!(transport_button_bg);
+        line!(transport_button_active_bg);
+        line!(transport_button_fg);
+        line!(transport_button_active_fg);
+        line!(transport_button_disabled_fg);
+        line!(transport_toggle_on_fg);
+        line!(transport_toggle_off_fg);
+        line!(vis_bg);
+        line!(vis_grid_fg);
+        line!(vis_peak_fg);
+        indexed!(vis_ramp);
+        indexed!(vis_osc);
+        line!(status_fg);
+        line!(status_bg);
+        line!(hint_key_fg);
+        line!(hint_key_bg);
+        line!(hint_desc_fg);
+
+        s
+    }
 }
 
 #[cfg(test)]

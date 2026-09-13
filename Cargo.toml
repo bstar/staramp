@@ -18,7 +18,15 @@ categories = ["multimedia::audio", "command-line-utilities"]
 #
 # `wsz` is Winamp skin import and `net` the HTTP client, both of which only
 # this application wants; `image` is on by default and draws the cover art.
-starkit = { path = "../starkit", features = ["image", "wsz", "net"] }
+#
+# The version requirement is here alongside the path so this is not a wildcard
+# dependency -- `deny.toml` refuses those, and rightly: a dependency with no
+# stated version is one nobody can tell has moved.
+starkit = { path = "../starkit", version = "0.1", features = [
+    "image",
+    "wsz",
+    "net",
+] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }

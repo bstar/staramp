@@ -9,7 +9,6 @@ mod fx;
 mod ipc;
 mod journey;
 mod library;
-mod logging;
 mod mirror;
 // MPRIS is D-Bus, which exists on Linux and nowhere else this runs. The stub
 // has the same shape, so nothing downstream needs to know which one it got.
@@ -263,7 +262,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let _guard = logging::init(cli.verbose)?;
+    let _guard = starkit::logging::init(&paths::PATHS, cli.verbose)?;
 
     match cli.command {
         Some(Command::Decode {

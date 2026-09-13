@@ -35,10 +35,10 @@ clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 thiserror = "2"
 
-# Logging — file only; stdout would corrupt the alternate screen.
+# Logging — file only; stdout would corrupt the alternate screen. The
+# subscriber and the file writer are starkit's, which is where `init` is; what
+# is needed here is the macros that write the lines.
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender = "0.2"
 
 # XDG paths
 etcetera = "0.10"

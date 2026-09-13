@@ -904,11 +904,18 @@ mod tests {
     /// how a player stops responding to its own transport controls.
     #[test]
     fn a_dead_link_wakes_its_waiters_rather_than_hanging() {
-        let (to_server_r, to_server_w) = std::io::pipe().unwrap();
+        let (mut to_server_r, to_server_w) = std::io::pipe().unwrap();
         let (to_client_r, to_client_w) = std::io::pipe().unwrap();
-        // A server that answers the handshake and then goes away.
+        // A server that takes the handshake and then goes away.
+        //
+        // It has to read that handshake before it drops anything. `over`
+        // finishes by sending INIT, and `send` refuses on a link already
+        // marked dead -- so a server that closes immediately can win the race
+        // and make `over` itself fail, which is correct behaviour and not
+        // what this test is about.
         std::thread::spawn(move || {
-            let _ = to_server_r;
+            let mut buf = [0u8; 64];
+            let _ = to_server_r.read(&mut buf);
             drop(to_client_w);
         });
         let s = Session::over(Box::new(to_server_w), Box::new(to_client_r)).unwrap();

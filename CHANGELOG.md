@@ -9,6 +9,10 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- A colour in a theme file or in a downloaded skin's `PLEDIT.TXT` could crash
+  the player. The length check counted bytes and the slices indexed them, so
+  six bytes of multi-byte characters looked like `#RRGGBB` and then split a
+  character in half. Found by the new property tests on their first run.
 - The next-track button drew at half its width, with the lit pause icon left
   over from an earlier frame showing in the half it did not cover. A picture
   is transmitted as pixels and placed over a number of cells, and the cache

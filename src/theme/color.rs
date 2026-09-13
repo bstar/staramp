@@ -23,6 +23,14 @@ impl Rgb {
 
     pub fn parse_hex(s: &str) -> Result<Self, String> {
         let h = s.trim().trim_start_matches('#');
+        // ASCII first, and not as a formality: the length checks below count
+        // bytes and the slices index them, so six bytes of multi-byte
+        // characters pass for `#RRGGBB` and then split one down the middle.
+        // A colour arrives from a theme file or from a downloaded skin's
+        // PLEDIT.TXT, so that is a panic somebody else's file can cause.
+        if !h.is_ascii() {
+            return Err(format!("expected #RRGGBB or #RGB, got {s:?}"));
+        }
         let val = |i: usize| -> Result<u8, String> {
             u8::from_str_radix(&h[i..i + 2], 16).map_err(|_| format!("bad hex: {s}"))
         };
@@ -426,5 +434,38 @@ mod tests {
         for w in r.windows(2) {
             assert!(w[1].luminance() >= w[0].luminance());
         }
+    }
+
+    /// Found by the skin parser's property test on its first CI run, which is
+    /// the entire reason those exist. The length check counts bytes and the
+    /// slices index them, so six bytes of multi-byte characters looked like
+    /// `#RRGGBB` and then split a character in half.
+    #[test]
+    fn a_colour_that_is_not_ascii_is_refused_rather_than_panicking() {
+        for s in [
+            "#\u{25141}\u{e9}", // four bytes plus two: len() == 6
+            "\u{25141}\u{e9}",
+            "#\u{128f1}\u{e9}",
+            "#\u{e9}\u{e9}\u{e9}", // two bytes each: len() == 6
+            "#\u{e9}\u{e9}",       // len() == 4
+            "#\u{1f600}",          // len() == 4
+            "#ff\u{e9}\u{e9}",     // mixed: len() == 6
+        ] {
+            assert!(Rgb::parse_hex(s).is_err(), "{s:?} was accepted as a colour");
+        }
+        // And ordinary colours still parse, in both lengths.
+        assert_eq!(
+            Rgb::parse_hex("#1a2b3c").unwrap(),
+            Rgb::new(0x1a, 0x2b, 0x3c)
+        );
+        assert_eq!(
+            Rgb::parse_hex("1a2b3c").unwrap(),
+            Rgb::new(0x1a, 0x2b, 0x3c)
+        );
+        assert_eq!(Rgb::parse_hex("#abc").unwrap(), Rgb::new(0xaa, 0xbb, 0xcc));
+        assert_eq!(
+            Rgb::parse_hex("  #ABC  ").unwrap(),
+            Rgb::new(0xaa, 0xbb, 0xcc)
+        );
     }
 }

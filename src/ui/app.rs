@@ -1695,7 +1695,11 @@ impl App {
 
     /// As `mirroring`, over a library that may not be on this machine.
     pub fn mirroring_on(vfs: Arc<crate::vfs::Vfs>, cfg: &crate::config::Config) -> Result<Self> {
-        let player = Arc::new(Player::new(Arc::clone(&vfs), cfg.output.fixed_rate())?);
+        let player = Arc::new(Player::new(
+            Arc::clone(&vfs),
+            cfg.output.fixed_rate(),
+            cfg.disk.warm_on_pause.then(|| cfg.disk.warm_max_bytes()),
+        )?);
         let mut app = Self::with_player(player, Vec::new(), cfg)?;
         app.queue.source = None;
         app.spawn_art(vfs);
@@ -1716,7 +1720,11 @@ impl App {
         items: Vec<QueueItem>,
         cfg: &crate::config::Config,
     ) -> Result<Self> {
-        let player = Arc::new(Player::new(Arc::clone(&vfs), cfg.output.fixed_rate())?);
+        let player = Arc::new(Player::new(
+            Arc::clone(&vfs),
+            cfg.output.fixed_rate(),
+            cfg.disk.warm_on_pause.then(|| cfg.disk.warm_max_bytes()),
+        )?);
         let mut app = Self::with_player(player, items, cfg)?;
         app.spawn_art(vfs);
         Ok(app)

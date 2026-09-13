@@ -25,6 +25,7 @@ pub struct Config {
     pub output: Output,
     pub art: Art,
     pub cue: Cue,
+    pub disk: Disk,
     pub fx: Fx,
     pub ui: Ui,
     pub vis: Vis,
@@ -299,6 +300,35 @@ pub struct Fx {
     pub reactive: bool,
 }
 
+/// Keeping a paused track's bytes off a sleeping disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Disk {
+    /// Read the playing file through on pause, so resuming does not wait for
+    /// an external drive to spin back up.
+    ///
+    /// Worth turning off on an SSD, where there is nothing to spin up and the
+    /// read is a burst of I/O for no gain.
+    pub warm_on_pause: bool,
+    /// The largest file worth pulling in, in mebibytes.
+    pub warm_max_mb: u64,
+}
+
+impl Default for Disk {
+    fn default() -> Self {
+        Self {
+            warm_on_pause: true,
+            warm_max_mb: crate::audio::warm::DEFAULT_MAX_BYTES / (1024 * 1024),
+        }
+    }
+}
+
+impl Disk {
+    pub fn warm_max_bytes(&self) -> u64 {
+        self.warm_max_mb.saturating_mul(1024 * 1024)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Cue {
@@ -322,6 +352,7 @@ impl Default for Config {
             art: Art::default(),
             output: Output::default(),
             cue: Cue::default(),
+            disk: Disk::default(),
             fx: Fx::default(),
             ui: Ui::default(),
             playlist: Playlist::default(),
@@ -525,6 +556,20 @@ enabled = false
 client_id = ""
 # Optional button on the presence card.
 lastfm_username = ""
+
+[disk]
+# Pausing stops the output; it does not stop an external drive from spinning
+# down, and the first read after that costs several seconds -- which is where
+# resuming lands, because the output buffer holds well under a second. So the
+# playing file is read through on pause, while the drive is still awake, and
+# the kernel keeps the pages. Nothing is held by staramp itself.
+#
+# Worth turning off on an SSD, where there is nothing to spin up.
+# warm_on_pause = true
+# The largest file worth pulling in, in MiB. A hi-res album image or a DSD rip
+# can run past this, and reading one is a long burst of I/O for a track that
+# may never be resumed.
+# warm_max_mb = 512
 
 [eq]
 # The profile may be one of the bundled curves or a managed APO profile under

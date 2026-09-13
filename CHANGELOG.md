@@ -5,6 +5,20 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Added
+
+- **A paused track's file is read into the page cache**, so resuming does not
+  wait for an external drive to spin back up. Pausing stops the output; it
+  does not stop the disk parking itself, and the output buffer holds well
+  under a second, so the decode thread reaches a sleeping platter almost
+  immediately on resume. The read happens at the pause, while the drive is
+  still awake from having been read seconds ago, and nothing is held by
+  staramp: the kernel keeps the pages and can drop them under memory
+  pressure, where the worst case is the delay that happened before.
+  `[disk] warm_on_pause` turns it off, which is worth doing on an SSD, and
+  `warm_max_mb` caps it at 512 MiB so a hi-res album image is covered but a
+  track nobody resumes is not a long burst of I/O.
+
 ## [0.1.1] - 2026-09-12
 
 ### Fixed

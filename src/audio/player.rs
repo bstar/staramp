@@ -181,7 +181,7 @@ impl Player {
         &self.vfs
     }
 
-    pub fn new(vfs: Arc<Vfs>, fixed_rate: Option<u32>) -> Result<Self> {
+    pub fn new(vfs: Arc<Vfs>, fixed_rate: Option<u32>, warm_budget: Option<u64>) -> Result<Self> {
         let for_handle = Arc::clone(&vfs);
         let (tx, rx) = bounded(64);
         let state = Arc::new(PlayerState::new());
@@ -205,7 +205,17 @@ impl Player {
                 .name("staramp-player".into())
                 .spawn(move || {
                     run(
-                        vfs, rx, state, eq, queue, volume, tap, rg, crossfade, fixed_rate,
+                        vfs,
+                        rx,
+                        state,
+                        eq,
+                        queue,
+                        volume,
+                        tap,
+                        rg,
+                        crossfade,
+                        fixed_rate,
+                        warm_budget,
                     );
                 })?
         };
@@ -510,6 +520,9 @@ fn run(
     rg: Arc<arc_swap::ArcSwap<(RgMode, f32, bool)>>,
     crossfade: Arc<AtomicBool>,
     fixed_rate: Option<u32>,
+    // How many bytes of a paused track may be pulled into the page cache,
+    // or `None` to leave the disk alone. See [`super::warm`].
+    warm_budget: Option<u64>,
 ) {
     // The decode thread's own read-only handle, as the art worker has its own
     // and for the same reason: a handle already open turns a vanished index
@@ -551,6 +564,10 @@ fn run(
     // The album the open decoder is a window onto, when it came from a cue
     // sheet. What makes advancing inside one free.
     let mut cue: Option<source::CueAlbum> = None;
+    // The file the open decoder is reading, which for a cue virtual track is
+    // the album image rather than the sheet. Kept so that pausing can pull it
+    // into the page cache before the drive it lives on spins down.
+    let mut backing: Option<std::path::PathBuf> = None;
     let mut eq_state = EqState::new(2);
     let mut scratch: Vec<f32> = Vec::new();
     let mut crossfade_scratch: Vec<f32> = Vec::new();
@@ -574,6 +591,7 @@ fn run(
                         s.output.pause();
                     }
                     state.paused.store(true, Ordering::Relaxed);
+                    let _ = warm_paused(&backing, warm_budget);
                 }
                 Command::Resume => {
                     if let Some(s) = &stream {
@@ -591,6 +609,9 @@ fn run(
                         }
                     }
                     state.paused.store(now, Ordering::Relaxed);
+                    if now {
+                        let _ = warm_paused(&backing, warm_budget);
+                    }
                 }
                 Command::PlayIndex(i) => {
                     album_preload = None;
@@ -613,6 +634,7 @@ fn run(
                             &mut eq_state,
                             &tap,
                             &mut cue,
+                            &mut backing,
                             fixed_rate,
                         );
                     }
@@ -639,6 +661,7 @@ fn run(
                                 &mut eq_state,
                                 &tap,
                                 &mut cue,
+                                &mut backing,
                                 fixed_rate,
                             )
                         }
@@ -669,6 +692,7 @@ fn run(
                             &mut eq_state,
                             &tap,
                             &mut cue,
+                            &mut backing,
                             fixed_rate,
                         );
                     }
@@ -857,6 +881,7 @@ fn run(
                                         &mut eq_state,
                                         &tap,
                                         &mut cue,
+                                        &mut backing,
                                         fixed_rate,
                                     );
                                 }
@@ -941,6 +966,7 @@ fn run(
                                             &mut eq_state,
                                             &tap,
                                             &mut cue,
+                                            &mut backing,
                                             fixed_rate,
                                         );
                                     }
@@ -1432,6 +1458,25 @@ fn install_prepared(
 const WARM_LEAD_SECS: u64 = 10;
 
 /// Ask the library to make the next track ready, once, near the boundary.
+/// Pull the paused track's file into the page cache.
+///
+/// Called on the way into a pause, while the drive is still awake from having
+/// been read seconds ago. What resuming would otherwise wait for is a disk
+/// that parked itself in the meantime -- the output ring holds well under a
+/// second, so the decode thread reaches the platter almost immediately.
+///
+/// Local libraries only. A remote one is already read behind a window of its
+/// own, and `backing` is left empty for it.
+/// Returns whether it dispatched, so the gating can be tested without
+/// reaching into the page cache to ask what the kernel did with it.
+fn warm_paused(backing: &Option<std::path::PathBuf>, budget: Option<u64>) -> bool {
+    let (Some(path), Some(max)) = (backing, budget) else {
+        return false;
+    };
+    super::warm::ahead(path.clone(), max);
+    true
+}
+
 fn warm_next(
     vfs: &Vfs,
     queue: &Arc<Mutex<Queue>>,
@@ -1497,6 +1542,7 @@ fn open_track(
     eq_state: &mut EqState,
     tap: &Arc<Tap>,
     cue: &mut Option<source::CueAlbum>,
+    backing: &mut Option<std::path::PathBuf>,
     fixed_rate: Option<u32>,
 ) {
     let opened = match source::open(vfs, index, uri) {
@@ -1505,11 +1551,16 @@ fn open_track(
             tracing::warn!("cannot open {uri}: {e}");
             *decoder = None;
             *cue = None;
+            *backing = None;
             return;
         }
     };
     // Kept so the next track of the same album needs no disk.
     *cue = opened.album.clone();
+    // The audio file itself, not the sheet: a cue virtual track is a window
+    // onto an album image, and the image is what a spun-down drive makes
+    // expensive to reach.
+    *backing = (!vfs.is_remote()).then(|| opened.backing_path.clone());
     // What the file holds, which is what the UI reports about the track.
     let src_spec = opened.decoder.spec();
 
@@ -1826,5 +1877,30 @@ mod tests {
             assert!(y.abs() <= 1.0, "{x} left the output at {y}");
             assert_eq!(y.signum(), x.signum(), "{x} changed sign");
         }
+    }
+
+    /// Pausing is the moment the drive is still awake, so it is the moment to
+    /// read. Both halves have to be present: a remote library leaves no
+    /// backing path, and the setting can take the budget away.
+    #[test]
+    fn warming_on_pause_needs_a_local_file_and_a_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("track.flac");
+        std::fs::write(&path, [0u8; 1024]).unwrap();
+        let some = Some(path);
+
+        assert!(
+            warm_paused(&some, Some(crate::audio::warm::DEFAULT_MAX_BYTES)),
+            "a local track with a budget should be warmed"
+        );
+        assert!(
+            !warm_paused(&some, None),
+            "warming turned off in the config must reach the disk not at all"
+        );
+        assert!(
+            !warm_paused(&None, Some(crate::audio::warm::DEFAULT_MAX_BYTES)),
+            "a remote library has no local file to warm"
+        );
+        assert!(!warm_paused(&None, None));
     }
 }

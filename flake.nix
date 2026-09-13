@@ -229,6 +229,11 @@
             rustc cargo rustfmt clippy rust-analyzer
             # scripts/check-version.sh reads `cargo metadata`.
             jq
+            # The licence and advisory gate CI runs, so it can be run here
+            # first. It matters more now than it did: `deny.toml` allows one
+            # git source, and the check that the allowlist still has exactly
+            # one entry in it is this command.
+            cargo-deny
           ])
           # Only ever used to build a .deb, which only happens on Linux.
           ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.cargo-deb

@@ -5,6 +5,15 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Fixed
+
+- **Importing an album from the staging inbox failed on its first step**, and
+  left an empty artist folder in the library. The security hardening made the
+  copy refuse a destination that already exists, which is right for every
+  directory inside an album and wrong for the one above it, created a moment
+  earlier on purpose. No test copied a whole directory, which is how it got
+  through. A failed import now also takes back an artist folder it created.
+
 ### Added
 
 - **A paused track's file is read into the page cache**, so resuming does not

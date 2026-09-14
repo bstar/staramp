@@ -119,7 +119,17 @@ pub fn import(
         library.join(artist_dir)
     };
     let artist_dir = contained_or_new_child(library, &requested_artist_dir)?;
+    // Remembered so a failed import can take back a folder it made. Otherwise
+    // an artist with no albums is left in the library, looking for all the
+    // world like an import that half happened.
+    let artist_dir_was_new = !artist_dir.exists();
     fs::create_dir_all(&artist_dir)?;
+    let undo_artist_dir = || {
+        if artist_dir_was_new {
+            // `remove_dir` rather than `_all`: only an empty one goes.
+            let _ = fs::remove_dir(&artist_dir);
+        }
+    };
     let folder = album
         .source_rel
         .file_name()
@@ -155,8 +165,14 @@ pub fn import(
             partial.display()
         )
     })?;
-    if let Err(error) = copy_verified(&source, &partial) {
+    // Into the directory just made, not onto it: `copy_verified` creates its
+    // destination and refuses one that exists, which is right for every
+    // directory inside the album and wrong for the one above that was created
+    // a moment ago on purpose. Copying a whole album this way was the case no
+    // test covered, and it failed on its first step.
+    if let Err(error) = copy_contents_verified(&source, &partial) {
         let _ = fs::remove_dir_all(&partial);
+        undo_artist_dir();
         return Err(error).context("copying staged album");
     }
 
@@ -174,6 +190,7 @@ pub fn import(
             let _ = move_verified(old, &destination);
         }
         let _ = fs::remove_dir_all(&partial);
+        undo_artist_dir();
         return Err(error).context("installing verified album");
     }
 
@@ -452,6 +469,19 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
     builder.create(path)
 }
 
+/// Copy everything inside `from` into `into`, which must already exist.
+///
+/// The top of an album is created by the caller, atomically and refusing a
+/// leftover; everything beneath it is created here, the same way.
+fn copy_contents_verified(from: &Path, into: &Path) -> Result<()> {
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        copy_verified(&entry.path(), &into.join(entry.file_name()))?;
+    }
+    Ok(())
+}
+
+/// Copy `from` to `to`, creating `to`, and refusing a `to` that exists.
 fn copy_verified(from: &Path, to: &Path) -> Result<()> {
     anyhow::ensure!(
         !from.symlink_metadata()?.file_type().is_symlink(),
@@ -460,11 +490,7 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
     );
     if from.is_dir() {
         create_private_dir(to)?;
-        for entry in fs::read_dir(from)? {
-            let entry = entry?;
-            copy_verified(&entry.path(), &to.join(entry.file_name()))?;
-        }
-        return Ok(());
+        return copy_contents_verified(from, to);
     }
     let mut input = fs::File::open(from)?;
     // `create_new`, so a symlink planted at the destination is not written
@@ -661,5 +687,37 @@ mod tests {
         let library = dir.path().join("music");
         std::fs::create_dir_all(&library).unwrap();
         assert!(validate_roots(&staging, &library, Some(&separate)).is_ok());
+    }
+
+    /// An album is a directory. Every test above copies a single file, which
+    /// is how a change to the directory case got past them: the staging
+    /// directory was created by the caller and then refused by the copy as
+    /// already existing, so every real import failed on its first step and
+    /// left an empty artist folder in the library.
+    #[test]
+    fn a_whole_album_directory_is_copied_into_a_staging_directory_that_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let album = dir.path().join("Album");
+        std::fs::create_dir_all(album.join("Disc 2")).unwrap();
+        std::fs::write(album.join("01 - One.flac"), b"one").unwrap();
+        std::fs::write(album.join("cover.jpg"), b"jpg").unwrap();
+        std::fs::write(album.join("Disc 2").join("01 - Two.flac"), b"two").unwrap();
+
+        // Exactly what `import` does: make the staging directory itself, so
+        // that step can refuse a leftover atomically, then copy into it.
+        let partial = dir.path().join(".partial");
+        create_private_dir(&partial).unwrap();
+        copy_contents_verified(&album, &partial)
+            .expect("copying an album into its staging directory");
+
+        assert_eq!(
+            std::fs::read(partial.join("01 - One.flac")).unwrap(),
+            b"one"
+        );
+        assert_eq!(std::fs::read(partial.join("cover.jpg")).unwrap(), b"jpg");
+        assert_eq!(
+            std::fs::read(partial.join("Disc 2").join("01 - Two.flac")).unwrap(),
+            b"two"
+        );
     }
 }

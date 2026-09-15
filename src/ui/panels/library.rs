@@ -248,6 +248,9 @@ pub struct LibraryView<'a> {
     pub focus: usize,
     pub summary: &'a str,
     pub keys: &'a str,
+    /// Where this frame's scrollbars are recorded, so a later press or drag
+    /// can find them. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 /// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
@@ -343,12 +346,14 @@ impl<'a> Widget for LibraryView<'a> {
                 Some(x) => super::scrollbar::track_at(x, body),
                 None => super::scrollbar::track(l.frame, body),
             };
-            let thumb = super::scrollbar::rows(
-                self.columns[c].scroll,
-                self.columns[c].rows.len(),
-                body.height,
+            self.bars.draw(
+                super::Bar::Library(c),
+                track,
+                buf,
+                t,
+                self.columns[c].rows.len() as u32,
+                self.columns[c].scroll as u32,
             );
-            super::scrollbar::render(track, buf, t, thumb);
         }
     }
 }
@@ -971,6 +976,91 @@ mod tests {
         assert_eq!(l.shown, vec![ARTISTS, ALBUMS]);
     }
 
+    #[test]
+    fn pressing_a_columns_scrollbar_finds_that_column_and_no_other() {
+        use crate::ui::panels::Bar;
+        use starkit::chrome::scrollbar::Scrollbars;
+
+        let theme = builtin::load("cosmic").unwrap();
+        // Three full-width columns, all longer than the window, so every one
+        // of them draws its own bar.
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buf = Buffer::empty(area);
+        let rows = entries(50);
+        let col = Column {
+            head: "ARTISTS",
+            rows: &rows,
+            cursor: 0,
+            scroll: 0,
+            empty: "nothing",
+        };
+        let mut bars: Scrollbars<Bar> = Scrollbars::new();
+        LibraryView {
+            theme: &theme,
+            search: "",
+            typing: false,
+            columns: [
+                col,
+                Column {
+                    head: "ALBUMS",
+                    ..col
+                },
+                Column {
+                    head: "TRACKS",
+                    ..col
+                },
+            ],
+            focus: ARTISTS,
+            summary: "50 artists",
+            keys: "esc back",
+            bars: &mut bars,
+        }
+        .render(area, &mut buf);
+
+        for c in [ARTISTS, ALBUMS, TRACKS] {
+            let track = bars
+                .track_of(Bar::Library(c))
+                .unwrap_or_else(|| panic!("column {c} drew no bar"));
+            let (bar, above) = bars
+                .press(track.x, track.y + track.height - 1)
+                .unwrap_or_else(|| panic!("the press on column {c}'s own track missed it"));
+            assert_eq!(bar, Bar::Library(c), "the press found the wrong column");
+            assert!(above > 0, "a press at the bottom should scroll down");
+            assert!(bars.release());
+        }
+    }
+
+    #[test]
+    fn dragging_a_librarys_column_scrollbar_moves_the_cursor_into_view_and_cascades() {
+        // What `App::scroll_bar_to` does for a `Bar::Library` drag, against
+        // the real model rather than a synthetic one: the row `above` maps
+        // the cursor onto, then `Library::select` -- the same call a click
+        // already makes, so a drag also focuses the column and cascades the
+        // columns after it.
+        let mut lib = a_library();
+        assert_eq!(lib.cursor(ARTISTS), 0, "Angra sorts first");
+
+        let above = 1usize;
+        let height = 1usize;
+        let cursor =
+            starkit::list::cursor_into_view(lib.cursor(ARTISTS), above, height, lib.len(ARTISTS));
+        lib.set_scroll(ARTISTS, above);
+        lib.select(ARTISTS, cursor);
+
+        assert_eq!(
+            lib.cursor(ARTISTS),
+            1,
+            "the cursor followed the scroll to Helloween"
+        );
+        assert_eq!(lib.scroll(ARTISTS), above);
+        assert_eq!(lib.focus, ARTISTS, "a drag on a column focuses it");
+        assert_eq!(
+            lib.len(ALBUMS),
+            2,
+            "the cascade picked up Helloween's two records"
+        );
+    }
+
     fn draw(w: u16, h: u16, focus: usize, cursor: usize) -> (Buffer, Vec<Entry>) {
         let theme = builtin::load("cosmic").unwrap();
         let area = Rect::new(0, 0, w, h);
@@ -1001,6 +1091,7 @@ mod tests {
             focus,
             summary: "862 artists",
             keys: "esc back",
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (buf, rows)
@@ -1089,6 +1180,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         assert!(text(&buf, area).contains("no albums here"));
@@ -1135,6 +1227,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         let all = text(&buf, area);
@@ -1170,6 +1263,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         let l = layout(area, 0);
@@ -1215,6 +1309,7 @@ mod tests {
             focus: ARTISTS,
             summary: "",
             keys: "",
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 

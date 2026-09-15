@@ -376,6 +376,32 @@ impl Rows {
             _ => row,
         }
     }
+
+    /// Where the cursor should land after a scrollbar drag sets `scroll` to a
+    /// new row: the inverse of [`Self::row_of_track`], through
+    /// [`starkit::list::cursor_into_view`].
+    ///
+    /// `scroll` is a row, not a track, so the row `cursor_into_view` returns
+    /// can land on a divider -- there is nothing there to select, so this
+    /// takes the first track at or after it, falling back to the nearest one
+    /// before it for a drag to the very bottom of a list that ends on a
+    /// (folded, trackless) heading. `cursor` unchanged if the list has
+    /// nothing to put it on.
+    pub fn cursor_after_scroll(&self, cursor: usize, scroll: usize, height: usize) -> usize {
+        let row = self.row_of_track(cursor).unwrap_or(0);
+        let want = starkit::list::cursor_into_view(row, scroll, height, self.len());
+        if let Some(track) = self.track_at_or_after(want) {
+            return track;
+        }
+        self.rows[..want.min(self.rows.len())]
+            .iter()
+            .rev()
+            .find_map(|r| match r {
+                Row::Track(t) => Some(*t),
+                Row::Section { .. } => None,
+            })
+            .unwrap_or(cursor)
+    }
 }
 
 /// What a divider says: the record, when it came out, and -- when there is
@@ -512,6 +538,9 @@ pub struct PlaylistView<'a> {
     /// The header words this panel offers, which is one fewer while mirroring:
     /// the leader owns the queue and there is nothing here to reorder.
     pub header_items: &'a [super::header::Item],
+    /// Where this frame's scrollbar is recorded, so a later press or drag can
+    /// find it. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 impl<'a> PlaylistView<'a> {
@@ -754,12 +783,15 @@ impl<'a> Widget for PlaylistView<'a> {
         }
 
         // One scrollbar, on the border -- the same thumb every panel with a
-        // list draws now, in starkit.
-        super::scrollbar::render(
+        // list draws now, in starkit. Recorded as well as drawn, so a press
+        // or drag on it can find its way back here.
+        self.bars.draw(
+            super::Bar::Playlist,
             super::scrollbar::track(area, inner),
             buf,
             t,
-            super::scrollbar::rows(self.scroll, lines, inner.height),
+            lines as u32,
+            self.scroll as u32,
         );
     }
 }
@@ -798,6 +830,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..height)
@@ -871,6 +904,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         buf[(x, list_of(height).y + row)].style().fg.unwrap()
@@ -925,6 +959,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..height)
@@ -1194,6 +1229,32 @@ mod render_tests {
     }
 
     #[test]
+    fn a_scrollbar_drag_that_lands_on_a_divider_selects_the_track_after_it() {
+        // Rows: 0 Holy Land, 1-3 its tracks, 4 Chained, 5-6 its tracks.
+        let items = grouped_items();
+        let rows = open(&items);
+        // Scrolled so row 4 -- the Chained heading -- is the new top of the
+        // window: there is nothing there to put the cursor on.
+        let cursor = rows.cursor_after_scroll(0, 4, 3);
+        assert_eq!(
+            cursor, 3,
+            "landed on a heading; the first track under it is next"
+        );
+    }
+
+    #[test]
+    fn a_scrollbar_drag_to_a_folded_heading_falls_back_to_the_last_open_track() {
+        let items = grouped_items();
+        let folded: HashSet<String> = ["chained".to_string()].into_iter().collect();
+        let rows = Rows::grouped(&items, &folded, None);
+        // Chained is folded shut and has no track rows at all; a drag to the
+        // very bottom has nowhere forward to land, so it falls back to the
+        // nearest track still on screen rather than stranding the cursor.
+        let cursor = rows.cursor_after_scroll(0, rows.len(), 1);
+        assert_eq!(cursor, 2, "Holy Land's last track, the only one left open");
+    }
+
+    #[test]
     fn the_scrollbar_measures_the_rows_it_has_to_show() {
         // Five tracks fit in the list; five tracks and two headings do not.
         let items = grouped_items();
@@ -1213,6 +1274,121 @@ mod render_tests {
         };
         assert_eq!(bar(&flat), 0, "everything fits, so no marker");
         assert_eq!(bar(&grouped), 1, "the headings push it over");
+    }
+
+    #[test]
+    fn dragging_the_playlist_scrollbar_scrolls_it_and_keeps_the_cursor_in_view() {
+        use crate::ui::panels::Bar;
+        use starkit::chrome::scrollbar::Scrollbars;
+
+        let total = 200;
+        let area = Rect::new(0, 0, 100, 40);
+        let items: Vec<QueueItem> = (0..total)
+            .map(|i| {
+                let mut q = QueueItem::new(TrackUri::File {
+                    rel_path: format!("track{i}.flac"),
+                });
+                q.title = Some(format!("Track {i}"));
+                q.duration_secs = Some(90);
+                q
+            })
+            .collect();
+        let rows = Rows::flat(items.len());
+        let theme = builtin::load("cosmic").unwrap();
+        let mut bars: Scrollbars<Bar> = Scrollbars::new();
+        let mut buf = Buffer::empty(area);
+        PlaylistView {
+            theme: &theme,
+            name: "test",
+            items: &items,
+            rows: &rows,
+            cursor: 0,
+            playing: None,
+            scroll: 0,
+            focused: true,
+            tagged: &Default::default(),
+            glyphs: crate::ui::panels::player::Glyphs::default(),
+            header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut bars,
+        }
+        .render(area, &mut buf);
+
+        let track = bars
+            .track_of(Bar::Playlist)
+            .expect("a scrollbar was drawn and recorded");
+        // What `App::scroll_bar_to` reads the track height from, in place of
+        // the raw area height: the frame's border and header rows are not
+        // rows of the list.
+        let height = track.height as usize;
+        assert!(height < area.height as usize, "the frame must cost rows");
+
+        // A press past the thumb, at the very bottom of the track, jumps it
+        // there in the same call -- clamped to the track, so this reaches
+        // the furthest `above` can go rather than overshooting it.
+        let (bar, above) = bars
+            .press(track.x, track.y + track.height - 1)
+            .expect("the press landed on the recorded bar");
+        assert_eq!(bar, Bar::Playlist);
+        let end = total - height;
+        assert_eq!(above as usize, end, "the press should scroll to the end");
+        assert_eq!(bars.held(), Some(Bar::Playlist), "the bar is now held");
+
+        // What `App::scroll_bar_to` does with that `above`: move the cursor
+        // into the window it just opened, in a flat list the same row space
+        // the scroll itself is in. Track 0 was on the cursor, well above the
+        // window this scroll opens, so it is pulled down to the window's own
+        // top rather than left behind -- the same "nearest edge" rule
+        // `cursor_into_view` documents, not a jump all the way to the list's
+        // last track.
+        let cursor = rows.cursor_after_scroll(0, above as usize, height);
+        assert!(
+            cursor >= above as usize && cursor < above as usize + height,
+            "cursor {cursor} is not inside the window opened by scroll {above}"
+        );
+        assert_eq!(cursor, above as usize);
+
+        // Redrawing with the position the press set is the other half of the
+        // contract: the same `above` comes back, so the thumb does not creep
+        // or snap on the next frame.
+        let mut buf2 = Buffer::empty(area);
+        PlaylistView {
+            theme: &theme,
+            name: "test",
+            items: &items,
+            rows: &rows,
+            cursor,
+            playing: None,
+            scroll: above as usize,
+            focused: true,
+            tagged: &Default::default(),
+            glyphs: crate::ui::panels::player::Glyphs::default(),
+            header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut bars,
+        }
+        .render(area, &mut buf2);
+        assert_eq!(
+            bars.track_of(Bar::Playlist).map(|t| t.height as usize),
+            Some(height)
+        );
+        // Still at the end: a further draw at the position the drag set does
+        // not creep the scroll away from it.
+        let (bar, above_again) = bars
+            .press(track.x, track.y + track.height - 1)
+            .expect("the bar is still there to press");
+        assert_eq!(bar, Bar::Playlist);
+        assert_eq!(above_again as usize, end);
+
+        // Dragging back up to the top of the track moves it back toward zero.
+        let (bar, above_after_drag) = bars.drag(track.y).expect("still held");
+        assert_eq!(bar, Bar::Playlist);
+        assert!(
+            above_after_drag < above,
+            "dragging to the top of the track should scroll back up"
+        );
+
+        assert!(bars.release(), "something was held to release");
+        assert_eq!(bars.held(), None);
+        assert!(bars.drag(track.y).is_none(), "nothing is held any more");
     }
 
     #[test]
@@ -1258,6 +1434,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs,
             header_items: crate::ui::panels::header::WITH_FILTER,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 
@@ -1506,6 +1683,7 @@ mod tests {
                 tagged,
                 glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
+                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             (buf, list_rect(area), theme)
@@ -1565,6 +1743,7 @@ mod tests {
                 tagged: &tagged,
                 glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
+                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             let list = list_rect(area);
@@ -1641,6 +1820,7 @@ mod tests {
                 tagged: &tagged,
                 glyphs,
                 header_items: crate::ui::panels::header::WITH_FILTER,
+                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             let list = list_rect(area);

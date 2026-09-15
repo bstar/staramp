@@ -123,6 +123,9 @@ pub struct FileView<'a> {
     pub theme: &'a Theme,
     pub browser: &'a Browser,
     pub save_name: &'a str,
+    /// Where this frame's scrollbar is recorded, so a later press or drag can
+    /// find it. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 impl FileView<'_> {
@@ -215,11 +218,13 @@ impl FileView<'_> {
             height: height as u16,
             ..body
         };
-        super::scrollbar::render(
+        self.bars.draw(
+            super::Bar::Files,
             super::scrollbar::track(area, list),
             buf,
             t,
-            super::scrollbar::rows(scroll, self.browser.entries.len(), height as u16),
+            self.browser.entries.len() as u32,
+            scroll as u32,
         );
     }
 }

@@ -32,6 +32,9 @@ pub struct PickerView<'a> {
     pub scroll: usize,
     /// Shown when there is nothing to pick.
     pub empty_hint: &'a str,
+    /// Where this frame's scrollbar is recorded, so a later press or drag can
+    /// find it. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 /// Where the overlay lands, so a click can be tested against it.
@@ -134,11 +137,13 @@ impl<'a> Widget for PickerView<'a> {
             }
         }
 
-        super::scrollbar::render(
+        self.bars.draw(
+            super::Bar::Picker,
             super::scrollbar::track(rect, inner),
             buf,
             t,
-            super::scrollbar::rows(self.scroll, self.entries.len(), inner.height),
+            self.entries.len() as u32,
+            self.scroll as u32,
         );
     }
 }

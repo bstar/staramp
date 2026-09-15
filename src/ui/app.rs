@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use starkit::chrome::rgb;
+use starkit::chrome::scrollbar::Scrollbars;
 use starkit::crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
@@ -38,6 +39,7 @@ use crate::ui::panels::picker::{self, PickerView, PlaylistEntry};
 use crate::ui::panels::playlist::{self, PlaylistView};
 use crate::ui::panels::resume::ResumeView;
 use crate::ui::panels::settings::{self, SettingsView};
+use crate::ui::panels::Bar;
 use crate::ui::panels::{equalizer, equalizer::EqView, header, player, player::PlayerView};
 use crate::ui::term;
 use crate::vis::meter::Meters;
@@ -1784,6 +1786,11 @@ pub struct App {
     sonic: Option<crate::sonic::Worker>,
     last_sonic_request: Instant,
     over: Overlays,
+    /// Every scrollbar drawn this frame, and whichever one the mouse is
+    /// holding. One map for the whole application, so a press or drag
+    /// anywhere is answered from a single place regardless of which panel's
+    /// `render` happened to draw the bar under the pointer.
+    bars: Scrollbars<Bar>,
 
     fx: Effects,
 
@@ -2873,6 +2880,7 @@ impl App {
             import: None,
             sonic,
             last_sonic_request: Instant::now(),
+            bars: Scrollbars::new(),
             session: Sharing {
                 link: None,
                 uri: String::new(),
@@ -5791,12 +5799,110 @@ impl App {
         self.status = Some((msg, Instant::now()));
     }
 
+    /// A scrollbar was just pressed or dragged to `above`: apply it to
+    /// whatever that bar scrolls, and move that list's cursor into the view
+    /// it now shows -- or the next frame's own clamp would pull `above` right
+    /// back to wherever the cursor still is, and the thumb would snap back
+    /// under the pointer. See `starkit::chrome::scrollbar::Scrollbars` for the
+    /// contract this keeps: `above` here is exactly what the matching
+    /// `record`/`draw` must be called with next frame.
+    fn scroll_bar_to(&mut self, bar: Bar, above: u32) {
+        let above = above as usize;
+        let height = self
+            .bars
+            .track_of(bar)
+            .map(|t| t.height as usize)
+            .unwrap_or(0);
+        match bar {
+            Bar::Playlist => {
+                self.queue.scroll = above;
+                self.queue.cursor =
+                    self.queue
+                        .rows
+                        .cursor_after_scroll(self.queue.cursor, above, height);
+            }
+            Bar::Library(c) => {
+                let Some(lib) = &mut self.over.library else {
+                    return;
+                };
+                let cursor =
+                    starkit::list::cursor_into_view(lib.cursor(c), above, height, lib.len(c));
+                lib.set_scroll(c, above);
+                // `select` is what a click already does: it also focuses the
+                // column and cascades the columns to its right, which is
+                // right here too -- a drag that moves the cursor is choosing
+                // a different artist or record, not merely scrolling past it.
+                lib.select(c, cursor);
+            }
+            Bar::History => {
+                // A free offset, not tied to a cursor: nothing else to move.
+                self.panels.history_scroll = above;
+            }
+            Bar::Files => {
+                let Some(files) = &mut self.over.files else {
+                    return;
+                };
+                files.cursor = starkit::list::cursor_into_view(
+                    files.cursor,
+                    above,
+                    height,
+                    files.entries.len(),
+                );
+                files.scroll = above;
+            }
+            Bar::Chooser => {
+                let Some(c) = &mut self.over.chooser else {
+                    return;
+                };
+                c.cursor = starkit::list::cursor_into_view(c.cursor, above, height, c.rows.len());
+                c.scroll = above;
+            }
+            Bar::Picker => {
+                self.over.picker_cursor = starkit::list::cursor_into_view(
+                    self.over.picker_cursor,
+                    above,
+                    height,
+                    self.over.playlists.len(),
+                );
+                self.over.picker_scroll = above;
+            }
+        }
+    }
+
     /// Route a mouse event to whatever is under the pointer.
     ///
     /// Every hit test goes through `regions` and the panels' own geometry
     /// functions, so a click lands on the thing the user can see rather than on
     /// a rect reconstructed by eye.
     fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
+        // A scrollbar answers for its own press, drag and release before
+        // anything else gets a look at the event -- including the overlay
+        // checks just below, so a modal's own bar (chooser, picker) is the
+        // only one still live while it is up, per `draw_overlays`.
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some((bar, above)) = self.bars.press(m.column, m.row) {
+                    self.scroll_bar_to(bar, above);
+                    return;
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
+                if let Some((bar, above)) = self.bars.drag(m.row) {
+                    self.scroll_bar_to(bar, above);
+                    return;
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) => {
+                self.bars.release();
+                // The overlay early-returns just below would otherwise
+                // swallow this before the seek/volume drag arm further down
+                // ever saw it, leaving a held drag stuck past the release
+                // that ended it.
+                self.edit.drag = None;
+            }
+            _ => {}
+        }
+
         // Overlays are modal: while one is up nothing behind it can be clicked.
         if self.over.resume.is_some() || self.panels.help {
             return;
@@ -6856,6 +6962,10 @@ impl App {
     }
 
     fn draw(&mut self, full: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+        // Forget last frame's bars; a held drag survives this by design. Read
+        // again, narrower, before `draw_overlays` when a modal is up -- see
+        // there for why.
+        self.bars.begin_frame();
         // Cheap when nothing has changed, and it covers both a new track and
         // the panel simply being opened.
         self.pump_album();
@@ -6904,6 +7014,7 @@ impl App {
                 theme: &self.look.theme,
                 browser: files,
                 save_name: &self.eq.active().name,
+                bars: &mut self.bars,
             }
             .render(browse, buf);
             self.draw_status(r.status, buf);
@@ -6953,6 +7064,7 @@ impl App {
                 snapshot: &self.activity.snapshot(),
                 focused: self.panels.focus == Focus::History,
                 scroll: self.panels.history_scroll,
+                bars: &mut self.bars,
             }
             .render(rect, buf);
         }
@@ -6996,6 +7108,7 @@ impl App {
             focus: l.focus,
             summary: &summary,
             keys: "space add \u{b7} enter play \u{b7} / find \u{b7} esc back",
+            bars: &mut self.bars,
         }
         .render(area, buf);
 
@@ -7209,8 +7322,35 @@ impl App {
         }
     }
 
+    /// Whether this frame is about to draw one of the modals below over
+    /// whatever is underneath -- the same list `handle_mouse`'s own early
+    /// returns answer for, kept in one place so `draw_overlays` can ask it
+    /// too rather than repeating it.
+    fn overlay_open(&self) -> bool {
+        self.edit.eq_value.is_some()
+            || self.edit.auth.is_some()
+            || self.edit.typing.is_some()
+            || self.edit.naming.is_some()
+            || self.over.playlist_add.is_some()
+            || self.over.settings.is_some()
+            || self.over.chooser.is_some()
+            || self.panels.picker
+            || self.over.resume.is_some()
+            || self.panels.help
+    }
+
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+        // Overlays are modal: while one is up, the bars of whatever is
+        // underneath -- the playlist, a library column -- must not still
+        // answer a press or drag. Read again here, narrower, so only the
+        // bar the modal itself draws (a chooser or picker has one; the rest
+        // below have none) can be found for the rest of this frame. A no-op
+        // when nothing is about to be drawn, so the panels behind keep their
+        // own bars the rest of the time.
+        if self.overlay_open() {
+            self.bars.begin_frame();
+        }
         if let Some(input) = &self.edit.eq_value {
             let label = match input.field {
                 EqField::Frequency => "frequency (Hz)",
@@ -7358,6 +7498,7 @@ impl App {
                 rows: &c.rows,
                 cursor: c.cursor,
                 scroll: c.scroll,
+                bars: &mut self.bars,
             }
             .render(area, buf);
             return;
@@ -7373,6 +7514,7 @@ impl App {
                 cursor: self.over.picker_cursor,
                 scroll: self.over.picker_scroll,
                 empty_hint: "no playlists — set playlist_dir in config.toml",
+                bars: &mut self.bars,
             }
             .render(area, buf);
         }
@@ -7596,7 +7738,15 @@ impl App {
         // Pull a record's heading into view along with its first track -- but
         // never at the cost of pushing the cursor off the bottom, which is
         // what the `min` refuses to do.
-        if visible > 1 {
+        //
+        // Skipped while the scrollbar is held: a drag already set `scroll` to
+        // exactly what it recorded, and pulling a heading in on top of that
+        // -- which this only ever does by decreasing `scroll` -- would move
+        // the thumb the frame after the drag put it somewhere else, snapping
+        // it back up by a row rather than leaving it where the pointer left
+        // it. Once the button comes up there is no more contract to keep,
+        // and the pull resumes on the very next frame.
+        if visible > 1 && self.bars.held() != Some(Bar::Playlist) {
             let anchor = self.queue.rows.anchor_row(self.queue.cursor);
             self.queue.scroll = PlaylistView::clamp_scroll(anchor, self.queue.scroll, visible)
                 .min(self.queue.scroll);
@@ -7649,6 +7799,7 @@ impl App {
             focused: self.panels.focus == Focus::Playlist,
             glyphs: self.look.glyphs,
             header_items: &words,
+            bars: &mut self.bars,
         }
         .render(area, buf);
 

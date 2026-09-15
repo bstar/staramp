@@ -18,6 +18,9 @@ pub struct HistoryView<'a> {
     pub focused: bool,
     /// First recent listen shown; zero is the newest.
     pub scroll: usize,
+    /// Where this frame's scrollbar is recorded, so a later press or drag can
+    /// find it. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 fn provider_summary(snapshot: &Snapshot) -> String {
@@ -122,11 +125,13 @@ impl Widget for HistoryView<'_> {
             height: visible,
             ..inner
         };
-        super::scrollbar::render(
+        self.bars.draw(
+            super::Bar::History,
             super::scrollbar::track(area, list),
             buf,
             t,
-            super::scrollbar::rows(self.scroll, self.snapshot.recent.len(), visible),
+            self.snapshot.recent.len() as u32,
+            self.scroll as u32,
         );
     }
 }
@@ -170,5 +175,64 @@ mod tests {
             ..Snapshot::default()
         };
         assert_eq!(provider_summary(&snapshot), "LOCAL ACTIVITY");
+    }
+
+    #[test]
+    fn dragging_the_history_scrollbar_scrolls_it() {
+        use crate::activity::Recent;
+        use crate::ui::panels::Bar;
+        use starkit::chrome::scrollbar::Scrollbars;
+
+        let theme = crate::theme::builtin::load("cosmic").unwrap();
+        let recent: Vec<Recent> = (0..20)
+            .map(|i| Recent {
+                uri: format!("track{i}.flac"),
+                ..Recent::default()
+            })
+            .collect();
+        let snapshot = Snapshot {
+            recent,
+            ..Snapshot::default()
+        };
+        let area = Rect::new(0, 0, 40, 12);
+        let mut buf = Buffer::empty(area);
+        let mut bars: Scrollbars<Bar> = Scrollbars::new();
+        HistoryView {
+            theme: &theme,
+            snapshot: &snapshot,
+            focused: true,
+            scroll: 0,
+            bars: &mut bars,
+        }
+        .render(area, &mut buf);
+
+        let track = bars
+            .track_of(Bar::History)
+            .expect("a scrollbar was drawn and recorded");
+
+        // A press past the thumb, at the bottom of the track, jumps it there.
+        let (bar, above) = bars
+            .press(track.x, track.y + track.height - 1)
+            .expect("the press landed on the recorded bar");
+        assert_eq!(bar, Bar::History);
+        assert!(
+            above > 0,
+            "a press at the bottom of the track should scroll down"
+        );
+        assert_eq!(bars.held(), Some(Bar::History));
+
+        // Dragging back to the top of the track scrolls back toward zero --
+        // a free offset, unlike the playlist's, so there is no cursor to
+        // carry along with it.
+        let (bar, dragged_to_top) = bars.drag(track.y).expect("still held");
+        assert_eq!(bar, Bar::History);
+        assert!(
+            dragged_to_top < above,
+            "dragging to the top of the track should scroll back up"
+        );
+
+        assert!(bars.release(), "something was held to release");
+        assert_eq!(bars.held(), None);
+        assert!(bars.drag(track.y).is_none(), "nothing is held any more");
     }
 }

@@ -40,6 +40,9 @@ pub struct ChooserView<'a> {
     pub rows: &'a [Row],
     pub cursor: usize,
     pub scroll: usize,
+    /// Where this frame's scrollbar is recorded, so a later press or drag can
+    /// find it. See `App::bars`.
+    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 /// Where the overlay lands, so a click can be tested against it.
@@ -152,11 +155,13 @@ impl<'a> Widget for ChooserView<'a> {
             }
         }
 
-        super::scrollbar::render(
+        self.bars.draw(
+            super::Bar::Chooser,
             super::scrollbar::track(r, list),
             buf,
             t,
-            super::scrollbar::rows(self.scroll, self.rows.len(), list.height),
+            self.rows.len() as u32,
+            self.scroll as u32,
         );
     }
 }
@@ -192,6 +197,7 @@ mod tests {
             rows,
             cursor,
             scroll: 0,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..h)
@@ -243,6 +249,7 @@ mod tests {
             rows: &rows,
             cursor: 1,
             scroll: 0,
+            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 

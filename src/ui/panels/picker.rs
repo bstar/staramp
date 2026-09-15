@@ -133,6 +133,13 @@ impl<'a> Widget for PickerView<'a> {
                 );
             }
         }
+
+        super::scrollbar::render(
+            super::scrollbar::track(rect, inner),
+            buf,
+            t,
+            super::scrollbar::rows(self.scroll, self.entries.len(), inner.height),
+        );
     }
 }
 

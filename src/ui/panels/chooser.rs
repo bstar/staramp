@@ -151,6 +151,13 @@ impl<'a> Widget for ChooserView<'a> {
                 buf.set_string(x, y, note, note_style);
             }
         }
+
+        super::scrollbar::render(
+            super::scrollbar::track(r, list),
+            buf,
+            t,
+            super::scrollbar::rows(self.scroll, self.rows.len(), list.height),
+        );
     }
 }
 

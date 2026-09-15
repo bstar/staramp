@@ -15,4 +15,4 @@ pub mod visualizer;
 // The panel chrome itself -- the corner gradient, the settings overlay -- is
 // shared. Re-exported under the names the panels already use it by, since
 // where the code lives is not something a call site should have to know.
-pub use starkit::chrome::{frame, overlay, settings};
+pub use starkit::chrome::{frame, overlay, scrollbar, settings};

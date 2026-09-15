@@ -580,15 +580,10 @@ impl<'a> Widget for PlaylistView<'a> {
         let height = inner.height as usize;
         // Dividers take rows, so what has to fit is the rows, not the tracks.
         let lines = self.rows.len();
-        // Reserve the scrollbar column up front rather than drawing over the
-        // rows afterwards, which was clipping the last digit of every duration.
-        // A column of padding goes with it, so the duration never sits flush
-        // against the border or against the scroll marker.
-        let has_scrollbar = lines > height && inner.width > 2;
-        let content_w = inner
-            .width
-            .saturating_sub(if has_scrollbar { 1 } else { 0 })
-            .saturating_sub(RIGHT_PAD);
+        // A column of padding, so the duration never sits flush against the
+        // border -- which is also where the scrollbar thumb lives now, on the
+        // border itself rather than in a column reserved inside it.
+        let content_w = inner.width.saturating_sub(RIGHT_PAD);
         let show_album_indices = self.rows.grouped_now();
 
         for row in 0..height {
@@ -758,36 +753,14 @@ impl<'a> Widget for PlaylistView<'a> {
             buf.set_string(x, y, &tail, part(t.row_duration_fg));
         }
 
-        // Scrollbar, when it is worth having.
-        //
-        // The thumb only. A full-height track drew a second vertical line
-        // right inside the panel border, which read as a doubled border rather
-        // than as a position indicator. The column is still reserved either
-        // way, so nothing shifts as the marker moves.
-        //
-        // Solid, and the colour of the border it sits against, so it reads as
-        // a bead running down that border rather than as a separate widget.
-        // It follows the border into focus for the same reason.
-        if has_scrollbar {
-            let x = inner.x + inner.width - 1;
-            let bar = if self.focused {
-                t.border_focused
-            } else {
-                t.border
-            };
-            // Position over the *scrollable* range, not over the track count.
-            // `scroll / total` never reaches the bottom -- with 40 tracks in a
-            // 28-row panel the marker stopped eight rows down at the end of
-            // the list, which the full-height track used to disguise.
-            let max_scroll = lines - height;
-            let thumb = (self.scroll * (height - 1))
-                .checked_div(max_scroll)
-                .unwrap_or(0)
-                .min(height - 1);
-            buf[(x, inner.y + thumb as u16)]
-                .set_char('█')
-                .set_style(Style::default().fg(rgb(bar)));
-        }
+        // One scrollbar, on the border -- the same thumb every panel with a
+        // list draws now, in starkit.
+        super::scrollbar::render(
+            super::scrollbar::track(area, inner),
+            buf,
+            t,
+            super::scrollbar::rows(self.scroll, lines, inner.height),
+        );
     }
 }
 
@@ -844,13 +817,30 @@ mod render_tests {
         list_rect(Rect::new(0, 0, 40, height))
     }
 
+    /// The thumb's column, top to bottom: the panel's right border, which is
+    /// where the thumb is drawn now rather than in a column reserved inside
+    /// it.
     fn marker_column(rows: &[String]) -> String {
-        let x = rows[0].chars().count() - 2;
+        let x = rows[0].chars().count() - 1;
         let list = list_of(rows.len() as u16);
         rows[list.y as usize..(list.y + list.height) as usize]
             .iter()
             .map(|r| r.chars().nth(x).unwrap_or(' '))
             .collect()
+    }
+
+    /// The first row holding a full block, by character rather than by byte --
+    /// `str::find` answers in bytes, and `║` and `█` are both three of them.
+    fn first_marker_row(col: &str) -> Option<usize> {
+        col.chars().position(|c| c == '█')
+    }
+
+    /// The last row holding a full block, by character.
+    fn last_marker_row(col: &str) -> Option<usize> {
+        col.chars()
+            .collect::<Vec<_>>()
+            .iter()
+            .rposition(|&c| c == '█')
     }
 
     /// The foreground colour of a cell, addressed by list row rather than by
@@ -1342,38 +1332,21 @@ mod render_tests {
     }
 
     #[test]
-    fn the_duration_does_not_touch_the_scroll_marker() {
-        let rows = draw(200, 0, 9);
-        // The first row of the list carries the marker at this scroll position.
-        let first = list_of(9).y as usize;
-        let chars: Vec<char> = rows[first].chars().collect();
-        let n = chars.len();
-        assert_eq!(
-            chars[n - 2],
-            '\u{2588}',
-            "expected the marker: {:?}",
-            rows[first]
-        );
-        assert_eq!(
-            chars[n - 3],
-            ' ',
-            "the duration is flush to the marker: {:?}",
-            rows[first]
-        );
-    }
-
-    #[test]
     fn the_scrollbar_is_a_marker_not_a_second_border() {
+        // The thumb is on the border column now, not in a column reserved
+        // inside it: a short run of full blocks, `║` everywhere else.
         let rows = draw(200, 0, 10);
         let col = marker_column(&rows);
-        assert_eq!(col.matches('█').count(), 1, "expected one marker: {col:?}");
+        let list_height = list_of(rows.len() as u16).height;
+        let max_len = std::cmp::max(1, list_height / 4) as usize;
+        let run = col.matches('█').count();
         assert!(
-            !col.contains('│'),
-            "the track line is back, and reads as a doubled border: {col:?}"
+            (1..=max_len).contains(&run),
+            "expected a short run of 1..={max_len}, got {run}: {col:?}"
         );
         assert!(
-            col.chars().filter(|c| *c != '█').all(|c| c == ' '),
-            "the column should be otherwise empty: {col:?}"
+            col.chars().filter(|c| *c != '█').all(|c| c == '\u{2551}'),
+            "the column should otherwise be the border: {col:?}"
         );
     }
 
@@ -1381,9 +1354,9 @@ mod render_tests {
     fn the_marker_follows_the_scroll_position() {
         let top = marker_column(&draw(200, 0, 12));
         let bottom = marker_column(&draw(200, 190, 12));
-        assert_eq!(top.find('█'), Some(0), "at the top: {top:?}");
+        assert_eq!(first_marker_row(&top), Some(0), "at the top: {top:?}");
         assert!(
-            bottom.find('█').unwrap() > top.find('█').unwrap(),
+            last_marker_row(&bottom).unwrap() > first_marker_row(&top).unwrap(),
             "scrolling down should move the marker down: {bottom:?}"
         );
     }
@@ -1391,13 +1364,13 @@ mod render_tests {
     #[test]
     fn the_marker_reaches_the_bottom_at_the_end_of_the_list() {
         // 40 tracks in a 28-row viewport: the last scroll position shows the
-        // final track, so the marker belongs on the last row.
+        // final track, so the marker's run has to reach the last row.
         let height = 30u16;
         let visible = list_of(height).height as usize;
         let total = 40;
         let col = marker_column(&draw(total, total - visible, height));
         assert_eq!(
-            col.find('█'),
+            last_marker_row(&col),
             Some(visible - 1),
             "the marker never reaches the bottom: {col:?}"
         );

@@ -209,5 +209,17 @@ impl FileView<'_> {
                 Style::default().fg(rgb(t.eq_band_value)),
             );
         }
+
+        let list = Rect {
+            y: list_y,
+            height: height as u16,
+            ..body
+        };
+        super::scrollbar::render(
+            super::scrollbar::track(area, list),
+            buf,
+            t,
+            super::scrollbar::rows(scroll, self.browser.entries.len(), height as u16),
+        );
     }
 }

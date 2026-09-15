@@ -116,6 +116,18 @@ impl Widget for HistoryView<'_> {
                 );
             }
         }
+
+        let visible = inner.height.min(VISIBLE_ROWS as u16);
+        let list = Rect {
+            height: visible,
+            ..inner
+        };
+        super::scrollbar::render(
+            super::scrollbar::track(area, list),
+            buf,
+            t,
+            super::scrollbar::rows(self.scroll, self.snapshot.recent.len(), visible),
+        );
     }
 }
 

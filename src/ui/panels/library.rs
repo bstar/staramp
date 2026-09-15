@@ -331,6 +331,25 @@ impl<'a> Widget for LibraryView<'a> {
                     .set_style(Style::default().fg(rgb(t.border)).bg(rgb(t.panel_bg)));
             }
         }
+
+        // One scrollbar per visible column, after the dividers so it draws
+        // over the rule rather than under it: the rightmost column's on the
+        // panel's own right border, the others on the divider to their
+        // right -- the same track a docked panel's border carries, moved one
+        // column left for every column that is not the last.
+        for (slot, &c) in l.shown.iter().enumerate() {
+            let body = l.bodies[c];
+            let track = match l.rules.get(slot).copied().flatten() {
+                Some(x) => super::scrollbar::track_at(x, body),
+                None => super::scrollbar::track(l.frame, body),
+            };
+            let thumb = super::scrollbar::rows(
+                self.columns[c].scroll,
+                self.columns[c].rows.len(),
+                body.height,
+            );
+            super::scrollbar::render(track, buf, t, thumb);
+        }
     }
 }
 
@@ -1159,5 +1178,66 @@ mod tests {
             .style()
             .fg;
         assert_ne!(plain, guess, "a guess looks exactly like a fact");
+    }
+
+    /// Every column overflowing its body gets a thumb: the rightmost one on
+    /// the panel's own right border, the other two on the divider to their
+    /// right, since the rules are drawn after them and would otherwise paint
+    /// over the thumb.
+    #[test]
+    fn each_overflowing_column_gets_its_own_scrollbar() {
+        let theme = builtin::load("cosmic").unwrap();
+        let area = Rect::new(0, 0, 100, 16);
+        let rows = entries(50);
+        let col = Column {
+            head: "ARTISTS",
+            rows: &rows,
+            cursor: 0,
+            scroll: 0,
+            empty: "nothing",
+        };
+        let mut buf = Buffer::empty(area);
+        LibraryView {
+            theme: &theme,
+            search: "",
+            typing: false,
+            columns: [
+                col,
+                Column {
+                    head: "ALBUMS",
+                    ..col
+                },
+                Column {
+                    head: "TRACKS",
+                    ..col
+                },
+            ],
+            focus: ARTISTS,
+            summary: "",
+            keys: "",
+        }
+        .render(area, &mut buf);
+
+        let l = layout(area, ARTISTS);
+        let has_thumb = |track: Rect| {
+            (track.y..track.y + track.height).any(|y| buf[(track.x, y)].symbol() == "\u{2588}")
+        };
+        assert!(
+            has_thumb(crate::ui::panels::scrollbar::track(
+                l.frame,
+                l.bodies[TRACKS]
+            )),
+            "no thumb on the right border"
+        );
+        for (slot, x) in l.rules.iter().enumerate() {
+            let Some(x) = x else { continue };
+            assert!(
+                has_thumb(crate::ui::panels::scrollbar::track_at(
+                    *x,
+                    l.bodies[l.shown[slot]]
+                )),
+                "no thumb on the divider at column {slot}"
+            );
+        }
     }
 }

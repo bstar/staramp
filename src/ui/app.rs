@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
+use starkit::chrome::rgb;
 use starkit::crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
@@ -6596,15 +6597,11 @@ impl App {
             MouseEventKind::ScrollUp => self.move_playlist_add(-3),
             MouseEventKind::ScrollDown => self.move_playlist_add(3),
             MouseEventKind::Down(MouseButton::Left) => {
-                let inner = settings::list_rect(area, rows);
-                if !hit(inner, m.column, m.row) {
+                let Some(index) = settings::hit(area, rows, scroll, m.column, m.row) else {
+                    // Clicking outside a modal dismisses it.
                     self.over.playlist_add = None;
                     return;
-                }
-                let index = scroll + (m.row - inner.y) as usize;
-                if index >= rows {
-                    return;
-                }
+                };
                 if let Some(state) = &mut self.over.playlist_add {
                     state.cursor = index;
                 }
@@ -6630,16 +6627,11 @@ impl App {
             MouseEventKind::ScrollUp => self.move_settings(-1),
             MouseEventKind::ScrollDown => self.move_settings(1),
             MouseEventKind::Down(MouseButton::Left) => {
-                let inner = settings::list_rect(area, rows);
-                if !hit(inner, x, y) {
+                let Some(i) = settings::hit(area, rows, scroll, x, y) else {
                     // Clicking outside a modal dismisses it.
                     self.over.settings = None;
                     return;
-                }
-                let i = scroll + (y - inner.y) as usize;
-                if i >= rows {
-                    return;
-                }
+                };
                 if let Some(st) = &mut self.over.settings {
                     st.cursor = i;
                 }
@@ -6655,16 +6647,12 @@ impl App {
             MouseEventKind::ScrollUp => self.move_picker(-3),
             MouseEventKind::ScrollDown => self.move_picker(3),
             MouseEventKind::Down(MouseButton::Left) => {
-                let inner = picker::list_rect(area, self.over.playlists.len());
-                if !hit(inner, x, y) {
+                let entries = self.over.playlists.len();
+                let Some(i) = picker::hit(area, entries, self.over.picker_scroll, x, y) else {
                     // Clicking outside a modal dismisses it.
                     self.panels.picker = false;
                     return;
-                }
-                let i = self.over.picker_scroll + (y - inner.y) as usize;
-                if i >= self.over.playlists.len() {
-                    return;
-                }
+                };
                 let double = self.register_click(x, y);
                 self.over.picker_cursor = i;
                 if double {
@@ -6873,7 +6861,7 @@ impl App {
         self.pump_album();
         if full.height < MIN_HEIGHT || full.width < MIN_WIDTH {
             let msg = "terminal too small — 40x8 minimum";
-            buf.set_string(0, 0, msg, Style::default().fg(Color::Red));
+            buf.set_string(0, 0, msg, Style::default().fg(rgb(self.look.theme.error)));
             return;
         }
 
@@ -9391,7 +9379,7 @@ impl App {
 
     fn draw_status(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
         let t = &self.look.theme;
-        let bg = Color::Rgb(t.status_bg.r, t.status_bg.g, t.status_bg.b);
+        let bg = rgb(t.status_bg);
         for x in 0..area.width {
             buf[(area.x + x, area.y)]
                 .set_char(' ')
@@ -9416,23 +9404,13 @@ impl App {
             area.x + 1,
             area.y,
             "? help",
-            Style::default()
-                .fg(Color::Rgb(t.accent.r, t.accent.g, t.accent.b))
-                .bg(bg),
+            Style::default().fg(rgb(t.accent)).bg(bg),
         );
 
         if area.width > ind_w + 4 {
-            let on = Color::Rgb(
-                t.transport_toggle_on_fg.r,
-                t.transport_toggle_on_fg.g,
-                t.transport_toggle_on_fg.b,
-            );
-            let off = Color::Rgb(
-                t.transport_toggle_off_fg.r,
-                t.transport_toggle_off_fg.g,
-                t.transport_toggle_off_fg.b,
-            );
-            let dim = Color::Rgb(t.dim.r, t.dim.g, t.dim.b);
+            let on = rgb(t.transport_toggle_on_fg);
+            let off = rgb(t.transport_toggle_off_fg);
+            let dim = rgb(t.dim);
 
             // Drawn segment by segment so each one is lit by its own state.
             // A single colour over the whole string lit SHUF whenever repeat

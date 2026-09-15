@@ -1133,14 +1133,12 @@ fn cmd_search(query: String, limit: usize) -> Result<()> {
 ///
 /// Both at once on purpose: every caller is printing text out of a tag or a
 /// playlist, and forgetting the second half is exactly the mistake this exists
-/// to prevent. See [`util::printable`].
+/// to prevent. See [`util::printable`]. The shortening itself is
+/// `starkit::text::truncate`, which measures the display width rather than
+/// the character count -- a CJK title counted by character alone claims half
+/// the columns it actually draws.
 fn truncate(s: &str, n: usize) -> String {
-    let s = util::printable(s);
-    if s.chars().count() <= n {
-        s
-    } else {
-        s.chars().take(n.saturating_sub(1)).collect::<String>() + "…"
-    }
+    starkit::text::truncate(&util::printable(s), n)
 }
 
 fn cmd_stats() -> Result<()> {

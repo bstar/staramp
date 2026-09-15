@@ -12,19 +12,15 @@
 //! Ballads` closely enough that MusicBrainz calls it relevant, and it is the
 //! wrong record; that is the judgement this hands back to the user.
 
+use super::overlay::{self, Anchor, Overlay};
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// One line in the chooser.
 #[derive(Debug, Clone, PartialEq)]
@@ -48,14 +44,7 @@ pub struct ChooserView<'a> {
 
 /// Where the overlay lands, so a click can be tested against it.
 pub fn rect(area: Rect, rows: usize) -> Rect {
-    let w = area.width.saturating_sub(4).clamp(24, 76);
-    let h = area.height.saturating_sub(4).min(rows as u16 + 4).max(7);
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
-    }
+    overlay::rect(area, (24, 76), rows as u16 + 4, 7, Anchor::Centre)
 }
 
 /// The rows themselves, inside the frame and below the heading.
@@ -69,6 +58,21 @@ pub fn list_rect(area: Rect, rows: usize) -> Rect {
     }
 }
 
+/// Which row is at a point, given the same `rows` and `scroll` the overlay was
+/// drawn with. The inverse of the loop in `render`, beside
+/// [`starkit::chrome::settings::hit`] for the same reason.
+pub fn hit(area: Rect, rows: usize, scroll: usize, x: u16, y: u16) -> Option<usize> {
+    if rows == 0 {
+        return None;
+    }
+    let list = list_rect(area, rows);
+    if x < list.x || x >= list.x + list.width || y < list.y || y >= list.y + list.height {
+        return None;
+    }
+    let index = scroll + usize::from(y - list.y);
+    (index < rows).then_some(index)
+}
+
 /// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
 pub use starkit::list::clamp_scroll;
 
@@ -76,20 +80,16 @@ impl<'a> Widget for ChooserView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
         let r = rect(area, self.rows.len());
-        Clear.render(r, buf);
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(t.border_focused)))
-            .title(Span::styled(
-                format!("{}COVER ", super::frame::TITLE_LEAD),
-                Style::default().fg(rgb(t.header_fg)),
-            ))
-            .style(Style::default().bg(rgb(t.panel_bg)));
-        let inner = block.inner(r);
-        block.render(r, buf);
-        super::frame::render_corners(r, buf, t, true);
+        let inner = overlay::render(
+            r,
+            buf,
+            &Overlay {
+                theme: t,
+                title: "cover",
+                detail: None,
+                footer: Some("enter choose \u{b7} esc close"),
+            },
+        );
 
         if inner.height == 0 || inner.width == 0 {
             return;
@@ -158,6 +158,7 @@ impl<'a> Widget for ChooserView<'a> {
 mod tests {
     use super::*;
     use crate::theme::builtin;
+    use starkit::ratatui::style::Color;
 
     fn rows() -> Vec<Row> {
         vec![

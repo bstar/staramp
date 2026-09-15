@@ -1,21 +1,16 @@
 //! Compact listening-history panel with network-delivery status.
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
 use crate::activity::Snapshot;
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 
 pub const PANEL_ROWS: u16 = 8;
 pub const VISIBLE_ROWS: usize = 5;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 pub struct HistoryView<'a> {
     pub theme: &'a Theme,
@@ -51,23 +46,21 @@ fn provider_summary(snapshot: &Snapshot) -> String {
 impl Widget for HistoryView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(if self.focused {
-                t.border_focused
-            } else {
-                t.border
-            })))
-            .title(Span::styled(
-                "═ ACTIVITY ",
-                Style::default().fg(rgb(t.header_fg)),
-            ))
-            .style(Style::default().bg(rgb(t.panel_bg)));
+        super::frame::frame(
+            area,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: self.focused,
+                title: "activity",
+                detail: None,
+                heading: false,
+                badge: None,
+                footer: None,
+                words: super::header::PLAIN,
+            },
+        );
         let inner = super::header::body(area);
-        block.render(area, buf);
-        super::frame::render_corners(area, buf, t, self.focused);
-        super::header::render(area, super::header::PLAIN, buf, t);
         let header = super::header::rect(area);
         let status_x = header.x.saturating_add(1);
         let status_right = super::header::slots(area, super::header::PLAIN)

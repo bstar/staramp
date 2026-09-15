@@ -1,10 +1,11 @@
 //! The playlist editor window.
 
+use starkit::chrome::frame::{Badge, Tone};
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
 use std::collections::HashSet;
 
@@ -13,10 +14,6 @@ use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// Blank columns kept to the right of the duration.
 const RIGHT_PAD: u16 = 1;
@@ -533,45 +530,30 @@ impl<'a> Widget for PlaylistView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
         let total = self.items.len();
-        let title = format!("{}PLAYLIST — {} ", super::frame::TITLE_LEAD, self.name);
-        // Trailing space for the close mark, which is drawn over the border
-        // afterwards: a right-aligned title reaches the same cells, and the
-        // two would fight for them.
         let count = if total > 0 {
-            format!(
-                " {}/{}{}",
-                self.cursor + 1,
-                total,
-                super::frame::TITLE_TRAIL
-            )
+            format!("{}/{}", self.cursor + 1, total)
         } else {
-            format!(" empty{}", super::frame::TITLE_TRAIL)
+            "empty".to_string()
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(if self.focused {
-                t.border_focused
-            } else {
-                t.border
-            })))
-            .title(Span::styled(title, Style::default().fg(rgb(t.header_fg))))
-            .title_top(
-                starkit::ratatui::text::Line::from(Span::styled(
-                    count,
-                    Style::default().fg(rgb(t.dim)),
-                ))
-                .right_aligned(),
-            )
-            .style(Style::default().bg(rgb(t.panel_bg)));
-
         let inner = list_rect(area);
-        block.render(area, buf);
-        // Over the border the block just drew: the corners give the panel its
-        // colour, and the mark is what closes it.
-        super::frame::render_corners(area, buf, t, self.focused);
-        super::header::render(area, self.header_items, buf, t);
+        super::frame::frame(
+            area,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: self.focused,
+                title: "playlist",
+                detail: Some(self.name),
+                heading: false,
+                badge: Some(Badge {
+                    text: &count,
+                    tone: Tone::Dim,
+                }),
+                footer: None,
+                words: self.header_items,
+            },
+        );
         if inner.height == 0 {
             return;
         }
@@ -815,6 +797,7 @@ mod render_tests {
     use crate::playlist::queue::QueueItem;
     use crate::playlist::uri::TrackUri;
     use crate::theme::builtin;
+    use starkit::ratatui::style::Color;
 
     fn draw(total: usize, scroll: usize, height: u16) -> Vec<String> {
         let theme = builtin::load("cosmic").unwrap();
@@ -1240,22 +1223,6 @@ mod render_tests {
         };
         assert_eq!(bar(&flat), 0, "everything fits, so no marker");
         assert_eq!(bar(&grouped), 1, "the headings push it over");
-    }
-
-    #[test]
-    fn the_count_ends_clear_of_the_corner() {
-        // A border character between the count and the corner, matching the
-        // one between the corner and the title at the other end. The close
-        // mark that used to be reserved a slot here is gone; the actions live
-        // on the header row now.
-        let rows = draw(3, 0, 9);
-        let top = &rows[0];
-        assert!(top.contains("1/3"), "the count is gone: {top:?}");
-        assert!(
-            top.trim_end().ends_with("\u{2550}\u{2557}"),
-            "no buffer before the right corner: {top:?}"
-        );
-        assert!(!top.contains('X'), "the close mark should be gone: {top:?}");
     }
 
     #[test]

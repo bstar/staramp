@@ -5,16 +5,12 @@
 
 use std::path::{Path, PathBuf};
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
+use starkit::ratatui::style::{Modifier, Style};
 
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
@@ -132,27 +128,47 @@ pub struct FileView<'a> {
 impl FileView<'_> {
     pub fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        buf.set_style(area, Style::default().bg(rgb(t.bg)).fg(rgb(t.row_fg)));
         let title = match self.browser.purpose {
-            Purpose::ImportEq => "IMPORT APO PROFILE",
-            Purpose::ExportEq => "EXPORT APO PROFILE",
+            Purpose::ImportEq => "import apo profile",
+            Purpose::ExportEq => "export apo profile",
         };
-        buf.set_string(
-            area.x + 2,
-            area.y,
-            title,
-            Style::default()
-                .fg(rgb(t.header_fg))
-                .add_modifier(Modifier::BOLD),
+        let hint = match self.browser.purpose {
+            Purpose::ImportEq => {
+                "j/k move \u{b7} l/enter open or import \u{b7} h parent \u{b7} esc close"
+            }
+            Purpose::ExportEq => {
+                "j/k move \u{b7} l/enter directory \u{b7} s save \u{b7} h parent \u{b7} esc close"
+            }
+        };
+        let body = super::frame::frame(
+            area,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: true,
+                title,
+                detail: None,
+                heading: false,
+                badge: None,
+                footer: Some(hint),
+                words: super::frame::NO_WORDS,
+            },
         );
+        if body.height == 0 || body.width == 0 {
+            return;
+        }
         buf.set_string(
-            area.x + 2,
-            area.y + 1,
+            body.x,
+            body.y,
             self.browser.directory.display().to_string(),
             Style::default().fg(rgb(t.dim)),
         );
-        let body_y = area.y + 3;
-        let height = area.height.saturating_sub(5) as usize;
+        // The directory line, then a blank row, then the list; the export
+        // form also keeps one row at the bottom for the file name it will
+        // write, now that the hint itself lives on the footer.
+        let extra_bottom = u16::from(self.browser.purpose == Purpose::ExportEq);
+        let list_y = body.y + 2;
+        let height = body.height.saturating_sub(2 + extra_bottom) as usize;
         let scroll = crate::ui::panels::picker::clamp_scroll(
             self.browser.cursor,
             self.browser.scroll,
@@ -179,26 +195,16 @@ impl FileView<'_> {
                 .unwrap_or_default();
             let line = format!("{} {}", if entry.directory { "▸" } else { " " }, name);
             buf.set_string(
-                area.x + 2,
-                body_y + row as u16,
-                crate::ui::panels::player::truncate(&line, area.width.saturating_sub(4) as usize),
+                body.x,
+                list_y + row as u16,
+                crate::ui::panels::player::truncate(&line, body.width as usize),
                 style,
             );
         }
-        let hint = match self.browser.purpose {
-            Purpose::ImportEq => "j/k move · l/enter open or import · h parent · esc close",
-            Purpose::ExportEq => "j/k move · l/enter directory · s save · h parent · esc close",
-        };
-        buf.set_string(
-            area.x + 2,
-            area.y + area.height.saturating_sub(2),
-            hint,
-            Style::default().fg(rgb(t.dim)),
-        );
         if self.browser.purpose == Purpose::ExportEq {
             buf.set_string(
-                area.x + 2,
-                area.y + area.height.saturating_sub(1),
+                body.x,
+                body.y + body.height - 1,
                 format!("file: {}.txt", self.save_name),
                 Style::default().fg(rgb(t.eq_band_value)),
             );

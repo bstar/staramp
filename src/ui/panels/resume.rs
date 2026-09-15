@@ -3,20 +3,16 @@
 //! Shown rather than done silently: dropping straight into the middle of a
 //! track on launch is startling, and there is no way to decline it afterwards.
 
+use super::overlay::{self, Anchor, Overlay};
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
 use crate::session::{self, Session};
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 pub struct ResumeView<'a> {
     pub theme: &'a Theme,
@@ -24,40 +20,25 @@ pub struct ResumeView<'a> {
     pub now: i64,
 }
 
+/// Where the box lands, so a click can be tested against it.
+pub fn rect(area: Rect) -> Rect {
+    overlay::rect(area, (28, 64), 7, 7, Anchor::Centre)
+}
+
 impl<'a> Widget for ResumeView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        let w = area.width.saturating_sub(4).clamp(28, 64);
-        let h = 7u16.min(area.height);
-        let rect = Rect {
-            x: area.x + (area.width.saturating_sub(w)) / 2,
-            y: area.y + (area.height.saturating_sub(h)) / 2,
-            width: w,
-            height: h,
-        };
-        Clear.render(rect, buf);
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(t.border_focused)))
-            .title(Span::styled(
-                " RESUME ",
-                Style::default()
-                    .fg(rgb(t.header_fg))
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .title_bottom(
-                Line::from(Span::styled(
-                    " enter resume · n start fresh ",
-                    Style::default().fg(rgb(t.dim)),
-                ))
-                .right_aligned(),
-            )
-            .style(Style::default().bg(rgb(t.panel_bg)));
-
-        let inner = block.inner(rect);
-        block.render(rect, buf);
+        let r = rect(area);
+        let inner = overlay::render(
+            r,
+            buf,
+            &Overlay {
+                theme: t,
+                title: "resume",
+                detail: None,
+                footer: Some("enter resume \u{b7} n start fresh"),
+            },
+        );
         if inner.height == 0 {
             return;
         }

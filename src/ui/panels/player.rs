@@ -1,20 +1,16 @@
 //! The Winamp main window.
 
+use starkit::chrome::frame::{Badge, Frame, Tone, NO_WORDS};
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::{Block, Borders, Widget};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::digits;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 pub struct PlayerView<'a> {
     pub theme: &'a Theme,
@@ -434,52 +430,46 @@ const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT + VOLUME
 impl<'a> Widget for PlayerView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        let border = if self.focused {
-            t.border_focused
+
+        // Letter-spaced, with the slash spaced along with the rest: pulling it
+        // tight against its neighbours would make the seam read as a typo in
+        // one word rather than the join between two.
+        let title = if self.mirroring {
+            "S T A R / A M P \u{b7} mirror"
         } else {
-            t.border
+            "S T A R / A M P"
+        };
+        // Only claim anything once audio is actually flowing. A
+        // "bit-perfect" badge that is really just a default is worse than no
+        // badge at all.
+        let badge = match self.state {
+            PlayState::Stopped => None,
+            _ if self.bit_perfect => Some(Badge {
+                text: "bit-perfect",
+                tone: Tone::Ok,
+            }),
+            _ => Some(Badge {
+                text: "resampled",
+                tone: Tone::Warn,
+            }),
         };
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(border)))
-            .title(Span::styled(
-                // Letter-spaced, with the slash spaced along with the rest:
-                // pulling it tight against its neighbours would make the seam
-                // read as a typo in one word rather than the join between two.
-                if self.mirroring {
-                    "\u{2550} S T A R / A M P \u{b7} mirror "
-                } else {
-                    "\u{2550} S T A R / A M P "
-                },
-                Style::default()
-                    .fg(rgb(t.titlebar_active_fg))
-                    .add_modifier(Modifier::BOLD),
-            ))
-            // Only claim anything once audio is actually flowing. A
-            // "bit-perfect" badge that is really just a default is worse than
-            // no badge at all.
-            .title_top(
-                Line::from(match self.state {
-                    PlayState::Stopped => Span::styled("", Style::default()),
-                    _ if self.bit_perfect => Span::styled(
-                        concat!(" bit-perfect", " \u{2550}"),
-                        Style::default().fg(rgb(t.ok)),
-                    ),
-                    _ => Span::styled(
-                        concat!(" resampled", " \u{2550}"),
-                        Style::default().fg(rgb(t.warn)),
-                    ),
-                })
-                .right_aligned(),
-            )
-            .style(Style::default().bg(rgb(t.bg)));
-
-        block.render(area, buf);
-        // Corners, but no close mark: closing the transport would leave
-        // nothing to play with.
-        super::frame::render_corners(area, buf, t, self.focused);
+        super::frame::frame(
+            area,
+            buf,
+            &Frame {
+                theme: t,
+                focused: self.focused,
+                title,
+                detail: None,
+                heading: true,
+                badge,
+                // No close mark: closing the transport would leave nothing to
+                // play with. There is no header row to put one on anyway.
+                footer: None,
+                words: NO_WORDS,
+            },
+        );
         let Some(g) = geometry(area, self.position, self.duration, self.repeat, self.glyphs) else {
             return;
         };
@@ -499,7 +489,9 @@ impl<'a> Widget for PlayerView<'a> {
                 g.clock.x + 1,
                 clock_top + i as u16,
                 line,
-                Style::default().fg(rgb(t.time_digit_fg)).bg(rgb(t.bg)),
+                Style::default()
+                    .fg(rgb(t.time_digit_fg))
+                    .bg(rgb(t.panel_bg)),
             );
         }
 
@@ -745,7 +737,7 @@ fn render_seek(
     // Position in eighths of a cell, so the boundary can be part of one.
     let eighths = (frac * bar.width as f64 * 8.0).round() as u32;
     let track = t.seek_track_fg;
-    let bg = rgb(t.bg);
+    let bg = rgb(t.panel_bg);
 
     if let Some((l, r)) = style.caps {
         // The clocks' colour, not the groove's: the caps mark where the bar
@@ -861,7 +853,7 @@ fn render_controls(
         // row of its own to be centred on. Their *background* is the panel's,
         // not the plate's -- that is the half that is meant to disappear.
         let mid = r.y + r.height / 2;
-        let behind = rgb(t.bg);
+        let behind = rgb(t.panel_bg);
         for dy in 0..r.height {
             let y = r.y + dy;
             let edge = plate_edge(r.width) as usize;
@@ -1001,6 +993,7 @@ pub use starkit::text::{marquee, truncate};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use starkit::ratatui::style::Color;
 
     /// Render the panel and return its rows as plain text.
     fn draw(subtitle: &str, tech: &str, width: u16) -> Vec<String> {

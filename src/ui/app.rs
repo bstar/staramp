@@ -7240,15 +7240,17 @@ impl App {
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
+                footer: "enter apply \u{b7} esc cancel",
             }
             .render(area, buf);
             return;
         }
         if let Some(auth) = &self.edit.auth {
-            let (heading, title, rows) = match auth {
+            let (heading, title, footer, rows) = match auth {
                 AuthInput::LastfmKey(value) => (
                     "LAST.FM",
                     "paste your application API key · enter next · esc cancel",
+                    "enter next \u{b7} esc cancel",
                     vec![settings::Row::setting(
                         "API key",
                         format!("{value}\u{2582}"),
@@ -7257,6 +7259,7 @@ impl App {
                 AuthInput::LastfmSecret { value, .. } => (
                     "LAST.FM",
                     "paste the shared secret · enter opens authorization",
+                    "enter opens authorization \u{b7} esc cancel",
                     vec![settings::Row::setting(
                         "shared secret",
                         format!("{}\u{2582}", "•".repeat(value.chars().count())),
@@ -7265,11 +7268,13 @@ impl App {
                 AuthInput::LastfmApproval { pending, .. } => (
                     "LAST.FM",
                     "approve in the browser · waiting automatically · enter retry",
+                    "enter retry \u{b7} esc cancel",
                     vec![settings::Row::setting("authorization", &pending.url)],
                 ),
                 AuthInput::Listenbrainz(value) => (
                     "LISTENBRAINZ",
                     "paste your user token · enter authenticate · esc cancel",
+                    "enter authenticate \u{b7} esc cancel",
                     vec![settings::Row::setting(
                         "token",
                         format!("{}\u{2582}", "•".repeat(value.chars().count())),
@@ -7283,6 +7288,7 @@ impl App {
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
+                footer,
             }
             .render(area, buf);
             return;
@@ -7299,6 +7305,7 @@ impl App {
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
+                footer: "enter apply \u{b7} esc cancel",
             }
             .render(area, buf);
             return;
@@ -7312,6 +7319,7 @@ impl App {
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
+                footer: "enter save \u{b7} esc cancel",
             }
             .render(area, buf);
             return;
@@ -7327,6 +7335,7 @@ impl App {
                 rows: &rows,
                 cursor: state.cursor,
                 scroll: state.scroll,
+                footer: "enter choose \u{b7} esc close",
             }
             .render(area, buf);
             return;
@@ -7341,6 +7350,7 @@ impl App {
                 rows: &st.rows,
                 cursor: st.cursor,
                 scroll: st.scroll,
+                footer: "enter change \u{b7} esc close",
             }
             .render(area, buf);
             return;
@@ -7366,12 +7376,7 @@ impl App {
         }
 
         if self.panels.picker {
-            let inner_h = area
-                .height
-                .saturating_sub(4)
-                .min(self.over.playlists.len() as u16 + 4)
-                .max(6)
-                .saturating_sub(2) as usize;
+            let inner_h = picker::list_rect(area, self.over.playlists.len()).height as usize;
             self.over.picker_scroll =
                 picker::clamp_scroll(self.over.picker_cursor, self.over.picker_scroll, inner_h);
             PickerView {

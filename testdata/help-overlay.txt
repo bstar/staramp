@@ -2,7 +2,7 @@
                                                                                                     
                                                                                                     
                                                                                                     
-          ╔ HELP — more below ═══════════════════════════════════════════════════════════╗          
+          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
           ║  transport                          playlist                                 ║          
           ║  space / c     play or pause        wheel                scroll the list     ║          
           ║  v             stop                 click                select a track      ║          
@@ -39,66 +39,83 @@
           ║  alt+down      record down                                                   ║          
           ║  tagging                                                                     ║          
           ║  t             tag this row                                                  ║          
-          ╚══════════════════════════════════════════════════════════════════════════════╝          
+          ╚══════════════════════════════════════════════════════ more below · esc close ╝          
                                                                                                     
                                                                                                     
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabcccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggeeeeeeeeeeeeeeefffffffffffffffffffffffggggggggggggggeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggggeeeeefffffffffffffffffffffffgggggggeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggeeeeeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffggggggggggggggggggeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeeggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggggggggeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggggeeeefffffffffffffffffffffffggggeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffgggggggeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffggggggggggeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddddddeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffggggggggggggggggggeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggggeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeedddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggggggeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggggeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeefffffffffffffffffffffffgggggggggeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddeeeeeeeeeeeeeeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeeggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggeeeeeeeeeeedddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggeeeeeeeeeeeefffffffffffffffffffffffgggggggggggggggggggebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeefffffffffffffffffffffffgggggggggggggggggggebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggeeeeeeeeefffffffffffffffffffffffggggggggggggggggeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggeeeeeefffffffffffffffffffffffgggggggggggggeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggggggggefffffffffffffffffffffffgggggggggggggggeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffgggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffffggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
+aaaaaaaaaaklllllllllllmmmmmmmmmmmmmmmmmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnaaaaaaaaaa
+aaaaaaaaaaoddddddddddddddddpppppppppppppmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmqaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppppppppmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppppmmmmmdddddddddddddddddddddddpppppppmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppmmmmmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddppppppppppppppppppmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppppppppmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaellllllllllllmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppppppmmmmdddddddddddddddddddddddppppmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddpppppppmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddppppppppppmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaellllllllllllllmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddppppppppppppppppppmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppppppmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppppmmmmmmlllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppppppmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppppmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaellllllllllmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppmmmmmmmmmmmlllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppppppmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppppppmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppmmmmmmmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppppmmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddppppppppppppppppppmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppppppppppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaarlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
+aaaaaaaaaasddddddddddddddddppppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
+aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxnaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
-d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
+i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
+j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
+k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
+l fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+n fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
+o fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+p fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
+s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
+x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 100x44 scroll 7
                                                                                                     
                                                                                                     
                                                                                                     
-          ╔ HELP — more below ═══════════════════════════════════════════════════════════╗          
+          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
           ║  s             shuffle              playlist                                 ║          
           ║  r             repeat off/all/one   wheel                scroll the list     ║          
           ║  F             crossfade            click                select a track      ║          
@@ -135,113 +152,148 @@ g fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  del / D       remove them                                                   ║          
           ║  album                                                                       ║          
           ║  o / enter     open full image                                               ║          
-          ╚══════════════════════════════════════════════════════════════════════════════╝          
+          ╚══════════════════════════════════════════════════════ more below · esc close ╝          
                                                                                                     
                                                                                                     
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabcccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeffffffbaaaaaaaaaa
-aaaaaaaaaabggggggggggggfffffffffffffffffffffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabggggggggggggggfffffffffffffffffffffeeeefffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffggggggggfffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeefffdddddddddddddddddddddddeeeeffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeffffffffffbaaaaaaaaaa
-aaaaaaaaaabggggggggggfffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeefffffffffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffgggggggggggffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffeeeeeefffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefgggggggffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
-aaaaaaaaaabgggggggggffffffffffffffffffffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeefffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffeeeeeeeefffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabgggggggfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
+aaaaaaaaaakddddddddddddddddlllllllmmmmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmoaaaaaaaaaa
+aaaaaaaaaapddddddddddddddddllllllllllllllllllmdddddddddddddddddddddddlllllllllllllllmmmmmqaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllmmmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllmmmdddddddddddddddddddddddllllmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllllmnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllllldddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaarnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
+aaaaaaaaaasddddddddddddddddlllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
+aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxoaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
 d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
+i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
+j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
+k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
+l fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+n fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+o fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
+p fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
+s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
+x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 70x20 scroll 0
-╔ HELP — more below ═════════════════════════════════════════════════╗
-║  transport                      playlist                           ║
-║  space / c     play or pause    wheel                scroll the    ║
-║  v             stop           list                                 ║
-║  z             previous track   click                select a track║
-║  b             next track       double click         play it       ║
-║  ctrl+up       volume up        right click          track actions ║
-║  ctrl+down     volume down      click `sorting`      order the     ║
-║  s             shuffle        playlist                             ║
-║  r             repeat           click `gravity`      create a      ║
-║off/all/one                    related list                         ║
-║  F             crossfade        player                             ║
-║  visualizer                     click the transport  transport     ║
-║  w             next visualizer  click footer status  toggle its    ║
-║  W             previous one   mode                                 ║
-║  + / -         bar width        click or drag bar    seek          ║
-║  progress bar                   wheel over bar       seek 5s       ║
-║  left          seek back 5s     click or drag VOL    set volume    ║
-║  right         seek forward 5s  wheel over VOL       volume 5%     ║
-╚════════════════════════════════════════════════════════════════════╝
-abbbbbbbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-acccccccccccddddddddddddddddddddccccccccccddddddddddddddddddddddddddda
-aeeeeeeeeeeeeeeeefffffffffffffddeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
-aeeeeeeeeeeeeeeeeffffdddddddddddffffddddddddddddddddddddddddddddddddda
-aeeeeeeeeeeeeeeeeffffffffffffffdeeeeeeeeeeeeeeeeeeeeeeeffffffffffffffa
-aeeeeeeeeeeeeeeeeffffffffffdddddeeeeeeeeeeeeeeeeeeeeeeefffffffddddddda
-aeeeeeeeeeeeeeeeefffffffffddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffffffda
-aeeeeeeeeeeeeeeeefffffffffffddddeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
-aeeeeeeeeeeeeeeeefffffffddddddddffffffffddddddddddddddddddddddddddddda
-aeeeeeeeeeeeeeeeeffffffdddddddddeeeeeeeeeeeeeeeeeeeeeeeffffffffdddddda
-afffffffffffddddddddddddddddddddffffffffffffddddddddddddddddddddddddda
-aeeeeeeeeeeeeeeeefffffffffddddddccccccccddddddddddddddddddddddddddddda
-accccccccccccdddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
-aeeeeeeeeeeeeeeeefffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
-aeeeeeeeeeeeeeeeeffffffffffffdddffffddddddddddddddddddddddddddddddddda
-aeeeeeeeeeeeeeeeefffffffffddddddeeeeeeeeeeeeeeeeeeeeeeeffffdddddddddda
-accccccccccccccdddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeefffffffddddddda
-aeeeeeeeeeeeeeeeeffffffffffffdddeeeeeeeeeeeeeeeeeeeeeeeffffffffffdddda
-aeeeeeeeeeeeeeeeefffffffffffffffeeeeeeeeeeeeeeeeeeeeeeefffffffffddddda
+                                                                      
+  ╔═ HELP ═════════════════════════════════════════════════════════╗  
+  ║  transport                    playlist                         ║  
+  ║  space / c     play or pause  wheel                scroll the  ║  
+  ║  v             stop         list                               ║  
+  ║  z             previous       click                select a    ║  
+  ║track                        track                              ║  
+  ║  b             next track     double click         play it     ║  
+  ║  ctrl+up       volume up      right click          track       ║  
+  ║  ctrl+down     volume down  actions                            ║  
+  ║  s             shuffle        click `sorting`      order the   ║  
+  ║  r             repeat       playlist                           ║  
+  ║off/all/one                    click `gravity`      create a    ║  
+  ║  F             crossfade    related list                       ║  
+  ║  visualizer                   player                           ║  
+  ║  w             next           click the transport  transport   ║  
+  ║visualizer                     click footer status  toggle its  ║  
+  ║  W             previous one mode                               ║  
+  ╚════════════════════════════════════════ more below · esc close ╝  
+                                                                      
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-a fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-b fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
-c fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+aabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaa
+aaklllllllllllmmmmmmmmmmmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmnaa
+aaoddddddddddddddddpppppppppppppdddddddddddddddddddddddppppppppppmmqaa
+aaeddddddddddddddddppppmmmmmmmmmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaeddddddddddddddddppppppppmmmmmdddddddddddddddddddddddppppppppmmmmeaa
+aaepppppmmmmmmmmmmmmmmmmmmmmmmmmpppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaeddddddddddddddddppppppppppmmmdddddddddddddddddddddddpppppppmmmmmeaa
+aaeddddddddddddddddpppppppppmmmmdddddddddddddddddddddddpppppmmmmmmmeaa
+aaeddddddddddddddddpppppppppppmmpppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaeddddddddddddddddpppppppmmmmmmdddddddddddddddddddddddpppppppppmmmeaa
+aaeddddddddddddddddppppppmmmmmmmppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaepppppppppppmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppmmmmeaa
+aaeddddddddddddddddpppppppppmmmmppppppppppppmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaellllllllllllmmmmmmmmmmmmmmmmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
+aaeddddddddddddddddppppmmmmmmmmmdddddddddddddddddddddddpppppppppmmmeaa
+aarppppppppppmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppppmmfaa
+aasddddddddddddddddppppppppppppmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaa
+aauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxnaa
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+a fg Some(Reset) bg Some(Reset) mods NONE
+b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
+i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
+j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
+k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
+l fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+n fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
+o fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+p fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
+s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
+x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 100x44 scroll 999
                                                                                                     
                                                                                                     
                                                                                                     
-          ╔ HELP — the end ══════════════════════════════════════════════════════════════╗          
+          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
           ║  right         next image           playlist                                 ║          
           ║  windows                            wheel                scroll the list     ║          
           ║  alt+g         show/hide equalizer  click                select a track      ║          
@@ -278,58 +330,75 @@ f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  general                                                                     ║          
           ║  esc           close what is open                                            ║          
           ║  ? / F1        this help                                                     ║          
-          ╚══════════════════════════════════════════════════════════════════════════════╝          
+          ╚═════════════════════════════════════════════════════════ the end · esc close ╝          
                                                                                                     
                                                                                                     
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabgggggggggffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddeeeeeeeeeeeeeeffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefeeeefffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffggggggggfffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffdddddddddddddddddddddddeeeeffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabggggggggggggfffffffffffffffffffffffdddddddddddddddddddddddeeeeeeefffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeefffffffffdddddddddddddddddddddddeeeeeeeeeeffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabgggggggggggffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeefffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeffffffffgggggggggggffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddddeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeefffffffffffbaaaaaaaaaa
-aaaaaaaaaabeefffffffffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffeeeeeefffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeefffffffgggggggffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
-aaaaaaaaaabgggggggggffffffffffffffffffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeeeefbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeefggggggggggfffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeffffffffffdddddddddddddddddddddddeeeeeeeeeeeeeeeeffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffdddddddddddddddddddddddeeeeeeeeeeeeefffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeefffffdddddddddddddddddddddddeeeeeeeeeeeeeeefffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeffeeeeeeeefffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabgggggggggfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeeeeeeeeeeeffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabddddddddddddddddeeeeeeeeefffffffffffffffffffffffffffffffffffffffffffffffffffffbaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
+aaaaaaaaaakddddddddddddddddllllllllllmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmoaaaaaaaaaa
+aaaaaaaaaapnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmqaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllllldddddddddddddddddddddddllllllllllllllmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllllmllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllmmmmmmmmmdddddddddddddddddddddddllllllllllmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddddlllllllllllllllmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaellmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllllllmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
+aaaaaaaaaarddddddddddddddddllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
+aaaaaaaaaasddddddddddddddddlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
+aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxoaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
+b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
 d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
+i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
+j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
+k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
+l fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+n fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+o fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
+p fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
+s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
+t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
+u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
+v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
+w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
+x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE

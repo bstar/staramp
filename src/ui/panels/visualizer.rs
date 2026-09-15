@@ -6,6 +6,7 @@
 //! Colouring by *row* rather than by level is what makes it look like Winamp
 //! rather than like a bar chart with a gradient.
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Color, Style};
@@ -69,10 +70,6 @@ impl BarLayout {
 
 pub fn bar_count(width: u16) -> usize {
     BarLayout::default().count(width)
-}
-
-fn rgb(c: crate::theme::color::Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
 }
 
 /// What a mode needs to draw a frame.

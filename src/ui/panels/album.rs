@@ -1,20 +1,15 @@
 //! The album window: the cover, and what the record is.
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
 use crate::library::art::{Album, Source};
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::digits;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// Rows the panel occupies: border, header row, and six of body.
 ///
@@ -356,23 +351,20 @@ pub struct AlbumView<'a> {
 impl<'a> Widget for AlbumView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(if self.focused {
-                t.border_focused
-            } else {
-                t.border
-            })))
-            .title(Span::styled(
-                format!("{}ALBUM ", super::frame::TITLE_LEAD),
-                Style::default().fg(rgb(t.header_fg)),
-            ))
-            .style(Style::default().bg(rgb(t.bg)));
-
-        block.render(area, buf);
-        super::frame::render_corners(area, buf, t, self.focused);
-        super::header::render(area, super::header::PLAIN, buf, t);
+        super::frame::frame(
+            area,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: self.focused,
+                title: "album",
+                detail: None,
+                heading: false,
+                badge: None,
+                footer: None,
+                words: super::header::PLAIN,
+            },
+        );
 
         let Some(g) = geometry(area, self.show_cover, self.cell_aspect) else {
             return;
@@ -518,6 +510,7 @@ mod tests {
     use crate::library::db::AlbumDetail;
     use crate::theme::builtin;
     use starkit::graphics::HALF;
+    use starkit::ratatui::style::Color;
 
     fn detail() -> AlbumDetail {
         AlbumDetail {

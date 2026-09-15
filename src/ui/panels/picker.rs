@@ -4,19 +4,15 @@
 //! playlist is almost always a better starting point than thirty thousand
 //! tracks in album order.
 
+use super::overlay::{self, Anchor, Overlay};
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Clear, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// One entry in the picker.
 #[derive(Debug, Clone)]
@@ -40,21 +36,27 @@ pub struct PickerView<'a> {
 
 /// Where the overlay lands, so a click can be tested against it.
 pub fn rect(area: Rect, entries: usize) -> Rect {
-    let w = area.width.saturating_sub(4).clamp(20, 72);
-    let h = area.height.saturating_sub(4).min(entries as u16 + 4).max(6);
-    Rect {
-        x: area.x + (area.width.saturating_sub(w)) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
-    }
+    overlay::rect(area, (20, 72), entries as u16 + 4, 6, Anchor::Centre)
 }
 
 /// The list area inside the overlay's border.
 pub fn list_rect(area: Rect, entries: usize) -> Rect {
-    Block::default()
-        .borders(Borders::ALL)
-        .inner(rect(area, entries))
+    overlay::inner(rect(area, entries))
+}
+
+/// Which entry is at a point, given the same `entries` and `scroll` the
+/// overlay was drawn with. Beside [`starkit::chrome::settings::hit`] for the
+/// same reason.
+pub fn hit(area: Rect, entries: usize, scroll: usize, x: u16, y: u16) -> Option<usize> {
+    if entries == 0 {
+        return None;
+    }
+    let list = list_rect(area, entries);
+    if x < list.x || x >= list.x + list.width || y < list.y || y >= list.y + list.height {
+        return None;
+    }
+    let index = scroll + usize::from(y - list.y);
+    (index < entries).then_some(index)
 }
 
 impl<'a> Widget for PickerView<'a> {
@@ -62,29 +64,16 @@ impl<'a> Widget for PickerView<'a> {
         let t = self.theme;
 
         let rect = rect(area, self.entries.len());
-        Clear.render(rect, buf);
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(t.border_focused)))
-            .title(Span::styled(
-                " PLAYLISTS ",
-                Style::default()
-                    .fg(rgb(t.header_fg))
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .title_bottom(
-                Line::from(Span::styled(
-                    " enter load · esc close ",
-                    Style::default().fg(rgb(t.dim)),
-                ))
-                .right_aligned(),
-            )
-            .style(Style::default().bg(rgb(t.panel_bg)));
-
-        let inner = block.inner(rect);
-        block.render(rect, buf);
+        let inner = overlay::render(
+            rect,
+            buf,
+            &Overlay {
+                theme: t,
+                title: "playlists",
+                detail: None,
+                footer: Some("enter load \u{b7} esc close"),
+            },
+        );
         if inner.height == 0 {
             return;
         }

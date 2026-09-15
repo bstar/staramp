@@ -1,18 +1,13 @@
 //! The ordered parametric equalizer window.
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::Span;
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::Widget;
 
 use crate::audio::dsp::apo::{BiquadKind, Filter, Profile, Stage, Width};
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// Rows the response curve takes when there is room for it.
 ///
@@ -95,23 +90,21 @@ pub fn geometry(area: Rect, profile: &str) -> Option<Geometry> {
 impl Widget for EqView<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(if self.focused {
-                t.border_focused
-            } else {
-                t.border
-            })))
-            .title(Span::styled(
-                "═ EQUALIZER ",
-                Style::default().fg(rgb(t.header_fg)),
-            ))
-            .style(Style::default().bg(rgb(t.bg)));
+        super::frame::frame(
+            area,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: self.focused,
+                title: "equalizer",
+                detail: None,
+                heading: false,
+                badge: None,
+                footer: None,
+                words: super::header::PLAIN,
+            },
+        );
         let inner = super::header::body(area);
-        block.render(area, buf);
-        super::frame::render_corners(area, buf, t, self.focused);
-        super::header::render(area, super::header::PLAIN, buf, t);
         if inner.height == 0 || inner.width < 40 {
             return;
         }
@@ -291,7 +284,7 @@ fn render_curve(
             };
             buf[(area.x + cx as u16, area.y + cy as u16)]
                 .set_char(ch)
-                .set_style(style.bg(rgb(t.bg)));
+                .set_style(style.bg(rgb(t.panel_bg)));
         }
     }
 }

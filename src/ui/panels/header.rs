@@ -1,11 +1,12 @@
 //! Which words this player's panels offer at the top of their frames.
 //!
 //! The placement, the hit boxes and the drawing are `starkit::chrome::header`,
-//! which is generic over the word list; what is here is the list itself. They
-//! are re-exported so that a panel calls `header::render` and `header::hit` as
-//! it always did.
+//! which is generic over the word list; what is here is the list itself.
+//! `body`, `rect`, `slots` and `hit` are re-exported so a panel's own mouse
+//! code calls `header::hit` as it always did; the drawing itself now happens
+//! inside `starkit::chrome::frame::frame`, which every panel goes through.
 
-pub use starkit::chrome::header::{body, hit, rect, render, slots, Word, ROWS};
+pub use starkit::chrome::header::{body, hit, rect, slots, Word, ROWS};
 
 /// What a click on the header asked for.
 ///
@@ -84,6 +85,7 @@ pub fn playlist_words(tagged: usize, copied: usize) -> Vec<Item> {
 mod tests {
     use super::*;
     use crate::theme::builtin;
+    use starkit::chrome::header::render;
     use starkit::ratatui::buffer::Buffer;
     use starkit::ratatui::layout::Rect;
     use starkit::ratatui::widgets::{Block, Borders, Widget};

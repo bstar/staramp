@@ -19,19 +19,14 @@
 // entry point would need.
 #![allow(dead_code)]
 
+use starkit::chrome::rgb;
 use starkit::ratatui::buffer::Buffer;
 use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Modifier, Style};
-use starkit::ratatui::text::{Line, Span};
-use starkit::ratatui::widgets::{Block, BorderType, Borders, Widget};
+use starkit::ratatui::style::{Modifier, Style};
+use starkit::ratatui::widgets::{Block, Borders, Widget};
 
-use crate::theme::color::Rgb;
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
-
-fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.r, c.g, c.b)
-}
 
 /// Which column is which, everywhere.
 pub const ARTISTS: usize = 0;
@@ -273,24 +268,20 @@ impl<'a> Widget for LibraryView<'a> {
         let t = self.theme;
         let l = layout(area, self.focus);
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(rgb(t.border_focused)))
-            .title(Span::styled(
-                format!("{}LIBRARY ", super::frame::TITLE_LEAD),
-                Style::default().fg(rgb(t.header_fg)),
-            ))
-            .title_bottom(
-                Line::from(Span::styled(
-                    format!(" {} ", self.keys),
-                    Style::default().fg(rgb(t.dim)),
-                ))
-                .right_aligned(),
-            )
-            .style(Style::default().bg(rgb(t.panel_bg)));
-        block.render(l.frame, buf);
-        super::frame::render_corners(l.frame, buf, t, true);
+        super::frame::frame(
+            l.frame,
+            buf,
+            &super::frame::Frame {
+                theme: t,
+                focused: true,
+                title: "library",
+                detail: None,
+                heading: false,
+                badge: None,
+                footer: Some(self.keys),
+                words: super::frame::NO_WORDS,
+            },
+        );
 
         if l.search.height > 0 {
             let caret = if self.typing { "\u{2582}" } else { "" };
@@ -757,6 +748,7 @@ impl Library {
 mod tests {
     use super::*;
     use crate::theme::builtin;
+    use starkit::ratatui::style::Color;
 
     fn entries(n: usize) -> Vec<Entry> {
         (0..n)

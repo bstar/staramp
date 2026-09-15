@@ -46,71 +46,54 @@
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
-aaaaaaaaaaklllllllllllmmmmmmmmmmmmmmmmmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmnaaaaaaaaaa
-aaaaaaaaaaoddddddddddddddddpppppppppppppmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmqaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppppppppmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppppmmmmmdddddddddddddddddddddddpppppppmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppmmmmmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddppppppppppppppppppmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppppppppmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaellllllllllllmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppppppmmmmdddddddddddddddddddddddppppmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddpppppppmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddppppppppppmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaellllllllllllllmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddppppppppppppppppppmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppppppmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppppmmmmmmlllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppppppmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppppmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppmmmmmmmdddddddddddddddddddddddpppppppppmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaellllllllllmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppmmmmmmmmmmmlllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppmmmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppppppmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmdddddddddddddddddddddddpppppppppppppppppppmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppmmmmmmmmmdddddddddddddddddddddddppppppppppppppppmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppppmmmmmmdddddddddddddddddddddddpppppppppppppmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddppppppppppppppppppmdddddddddddddddddddddddpppppppppppppppmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppppppppppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddpppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaarlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
-aaaaaaaaaasddddddddddddddddppppppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
-aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxnaaaaaaaaaa
+aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffffffffeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffffeeeeecccccccccccccccccccccccfffffffeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffeeeeeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccffffffffffffffffffeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffffffffeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddddeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffffeeeecccccccccccccccccccccccffffeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccfffffffeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccffffffffffeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddddddeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccffffffffffffffffffeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffffeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeedddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffffffeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffffeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddddddddddeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeeffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffeeeeeeeeeeedddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffffffebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffffffffffffebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffeeeeeeeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffffffffecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
-i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
-j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
-k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
-l fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-n fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
-o fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-p fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
-s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
-x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 100x44 scroll 7
                                                                                                     
                                                                                                     
@@ -159,71 +142,54 @@ x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
-aaaaaaaaaakddddddddddddddddlllllllmmmmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmoaaaaaaaaaa
-aaaaaaaaaapddddddddddddddddllllllllllllllllllmdddddddddddddddddddddddlllllllllllllllmmmmmqaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllmmmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllmmmdddddddddddddddddddddddllllmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllllmnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllllldddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaarnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
-aaaaaaaaaasddddddddddddddddlllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
-aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxoaaaaaaaaaa
+aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddddecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffffeeeeeeeeeeeeeeeeeeeeeddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddeeecccccccccccccccccccccccddddeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddeeeeeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeefffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddddefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddddcccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
+aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabfffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
-i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
-j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
-k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
-l fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-n fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-o fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
-p fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
-s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
-x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 70x20 scroll 0
                                                                       
   ╔═ HELP ═════════════════════════════════════════════════════════╗  
@@ -246,49 +212,32 @@ x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
   ╚════════════════════════════════════════ more below · esc close ╝  
                                                                       
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaa
-aaklllllllllllmmmmmmmmmmmmmmmmmmllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmnaa
-aaoddddddddddddddddpppppppppppppdddddddddddddddddddddddppppppppppmmqaa
-aaeddddddddddddddddppppmmmmmmmmmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaeddddddddddddddddppppppppmmmmmdddddddddddddddddddddddppppppppmmmmeaa
-aaepppppmmmmmmmmmmmmmmmmmmmmmmmmpppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaeddddddddddddddddppppppppppmmmdddddddddddddddddddddddpppppppmmmmmeaa
-aaeddddddddddddddddpppppppppmmmmdddddddddddddddddddddddpppppmmmmmmmeaa
-aaeddddddddddddddddpppppppppppmmpppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaeddddddddddddddddpppppppmmmmmmdddddddddddddddddddddddpppppppppmmmeaa
-aaeddddddddddddddddppppppmmmmmmmppppppppmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaepppppppppppmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppmmmmeaa
-aaeddddddddddddddddpppppppppmmmmppppppppppppmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaellllllllllllmmmmmmmmmmmmmmmmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmeaa
-aaeddddddddddddddddppppmmmmmmmmmdddddddddddddddddddddddpppppppppmmmeaa
-aarppppppppppmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddppppppppppmmfaa
-aasddddddddddddddddppppppppppppmppppmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaa
-aauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxxxxnaa
+aabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
+aabdddddddddddeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabccccccccccccccccfffffffffffffcccccccccccccccccccccccffffffffffeebaa
+aabccccccccccccccccffffeeeeeeeeeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabccccccccccccccccffffffffeeeeecccccccccccccccccccccccffffffffeeeebaa
+aabfffffeeeeeeeeeeeeeeeeeeeeeeeefffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabccccccccccccccccffffffffffeeecccccccccccccccccccccccfffffffeeeeebaa
+aabccccccccccccccccfffffffffeeeecccccccccccccccccccccccfffffeeeeeeebaa
+aabccccccccccccccccfffffffffffeefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabccccccccccccccccfffffffeeeeeecccccccccccccccccccccccfffffffffeeebaa
+aabccccccccccccccccffffffeeeeeeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabfffffffffffeeeeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffeeeebaa
+aabccccccccccccccccfffffffffeeeeffffffffffffeeeeeeeeeeeeeeeeeeeeeeebaa
+aabddddddddddddeeeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabccccccccccccccccffffeeeeeeeeecccccccccccccccccccccccfffffffffeeebaa
+aabffffffffffeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffffeebaa
+aabccccccccccccccccffffffffffffeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
+aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
-i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
-j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
-k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
-l fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-n fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
-o fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-p fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
-s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
-x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 == 100x44 scroll 999
                                                                                                     
                                                                                                     
@@ -337,68 +286,51 @@ x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabcddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeefghijaaaaaaaaaa
-aaaaaaaaaakddddddddddddddddllllllllllmmmmmmmmmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmoaaaaaaaaaa
-aaaaaaaaaapnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmqaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllllldddddddddddddddddddddddllllllllllllllmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllllmllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmdddddddddddddddddddddddllllmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllmmmmmmmmmdddddddddddddddddddddddllllllllllmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllllmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllmmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllmmmmmmmmnnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddddlllllllllllllllmmdddddddddddddddddddddddlllllllllmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaellmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllmmmmmmmnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmdddddddddddddddddddddddlllllllllllllllllllmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllllllmnnnnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllmmmmmmmmmmdddddddddddddddddddddddllllllllllllllllmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmdddddddddddddddddddddddlllllllllllllmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddllllllllllllllmmmmmdddddddddddddddddddddddlllllllllllllllmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllllllmmllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaeddddddddddddddddlllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaaennnnnnnnnmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmeaaaaaaaaaa
-aaaaaaaaaarddddddddddddddddllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmfaaaaaaaaaa
-aaaaaaaaaasddddddddddddddddlllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmtaaaaaaaaaa
-aaaaaaaaaauvsrweeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeexxxxxxxxxxxxxxxxxxxxxoaaaaaaaaaa
+aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddddcccccccccccccccccccccccddddddddddddddeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddddeddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabffffffffffffeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeecccccccccccccccccccccccddddddddddeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabfffffffffffeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeefffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccccdddddddddddddddeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
+aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddddeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbgggggggggggggggggggggbaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
-b fg Some(Rgb(92, 118, 122)) bg Some(Rgb(27, 27, 27)) mods NONE
-c fg Some(Rgb(87, 114, 118)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(71, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(75, 106, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-h fg Some(Rgb(78, 108, 112)) bg Some(Rgb(27, 27, 27)) mods NONE
-i fg Some(Rgb(82, 111, 114)) bg Some(Rgb(27, 27, 27)) mods NONE
-j fg Some(Rgb(86, 114, 117)) bg Some(Rgb(27, 27, 27)) mods NONE
-k fg Some(Rgb(84, 112, 116)) bg Some(Rgb(27, 27, 27)) mods NONE
-l fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-m fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-n fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-o fg Some(Rgb(80, 109, 113)) bg Some(Rgb(27, 27, 27)) mods NONE
-p fg Some(Rgb(75, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-q fg Some(Rgb(73, 105, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-r fg Some(Rgb(70, 102, 106)) bg Some(Rgb(27, 27, 27)) mods NONE
-s fg Some(Rgb(72, 103, 107)) bg Some(Rgb(27, 27, 27)) mods NONE
-t fg Some(Rgb(76, 106, 110)) bg Some(Rgb(27, 27, 27)) mods NONE
-u fg Some(Rgb(75, 105, 109)) bg Some(Rgb(27, 27, 27)) mods NONE
-v fg Some(Rgb(73, 104, 108)) bg Some(Rgb(27, 27, 27)) mods NONE
-w fg Some(Rgb(69, 101, 105)) bg Some(Rgb(27, 27, 27)) mods NONE
-x fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
+c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
+g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE

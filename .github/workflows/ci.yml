@@ -107,7 +107,7 @@ jobs:
             pkg-config clang libclang-dev \
             libasound2-dev libdbus-1-dev \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # master
         with:
           toolchain: "1.90"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2

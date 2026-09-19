@@ -1382,21 +1382,32 @@ fn build_queue(
         }
     }
 
-    // Otherwise: everything the index knows, in album order. The whole
-    // library, not a slice of it: a cap of five thousand quietly dropped the
-    // records past Q on a large collection, and nothing said so.
-    //
-    // Rips of one record stay together: the folder sorts before the disc and
-    // track, or seven copies of an album interleave track by track. The
-    // folder is the URI up to its last slash -- `rtrim` with the URI's own
-    // non-slash characters as the set strips the file name and stops at the
-    // slash, which is SQLite's way of spelling `dirname`. Tracks without a
-    // number come after the numbered ones, by name.
-    //
-    // One song, one row: a per-track cue sheet indexes each song twice, as
-    // the file and as the sheet's track over that same file, and the queue
-    // showed both -- every song of such an album twice over, one green. The
-    // browser's rule picks one of each pair; see `browse::CANONICAL`.
+    // Otherwise: everything the index knows.
+    let items = library_queue(index)?;
+    Ok((root, items))
+}
+
+/// The whole library, in album order: what the player opens on when nothing
+/// else was asked for, and what `L` in the playlist gets back to.
+///
+/// The whole library, not a slice of it: a cap of five thousand quietly
+/// dropped the records past Q on a large collection, and nothing said so.
+///
+/// Rips of one record stay together: the folder sorts before the disc and
+/// track, or seven copies of an album interleave track by track. The folder
+/// is the URI up to its last slash -- `rtrim` with the URI's own non-slash
+/// characters as the set strips the file name and stops at the slash, which
+/// is SQLite's way of spelling `dirname`. Tracks without a number come after
+/// the numbered ones, by name.
+///
+/// One song, one row: a per-track cue sheet indexes each song twice, as the
+/// file and as the sheet's track over that same file, and the queue showed
+/// both -- every song of such an album twice over, one green. The browser's
+/// rule picks one of each pair; see `browse::CANONICAL`.
+pub fn library_queue(index: &Path) -> Result<Vec<playlist::queue::QueueItem>> {
+    use playlist::queue::QueueItem;
+    use playlist::uri::TrackUri;
+
     let db = library::db::Db::open_readonly(index)?;
     let mut stmt = db.conn.prepare(&format!(
         "{META_SELECT}
@@ -1407,15 +1418,14 @@ fn build_queue(
         canonical = library::browse::CANONICAL,
     ))?;
     let rows = stmt.query_map([], read_meta)?;
-    let items = rows
+    Ok(rows
         .flatten()
         .map(|(uri, meta)| {
             let mut q = QueueItem::new(TrackUri::parse(&uri));
             meta.fill(&mut q);
             q
         })
-        .collect();
-    Ok((root, items))
+        .collect())
 }
 
 /// What the index knows about a track, beyond its URI.

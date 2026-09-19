@@ -16,6 +16,11 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- **`L` puts the whole library back in the playlist.** After a playlist, a
+  timeline or an artist list, the only way back to everything was to quit and
+  start again. `L` rebuilds the library queue from the index, in the same
+  album order the player opens on, and puts it into the session, so a window
+  following the session gets it too.
 - **A paused track's file is read into the page cache**, so resuming does not
   wait for an external drive to spin back up. Pausing stops the output; it
   does not stop the disk parking itself, and the output buffer holds well

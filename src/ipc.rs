@@ -758,6 +758,22 @@ fn handle_with_activity(
                 Err(e) => format!("error: {e}"),
             }
         }
+        // Back to the whole library, for a window that is not the one holding
+        // the session. Built from the owner's index, which is the same one the
+        // player opened on, so following windows do not need to be able to
+        // read it themselves.
+        "load-library" => match player
+            .vfs()
+            .index_path()
+            .and_then(|index| crate::library_queue(&index))
+        {
+            Ok(items) if !items.is_empty() => {
+                player.set_queue_tracks(items);
+                "ok".into()
+            }
+            Ok(_) => "error: the library index is empty".into(),
+            Err(e) => format!("error: {e}"),
+        },
         // An already loaded playlist was edited by a following window. Keep
         // the playing row rather than treating this as a new queue.
         "refresh-playlist" => {

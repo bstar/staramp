@@ -75,6 +75,7 @@ pub enum Action {
     PrevVisualizer,
     OpenFilter,
     FilterQueue,
+    LoadLibrary,
     OpenLibrary,
     LibraryLeft,
     LibraryRight,
@@ -398,6 +399,12 @@ pub const BINDINGS: &[Binding] = &[
         action: Action::FilterQueue,
         keys: "/",
         label: "filter the playlist",
+        group: "playlist",
+    },
+    Binding {
+        action: Action::LoadLibrary,
+        keys: "L",
+        label: "the whole library",
         group: "playlist",
     },
     Binding {
@@ -860,6 +867,10 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('/'), false, _, false) => Action::FilterQueue,
         (Char('o'), false, _, false) => Action::NextButtons,
         (Char('l'), false, _, false) => Action::OpenLibrary,
+        // `l` browses the library; `L` loads all of it. The way back to the
+        // whole collection after a playlist, a timeline or an artist list,
+        // which used to mean quitting and starting again.
+        (Char('L'), ..) => Action::LoadLibrary,
         (Char('+'), ..) | (Char('='), ..) => Action::WidenBars,
         (Char('-'), ..) | (Char('_'), ..) => Action::NarrowBars,
 
@@ -909,6 +920,10 @@ mod tests {
         assert_eq!(resolve(plain('+')), Some(Action::WidenBars));
         assert_eq!(resolve(plain('=')), Some(Action::WidenBars));
         assert_eq!(resolve(plain('-')), Some(Action::NarrowBars));
+        assert_eq!(
+            resolve(KeyEvent::new(KeyCode::Char('L'), KeyModifiers::SHIFT)),
+            Some(Action::LoadLibrary)
+        );
     }
 
     #[test]

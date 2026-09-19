@@ -35,10 +35,10 @@
           ║  enter         play selected        click `close`        close a panel       ║          
           ║  f             order the playlist   click `settings`     what that panel     ║          
           ║  /             filter the playlistcontrols                                   ║          
+          ║  L             the whole library                                             ║          
           ║  alt+up        record up                                                     ║          
           ║  alt+down      record down                                                   ║          
           ║  tagging                                                                     ║          
-          ║  t             tag this row                                                  ║          
           ╚══════════════════════════════════════════════════════ more below · esc close ╝          
                                                                                                     
                                                                                                     
@@ -79,10 +79,10 @@ aaaaaaaaaabccccccccccccccccffffffffffeeeeeeeeecccccccccccccccccccccccfffffffffff
 aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccffffffffffffffffffecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccfffffffffffffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccfffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -124,17 +124,17 @@ g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  enter         play selected      filter                                     ║          
           ║  f             order the playlist   album                                    ║          
           ║  /             filter the playlist  click cover          open full image     ║          
-          ║  alt+up        record up            click < / >          previous / next art ║          
-          ║  alt+down      record down          click title / artist open music database ║          
-          ║  tagging                            overlays                                 ║          
-          ║  t             tag this row         click outside        close the picker    ║          
-          ║  T             clear every tag      click `close`        close a panel       ║          
-          ║  y             copy                 click `settings`     what that panel     ║          
-          ║  u             put them here      controls                                   ║          
+          ║  L             the whole library    click < / >          previous / next art ║          
+          ║  alt+up        record up            click title / artist open music database ║          
+          ║  alt+down      record down          overlays                                 ║          
+          ║  tagging                            click outside        close the picker    ║          
+          ║  t             tag this row         click `close`        close a panel       ║          
+          ║  T             clear every tag      click `settings`     what that panel     ║          
+          ║  y             copy               controls                                   ║          
+          ║  u             put them here                                                 ║          
           ║  m             move here                                                     ║          
           ║  del / D       remove them                                                   ║          
           ║  album                                                                       ║          
-          ║  o / enter     open full image                                               ║          
           ╚══════════════════════════════════════════════════════ more below · esc close ╝          
                                                                                                     
                                                                                                     
@@ -168,17 +168,17 @@ aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeecccccccccccccccccccccccddddddddddd
 aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccddddddddddddddddddefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddddddddddcccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccddddeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabfffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

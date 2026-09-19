@@ -3604,6 +3604,39 @@ impl App {
         }
     }
 
+    /// Back to the whole library, in the order the player opened on.
+    ///
+    /// The way out of a playlist, a timeline or an artist list without
+    /// quitting. Rebuilt from the index rather than remembered from startup,
+    /// so a rescan since then is reflected, and put into the session the same
+    /// way a picked playlist is, so every window follows.
+    fn load_library(&mut self) {
+        let items = self
+            .player
+            .vfs()
+            .index_path()
+            .and_then(|index| crate::library_queue(&index));
+        match items {
+            Ok(items) if !items.is_empty() => {
+                let n = items.len();
+                if self.owns("load-library") {
+                    self.player.set_queue_tracks(items);
+                }
+                self.journey.reasons.clear();
+                self.queue.name = DEFAULT_QUEUE_NAME.into();
+                self.queue.source = None;
+                self.queue.dirty = false;
+                self.panels.playlist = true;
+                self.panels.picker = false;
+                self.queue.cursor = 0;
+                self.queue.scroll = 0;
+                self.note(format!("the whole library \u{2014} {n} tracks"));
+            }
+            Ok(_) => self.note("the library index is empty \u{2014} run `staramp scan`".into()),
+            Err(e) => self.note(format!("cannot read the library index: {e}")),
+        }
+    }
+
     fn move_picker(&mut self, delta: i32) {
         if self.over.playlists.is_empty() {
             return;
@@ -5056,6 +5089,7 @@ impl App {
                 action,
                 OpenFilter
                     | OpenLibrary
+                    | LoadLibrary
                     | OpenPlaylistPicker
                     | SavePlaylist
                     | TagRow
@@ -5325,6 +5359,7 @@ impl App {
             }
             OpenFilter => self.open_filter(),
             FilterQueue => self.open_filter_box(),
+            LoadLibrary => self.load_library(),
             MoveAlbumUp => self.move_album(-1),
             MoveAlbumDown => self.move_album(1),
             ToggleEqPanel => self.panels.eq = !self.panels.eq,

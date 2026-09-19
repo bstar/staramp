@@ -43,6 +43,7 @@ program does. This page is the same list, with the explanations.
 | `enter` | play what is selected |
 | `f` | order the playlist |
 | `/` | filter the playlist |
+| `L` | back to the whole library |
 | `alt+up` / `alt+down` | move a whole record up or down |
 | `ctrl+s` | save the playlist |
 

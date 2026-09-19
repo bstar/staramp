@@ -201,7 +201,12 @@ enum Command {
         limit: usize,
     },
     /// Open the player UI on a playlist, directory, or the whole library.
-    Ui { target: Option<PathBuf> },
+    Ui {
+        target: Option<PathBuf>,
+        /// Override terminal graphics detection (auto, kitty, blocks, or off).
+        #[arg(long)]
+        graphics: Option<String>,
+    },
     /// Play a library that lives on another machine, over SSH.
     ///
     /// Nothing is installed or left running there: one ssh connection is
@@ -303,7 +308,7 @@ fn main() -> Result<()> {
             explain,
         }) => cmd_query(expr.join(" "), count, explain),
         Some(Command::Analyze { status, all, limit }) => cmd_analyze(status, all, limit),
-        Some(Command::Ui { target }) => cmd_tui(target),
+        Some(Command::Ui { target, graphics }) => cmd_tui(target, graphics),
         Some(Command::Remote {
             host,
             root,
@@ -314,7 +319,7 @@ fn main() -> Result<()> {
             show_missing,
             check_roundtrip,
         }) => cmd_playlists(dir, show_missing, check_roundtrip),
-        None => cmd_tui(None),
+        None => cmd_tui(None, None),
     }
 }
 
@@ -1318,9 +1323,29 @@ fn build_queue(
         .or_else(|| target.and_then(|t| t.is_dir().then(|| t.to_path_buf())))
         .unwrap_or_else(|| PathBuf::from("/"));
 
-    // A playlist file: take it verbatim, unresolved entries included.
+    // A playlist file: take it verbatim, unresolved entries included. Any
+    // other file is a one-track queue, which is what file managers need when
+    // they hand the UI an album track directly.
     if let Some(t) = target {
         if t.is_file() {
+            let is_playlist = matches!(
+                t.extension()
+                    .and_then(|x| x.to_str())
+                    .map(|x| x.to_ascii_lowercase())
+                    .as_deref(),
+                Some("m3u" | "m3u8")
+            );
+            if !is_playlist {
+                let parent = t.parent().unwrap_or_else(|| Path::new("/"));
+                let name = t.file_name().ok_or_else(|| {
+                    anyhow::anyhow!("audio path has no file name: {}", t.display())
+                })?;
+                let root = parent.to_path_buf();
+                let items = vec![QueueItem::new(TrackUri::File {
+                    rel_path: name.to_string_lossy().into_owned(),
+                })];
+                return Ok((root, items));
+            }
             let pl = playlist::m3u::read_file(t)?;
             let mut items: Vec<QueueItem> = pl
                 .items
@@ -1641,13 +1666,14 @@ fn cmd_art(cmd: ArtCmd) -> Result<()> {
     }
 }
 
-fn cmd_tui(target: Option<PathBuf>) -> Result<()> {
+fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result<()> {
     let cfg = config::Config::load().unwrap_or_default();
 
     // Before anything touches the terminal. Detecting a graphics protocol
     // means writing a query and reading the answer off stdin, and once the app
     // has the keyboard that answer arrives as keystrokes.
-    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let graphics_mode = graphics_override.as_deref().unwrap_or(&cfg.ui.graphics);
+    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(graphics_mode));
     let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
     ui::graphics::log_capabilities(&graphics, buttons);
 
@@ -2039,4 +2065,39 @@ fn cmd_shuffle_probe(n: usize) -> Result<()> {
             .join(" ")
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+
+    #[test]
+    fn ui_accepts_a_graphics_override_before_a_file() {
+        let cli = Cli::try_parse_from(["staramp", "ui", "song.flac", "--graphics", "blocks"])
+            .expect("the embedded launch form should parse");
+        match cli.command {
+            Some(Command::Ui { target, graphics }) => {
+                assert_eq!(target, Some(PathBuf::from("song.flac")));
+                assert_eq!(graphics.as_deref(), Some("blocks"));
+            }
+            _ => panic!("parsed the wrong command"),
+        }
+    }
+
+    #[test]
+    fn an_audio_file_builds_a_one_track_queue_rooted_beside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let track = dir.path().join("one.flac");
+        std::fs::write(&track, []).unwrap();
+        let (root, items) = build_queue(
+            &config::Config::default(),
+            Some(&track),
+            &dir.path().join("unused.db"),
+        )
+        .unwrap();
+        assert_eq!(root, dir.path());
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].uri.to_string(), "one.flac");
+        assert!(!items[0].unplayable);
+    }
 }

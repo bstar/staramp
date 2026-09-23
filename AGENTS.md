@@ -241,3 +241,11 @@ not yet verified. See `docs/embed.md` for the versioned process contract.
   Playing is reachable (`MPNowPlayingInfoCenter`, and `objc2` is already in the
   graph via cpal) but wants an `NSApplication` run loop on the main thread,
   which the TUI owns.
+
+## Release targets
+
+Release Linux through Nix and AppImage, and macOS through the native Apple
+Silicon archive (Nix remains available there too). Do not restore Debian, Arch
+or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
+`nix`, `appimage` and `macos`; branch release dispatches build artifacts without
+publishing, while version tags create a draft release.

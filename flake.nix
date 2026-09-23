@@ -108,7 +108,7 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # One version, read rather than repeated. scripts/check-version.sh
-        # asserts the copies that cannot be derived (Cargo.lock, PKGBUILD).
+        # asserts the copies that cannot be derived (Cargo.lock).
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
 
         #   ffmpeg   : libavformat/libavcodec, linked in-process by ffmpeg-next
@@ -192,7 +192,7 @@
         # for release tarballs. It is gone. Its stated reason was a much
         # smaller closure, and when that was finally measured it was 300.7 MiB
         # against 303.8 MiB -- about 1%. It also had no consumer left: the
-        # portable tarball is built in a Debian container for its old glibc,
+        # AppImage is built in a Debian container for its old glibc,
         # not from nix. What it did have was a cost, a second full compile of
         # the crate in CI, which is most of why a release sat unpublished for
         # forty minutes.
@@ -235,8 +235,6 @@
             # one entry in it is this command.
             cargo-deny
           ])
-          # Only ever used to build a .deb, which only happens on Linux.
-          ++ pkgs.lib.optional pkgs.stdenv.hostPlatform.isLinux pkgs.cargo-deb
           ++ buildTools ++ runtimeLibs;
 
           LIBCLANG_PATH = libclangPath;

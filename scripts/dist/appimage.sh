@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The AppImage. Run inside the same old-glibc container as portable.sh.
+# The AppImage. Build in Debian Bullseye to retain the supported glibc floor.
 #
 # This is the answer to the one thing that stops a plain Linux binary working:
 # libavcodec's soname differs on every distribution, so the ffmpeg libraries
@@ -30,6 +30,7 @@ bin="${CARGO_TARGET_DIR:-target}/release/staramp"
 scripts/dist/glibc-floor.sh "$bin"
 
 work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 appdir=$work/AppDir
 install -Dm755 "$bin"                        "$appdir/usr/bin/staramp"
 install -Dm644 packaging/staramp.desktop     "$appdir/staramp.desktop"

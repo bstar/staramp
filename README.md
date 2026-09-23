@@ -2,8 +2,6 @@
 
 [![ci](https://github.com/bstar/staramp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/ci.yml)
 [![nix](https://github.com/bstar/staramp/actions/workflows/nix.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/nix.yml)
-[![debian](https://github.com/bstar/staramp/actions/workflows/debian.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/debian.yml)
-[![arch](https://github.com/bstar/staramp/actions/workflows/arch.yml/badge.svg?branch=main)](https://github.com/bstar/staramp/actions/workflows/arch.yml)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A terminal player for a more civilized age.
@@ -15,10 +13,8 @@ the files on your disk, and it plays _all_ of them.
 
 ## Get it
 
-Packages for Linux are on the
-[releases page](https://github.com/bstar/staramp/releases/latest): an
-AppImage that needs nothing installed, a `.deb` for Debian and Ubuntu, a
-portable tarball, and the source the Arch `PKGBUILD` builds.
+Linux releases use Nix and AppImage. Apple Silicon macOS builds are available
+on the [releases page](https://github.com/bstar/staramp/releases/latest).
 
 ```sh
 nix run github:bstar/staramp        # Nix, on Linux or Apple Silicon macOS
@@ -92,7 +88,7 @@ people want first:
 ## Credits
 
 staramp links [FFmpeg](https://ffmpeg.org) for the formats symphonia does not
-decode; it is linked dynamically, and the AppImage and tarball carry Debian's
+decode; it is linked dynamically, and the AppImage carries Debian's
 build beside the binary. See [NOTICE](NOTICE). The visualizer, the text
 effects and the equalizer are staramp's own. Colour schemes come from
 Catppuccin, Dracula, Nord, Rosé Pine, Tokyo Night and others, each MIT.

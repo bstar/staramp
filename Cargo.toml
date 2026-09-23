@@ -214,37 +214,3 @@ opt-level = 2
 # ---------------------------------------------------------------------------
 # .deb packaging (cargo deb)
 # ---------------------------------------------------------------------------
-[package.metadata.deb]
-maintainer = "bstar <bob@dinicolas.com>"
-copyright = "2026, bstar"
-license-file = ["LICENSE", "0"]
-extended-description = """\
-A terminal music player for local libraries, built to feel like Winamp.
-Decodes FLAC, MP3, Vorbis, AAC and ALAC natively, and links libavcodec
-in-process for APE, WavPack, Musepack, DSD, Opus and WMA. Understands CUE
-sheets as first-class virtual tracks, including MPD's playlist URI form."""
-section = "sound"
-priority = "optional"
-assets = [
-    ["target/release/staramp", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/staramp/README.md", "644"],
-    ["NOTICE", "usr/share/doc/staramp/NOTICE", "644"],
-    ["packaging/staramp.desktop", "usr/share/applications/staramp.desktop", "644"],
-    ["packaging/staramp.png", "usr/share/icons/hicolor/256x256/apps/staramp.png", "644"],
-    ["packaging/staramp.svg", "usr/share/icons/hicolor/scalable/apps/staramp.svg", "644"],
-]
-# libavcodec and libavformat carry a version in their package name that differs
-# per Debian release, so pinning them here would break on every other release.
-# $auto resolves the real sonames from the built binary -- which means the .deb
-# has to be built on a Debian-like host. CI does exactly that; building it on
-# NixOS produces a package with no dependency information at all.
-depends = "$auto"
-# The default `unicode` glyph set uses the media control pictographs (U+23EE
-# and neighbours). DejaVu, Debian's usual terminal font, does not carry them;
-# Noto's symbol coverage does. A Recommends rather than a Depends: a player
-# should not refuse to install over a missing glyph, and `[ui] glyphs = "ascii"`
-# needs nothing at all.
-recommends = "fonts-noto-core"
-# `[ui] glyphs = "nerd"` wants a patched font. Debian ships one, but only the
-# user's terminal can actually select it, so this stays a suggestion.
-suggests = "fonts-hack-ttf"

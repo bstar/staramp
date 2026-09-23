@@ -7,11 +7,8 @@ route that matches your machine.
 | Route | For | Needs on the machine |
 | --- | --- | --- |
 | [AppImage](#appimage) | any desktop Linux | ALSA, which every desktop already has |
-| [`.deb`](#debian-and-ubuntu) | Debian 12, Debian 13, Ubuntu 24.04 | nothing else; dependencies are declared |
-| [Arch](#arch) | Arch and derivatives | `makepkg` |
 | [Nix](#nix-and-nixos) | NixOS, or Nix on Linux or macOS | Nix with flakes |
-| [Portable tarball](#portable-tarball) | distributions without a package | `alsa-lib`, `ffmpeg`, `dbus` |
-| [macOS](#macos) | Apple Silicon | Nix, or Homebrew and a Rust toolchain |
+| [macOS](#macos) | Apple Silicon | release archive or Nix; FFmpeg for STAR/AMP |
 | [From source](#from-source) | anything else | a Rust toolchain and a few development packages |
 
 ## Nix and NixOS
@@ -60,53 +57,14 @@ would find nothing to play through.
 > On a distribution that no longer ships libfuse2, run it as
 > `./staramp-*.AppImage --appimage-extract-and-run`.
 
-## Debian and Ubuntu
 
-A `.deb` per Debian generation is attached to each release, because the
-dependency on libavcodec is version specific and one file cannot serve them
-all.
-
-| Package | Release |
-| --- | --- |
-| `staramp_0.1.0-1.bookworm_amd64.deb` | Debian 12 |
-| `staramp_0.1.0-1.trixie_amd64.deb` | Debian 13 |
-| `staramp_0.1.0-1.ubuntu24.04_amd64.deb` | Ubuntu 24.04 |
-
-Or build your own:
-
-```sh
-sudo apt install pkg-config clang libclang-dev libasound2-dev \
-  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
-cargo install cargo-deb && cargo deb
-```
-
-The Debian and Arch packages are both built and then installed from clean
-containers in CI, so the dependency lists here are the ones that actually work
-rather than the ones that ought to.
-
-## Arch
-
-```sh
-cd packaging && makepkg -si
-```
-
-## Portable tarball
-
-For distributions without a package:
-
-```sh
-tar xf staramp-*-x86_64-linux-gnu.tar.gz
-cd staramp-* && ./staramp
-```
-
-- Needs `alsa-lib`, `ffmpeg` and `dbus` present.
-- Built against glibc 2.31, so it runs on Debian 11 and later, Ubuntu 20.04
-  and later, and RHEL 9 and later.
-- There is no fully static musl build. ffmpeg's dependency graph does not
-  cross-compile cleanly under `pkgsStatic`, and the AppImage covers the same
-  ground properly.
 
 ## macOS
+
+Download `staramp-<version>-aarch64-apple-darwin.tar.gz` from the releases page,
+extract it, and run the enclosed `staramp` executable. The archive is unsigned.
+Install its audio runtime with `brew install ffmpeg`.
+
 
 Apple Silicon, either way round. With Nix:
 

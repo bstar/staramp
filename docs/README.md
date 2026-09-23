@@ -25,6 +25,7 @@ grouped by what you are trying to do.
 - [A library on another machine](remote.md): playing over SSH.
 - [Several terminals, one session](sessions.md): how windows share playback.
 - [On the command line](cli.md): scanning, querying, diagnostics, and `staramp ctl`.
+- [Embedding the player](embed.md): the versioned stdio player used by terminal hosts.
 
 ## About the project
 

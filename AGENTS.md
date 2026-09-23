@@ -213,6 +213,17 @@ Those are the steps the `test` and `macos-14` jobs run.
 
 ## Not yet verified
 
+2026-09-23: `embed --stdio` is an independent player that reads standalone
+configuration without modifying it. Its optional STAR/FOLD-specific embed
+profile under `config_dir/embed/` is the sole settings-write exception, and
+only explicit embedded player-style changes save that profile. It dispatches
+before normal startup writes, does not construct the
+full UI App or join its IPC/MPRIS/history services, and sends bounded styled
+cells from the main player renderer. Linux silent-WAV protocol and STAR/FOLD
+PTY checks passed at compact/full sizes, including control and child cleanup;
+audible listening, physical mounted-media playback, and macOS embedding are
+not yet verified. See `docs/embed.md` for the versioned process contract.
+
 - **Remote cue tracks.** The decode thread takes its index through
   `vfs.index_path()` rather than always opening the local one. Reasoned from
   the code -- `ui/app.rs` was already fixed the same way and this call site was

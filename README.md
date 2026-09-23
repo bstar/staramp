@@ -82,6 +82,7 @@ people want first:
 - [Album art](docs/album-art.md)
 - [Listening history, scrobbling and Discord](docs/listening.md)
 - [A library on another machine](docs/remote.md)
+- [Embedding the player](docs/embed.md)
 - [If something is wrong](docs/troubleshooting.md)
 
 [CONTRIBUTING.md](CONTRIBUTING.md) is for building and changing it,

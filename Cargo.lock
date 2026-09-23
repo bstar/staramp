@@ -3264,6 +3264,7 @@ dependencies = [
  "encoding_rs",
  "ffmpeg-next",
  "ignore",
+ "libc",
  "lofty",
  "md5",
  "mpris-server",

@@ -12,7 +12,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use anyhow::Result;
-use arc_swap::ArcSwap;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 
 use super::decode::Decoder;
@@ -49,6 +49,12 @@ pub enum PlayState {
 #[derive(Debug)]
 pub enum Command {
     PlayIndex(usize),
+    /// Install a new queue and select its first track on the decode thread.
+    /// Unlike `set_queue_tracks` + `PlayIndex`, auto-advance cannot interleave.
+    ReplaceQueueAndPlay {
+        tracks: Vec<QueueItem>,
+        index: usize,
+    },
     Pause,
     Resume,
     TogglePause,
@@ -80,6 +86,8 @@ pub struct PlayerState {
     pub bit_perfect: AtomicBool,
     /// Bumped whenever the current track changes, so the UI can refresh lazily.
     pub track_revision: AtomicU64,
+    /// Last playback failure, for frontends that cannot read our log file.
+    pub last_error: ArcSwapOption<String>,
 }
 
 impl PlayerState {
@@ -97,6 +105,7 @@ impl PlayerState {
             paused: AtomicBool::new(false),
             bit_perfect: AtomicBool::new(false),
             track_revision: AtomicU64::new(0),
+            last_error: ArcSwapOption::empty(),
         }
     }
 
@@ -182,6 +191,24 @@ impl Player {
     }
 
     pub fn new(vfs: Arc<Vfs>, fixed_rate: Option<u32>, warm_budget: Option<u64>) -> Result<Self> {
+        Self::new_with_index(vfs, fixed_rate, warm_budget, true)
+    }
+
+    /// A file-manager-owned player which never consults STAR/AMP's library DB.
+    pub fn new_embedded(
+        vfs: Arc<Vfs>,
+        fixed_rate: Option<u32>,
+        warm_budget: Option<u64>,
+    ) -> Result<Self> {
+        Self::new_with_index(vfs, fixed_rate, warm_budget, false)
+    }
+
+    fn new_with_index(
+        vfs: Arc<Vfs>,
+        fixed_rate: Option<u32>,
+        warm_budget: Option<u64>,
+        read_index: bool,
+    ) -> Result<Self> {
         let for_handle = Arc::clone(&vfs);
         let (tx, rx) = bounded(64);
         let state = Arc::new(PlayerState::new());
@@ -216,6 +243,7 @@ impl Player {
                         crossfade,
                         fixed_rate,
                         warm_budget,
+                        read_index,
                     );
                 })?
         };
@@ -239,6 +267,13 @@ impl Player {
         // A full command queue means the worker is wedged; dropping a keypress
         // beats blocking the UI thread on it.
         let _ = self.cmds.try_send(cmd);
+    }
+
+    /// Embedded clients need to know when a transport command was not queued.
+    pub fn send_checked(&self, cmd: Command) -> Result<()> {
+        self.cmds
+            .try_send(cmd)
+            .map_err(|e| anyhow::anyhow!("playback command unavailable: {e}"))
     }
 
     pub fn set_volume(&self, v: f32) {
@@ -523,6 +558,7 @@ fn run(
     // How many bytes of a paused track may be pulled into the page cache,
     // or `None` to leave the disk alone. See [`super::warm`].
     warm_budget: Option<u64>,
+    read_index: bool,
 ) {
     // The decode thread's own read-only handle, as the art worker has its own
     // and for the same reason: a handle already open turns a vanished index
@@ -532,9 +568,9 @@ fn run(
     // Through the vfs, not `paths::index_file`: for a remote library the local
     // index describes a different library entirely, and cue track boundaries
     // read out of it would be wrong where they were not simply missing.
-    let index = vfs
-        .index_path()
-        .ok()
+    let index = read_index
+        .then(|| vfs.index_path().ok())
+        .flatten()
         .and_then(|p| crate::library::db::Db::open_readonly(&p).ok());
 
     // The URI whose successor has already been warmed, so it happens once per
@@ -585,6 +621,43 @@ fn run(
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
                     state.position_frames.store(0, Ordering::Relaxed);
+                    state.last_error.store(None);
+                }
+                Command::ReplaceQueueAndPlay {
+                    tracks,
+                    index: selected,
+                } => {
+                    album_preload = None;
+                    fade = Crossfade::Idle;
+                    decoder = None;
+                    stream = None;
+                    state.playing.store(false, Ordering::Relaxed);
+                    state.paused.store(false, Ordering::Relaxed);
+                    state.position_frames.store(0, Ordering::Relaxed);
+                    state.last_error.store(None);
+                    let track = {
+                        let mut q = queue.lock().unwrap();
+                        q.set_tracks(tracks);
+                        q.jump_to(selected)
+                            .and_then(|_| q.current().map(|t| (t.uri.clone(), t.rg)))
+                    };
+                    if let Some((uri, gain)) = track {
+                        rg_scalar = level(&gain);
+                        open_track(
+                            &vfs,
+                            index.as_ref(),
+                            &uri,
+                            &mut decoder,
+                            &mut stream,
+                            &state,
+                            &eq,
+                            &mut eq_state,
+                            &tap,
+                            &mut cue,
+                            &mut backing,
+                            fixed_rate,
+                        );
+                    }
                 }
                 Command::Pause => {
                     if let Some(s) = &stream {
@@ -772,7 +845,7 @@ fn run(
                     let lead =
                         (CROSSFADE_SECS + WARM_LEAD_SECS).saturating_mul(s.sample_rate as u64);
                     if fade_frames > 0 && d.position().saturating_add(lead) >= total {
-                        start_crossfade(&vfs, &queue, s, &level, fixed_rate, &mut fade);
+                        start_crossfade(&vfs, &queue, s, &level, fixed_rate, read_index, &mut fade);
                     }
                 }
                 (true, Some(total), Crossfade::Opening { .. } | Crossfade::Ready { .. }) => {
@@ -1048,6 +1121,7 @@ fn run(
                                     s,
                                     cue.as_ref(),
                                     fixed_rate,
+                                    read_index,
                                     &mut album_preload,
                                 );
                             }
@@ -1056,7 +1130,8 @@ fn run(
                         Err(e) => {
                             tracing::error!("decode error: {e}");
                             decoder = None;
-                            state.playing.store(false, Ordering::Relaxed);
+                            stream = None;
+                            fail_track(&state, format!("decode error: {e}"));
                         }
                     }
                 }
@@ -1080,6 +1155,7 @@ fn maybe_prepare_album_successor(
     stream: &Stream,
     cue: Option<&source::CueAlbum>,
     fixed_rate: Option<u32>,
+    read_index: bool,
     preload: &mut Option<AlbumPreload>,
 ) {
     poll_album_preload(preload);
@@ -1142,7 +1218,8 @@ fn maybe_prepare_album_successor(
     let spawned = thread::Builder::new()
         .name("staramp-album-preload".into())
         .spawn(move || {
-            let prepared = prepare_album_track(&worker_vfs, &worker_to, target, fixed_rate);
+            let prepared =
+                prepare_album_track(&worker_vfs, &worker_to, target, fixed_rate, read_index);
             let _ = tx.send(prepared);
         });
     match spawned {
@@ -1158,10 +1235,11 @@ fn prepare_album_track(
     uri: &TrackUri,
     target: super::decode::StreamSpec,
     _fixed_rate: Option<u32>,
+    read_index: bool,
 ) -> Result<Option<PreparedTrack>> {
-    let index = vfs
-        .index_path()
-        .ok()
+    let index = read_index
+        .then(|| vfs.index_path().ok())
+        .flatten()
         .and_then(|path| crate::library::db::Db::open_readonly(&path).ok());
     let opened = source::open(vfs, index.as_ref(), uri)?;
     let source::OpenedTrack {
@@ -1267,6 +1345,7 @@ fn start_crossfade(
     stream: &Stream,
     level: &dyn Fn(&ReplayGain) -> f32,
     fixed_rate: Option<u32>,
+    read_index: bool,
     fade: &mut Crossfade,
 ) {
     let (from, to, gain) = {
@@ -1293,7 +1372,8 @@ fn start_crossfade(
     let spawned = thread::Builder::new()
         .name("staramp-crossfade".into())
         .spawn(move || {
-            let prepared = prepare_album_track(&worker_vfs, &worker_to, target, fixed_rate);
+            let prepared =
+                prepare_album_track(&worker_vfs, &worker_to, target, fixed_rate, read_index);
             let _ = tx.send(prepared);
         });
     match spawned {
@@ -1549,7 +1629,9 @@ fn open_track(
         Ok(o) => o,
         Err(e) => {
             tracing::warn!("cannot open {uri}: {e}");
+            fail_track(state, format!("cannot open {uri}: {e}"));
             *decoder = None;
+            *stream = None;
             *cue = None;
             *backing = None;
             return;
@@ -1571,7 +1653,9 @@ fn open_track(
         Ok(p) => p,
         Err(e) => {
             tracing::error!("cannot choose an output format: {e}");
+            fail_track(state, format!("cannot choose an output format: {e}"));
             *decoder = None;
+            *stream = None;
             return;
         }
     };
@@ -1592,7 +1676,9 @@ fn open_track(
             Ok(a) => dec = Box::new(a),
             Err(e) => {
                 tracing::error!("cannot adapt the stream to the device: {e}");
+                fail_track(state, format!("cannot adapt the stream to the device: {e}"));
                 *decoder = None;
+                *stream = None;
                 return;
             }
         }
@@ -1640,7 +1726,9 @@ fn open_track(
             }
             Err(e) => {
                 tracing::error!("cannot open output: {e}");
+                fail_track(state, format!("cannot open output: {e}"));
                 *decoder = None;
+                *stream = None;
                 return;
             }
         }
@@ -1674,6 +1762,7 @@ fn open_track(
     state.position_frames.store(0, Ordering::Relaxed);
     state.playing.store(true, Ordering::Relaxed);
     state.paused.store(false, Ordering::Relaxed);
+    state.last_error.store(None);
     state.track_revision.fetch_add(1, Ordering::Relaxed);
 
     if let Some(s) = stream.as_ref() {
@@ -1686,6 +1775,20 @@ fn open_track(
     }
 
     *decoder = Some(dec);
+}
+
+fn fail_track(state: &PlayerState, message: String) {
+    state.playing.store(false, Ordering::Relaxed);
+    state.paused.store(false, Ordering::Relaxed);
+    state.position_frames.store(0, Ordering::Relaxed);
+    state.duration_frames.store(0, Ordering::Relaxed);
+    state.sample_rate.store(0, Ordering::Relaxed);
+    state.channels.store(0, Ordering::Relaxed);
+    state.bit_depth.store(0, Ordering::Relaxed);
+    state.bitrate_kbps.store(0, Ordering::Relaxed);
+    state.bit_perfect.store(false, Ordering::Relaxed);
+    state.codec.store(Arc::new(String::new()));
+    state.last_error.store(Some(Arc::new(message)));
 }
 
 /// Does moving to a track with this spec require tearing down the output?
@@ -1711,6 +1814,29 @@ pub fn needs_rebuild(
 mod tests {
     use super::*;
     use crate::audio::decode::StreamSpec;
+
+    #[test]
+    fn playback_failure_clears_stale_state_and_exposes_error() {
+        let state = PlayerState::new();
+        state.playing.store(true, Ordering::Relaxed);
+        state.paused.store(true, Ordering::Relaxed);
+        state.position_frames.store(99, Ordering::Relaxed);
+        state.duration_frames.store(100, Ordering::Relaxed);
+        fail_track(&state, "USB volume disappeared".into());
+        assert_eq!(state.state(), PlayState::Stopped);
+        assert_eq!(state.position_frames.load(Ordering::Relaxed), 0);
+        assert_eq!(state.duration_frames.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            state.last_error.load_full().as_deref().map(String::as_str),
+            Some("USB volume disappeared")
+        );
+    }
+
+    #[test]
+    fn checked_send_reports_a_disconnected_worker() {
+        let player = Player::detached();
+        assert!(player.send_checked(Command::Pause).is_err());
+    }
 
     struct NumberedDecoder {
         samples: Vec<f32>,

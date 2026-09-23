@@ -2931,6 +2931,10 @@ impl App {
             Some(m) => m.send(remote),
             None => self.player.send(match c {
                 Command::PlayIndex(i) => Command::PlayIndex(*i),
+                Command::ReplaceQueueAndPlay { tracks, index } => Command::ReplaceQueueAndPlay {
+                    tracks: tracks.clone(),
+                    index: *index,
+                },
                 Command::Pause => Command::Pause,
                 Command::Resume => Command::Resume,
                 Command::TogglePause => Command::TogglePause,

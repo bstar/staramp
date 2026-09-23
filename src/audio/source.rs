@@ -14,7 +14,7 @@ use crate::cue::{
 };
 use crate::library::db::{CueAlbumRows, Db};
 use crate::playlist::uri::TrackUri;
-use crate::vfs::Vfs;
+use crate::vfs::{Media, Vfs};
 
 /// What was opened, for display.
 pub struct OpenedTrack {
@@ -104,6 +104,16 @@ pub fn open(vfs: &Vfs, index: Option<&Db>, uri: &TrackUri) -> Result<OpenedTrack
     match uri {
         TrackUri::File { rel_path } => {
             let media = vfs.media(rel_path)?;
+            // A stale file-manager listing can point at a path replaced by a
+            // FIFO. Check immediately before decoding: opening a FIFO by
+            // filename would block the playback worker indefinitely. One
+            // stat per opened track also avoids re-statting an entire mounted
+            // folder queue before its first song can start.
+            if let Media::Local(path) = &media {
+                let metadata = std::fs::metadata(path)
+                    .with_context(|| format!("checking {}", path.display()))?;
+                anyhow::ensure!(metadata.is_file(), "not a regular file: {}", path.display());
+            }
             let backing_path = vfs
                 .local_path(rel_path)
                 .unwrap_or_else(|| PathBuf::from(rel_path));

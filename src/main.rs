@@ -5,6 +5,7 @@ mod audio;
 mod config;
 mod cue;
 mod discord;
+mod embed;
 mod fx;
 mod ipc;
 mod journey;
@@ -101,6 +102,12 @@ enum ScrobbleCmd {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Run a standalone player using the versioned JSON-lines embed protocol.
+    #[command(hide = true)]
+    Embed {
+        #[arg(long)]
+        stdio: bool,
+    },
     /// Decode a file to WAV. Diagnostic: proves sample accuracy without
     /// involving any audio hardware.
     Decode {
@@ -248,6 +255,13 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // The embedded player has no configuration, history, session, log, or
+    // control socket to initialise. Keep it before all startup writes.
+    if let Some(Command::Embed { stdio }) = &cli.command {
+        anyhow::ensure!(*stdio, "embed requires --stdio");
+        return embed::run_stdio();
+    }
+
     // Before anything creates a file under them. What staramp keeps is the
     // shape of a music collection and a record of what was listened to, which
     // is nobody else's business on a shared machine.
@@ -270,6 +284,7 @@ fn main() -> Result<()> {
     let _guard = starkit::logging::init(&paths::PATHS, cli.verbose)?;
 
     match cli.command {
+        Some(Command::Embed { .. }) => unreachable!("handled before startup"),
         Some(Command::Decode {
             input,
             output,

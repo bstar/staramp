@@ -545,7 +545,12 @@ mod tests {
                 ),
                 Some(target)
             );
-            assert!(image.rgba.chunks_exact(4).all(|pixel| pixel[3] == 255));
+            assert!(image
+                .rgba
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| pixel[3] == 255));
         }
     }
 

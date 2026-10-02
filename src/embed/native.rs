@@ -4,6 +4,7 @@ use super::{
     GraphicsConfig, Palette,
 };
 use crate::audio::player::PlayState;
+use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
 use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
@@ -200,21 +201,33 @@ pub fn surface(
     } else {
         0.
     };
-    s.fill(
-        R::new(seek.x, seek.y + seek.height / 2, seek.width, 4.min(line)),
-        &border,
-        2,
-    );
-    s.fill(
-        R::new(
-            seek.x,
-            seek.y + seek.height / 2,
-            (f64::from(seek.width) * fraction) as u16,
-            4.min(line),
-        ),
-        &accent,
-        2,
-    );
+    // Keep the same seek hit region for every presentation. Styles change
+    // native stroke weight, never the position or size of the pointer target.
+    let thickness = if state.seek_style == SeekStyle::THIN {
+        2
+    } else if state.seek_style == SeekStyle::BLOCKS {
+        line.saturating_sub(4).max(1)
+    } else {
+        4
+    }
+    .min(line);
+    let played = (f64::from(seek.width) * fraction) as u16;
+    if state.seek_style == SeekStyle::BAR && line >= 6 {
+        for offset in [0, 4] {
+            let y = seek.y + (line - 6) / 2 + offset;
+            s.fill(R::new(seek.x, y, seek.width, 2), &border, 1);
+            s.fill(R::new(seek.x, y, played, 2), &accent, 1);
+        }
+    } else {
+        let y = seek.y + (line - thickness) / 2;
+        let radius = if state.seek_style == SeekStyle::BLOCKS {
+            0
+        } else {
+            2
+        };
+        s.fill(R::new(seek.x, y, seek.width, thickness), &border, radius);
+        s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
+    }
     s.hits.push(HitRegion {
         rect: seek,
         action: "seek".into(),

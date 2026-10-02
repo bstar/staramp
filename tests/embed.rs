@@ -410,6 +410,11 @@ fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
     surface.validate().unwrap();
     assert_eq!(surface.width, 640);
     assert!(surface.hits.iter().any(|h| h.action == "seek"));
+    child.send(json!({"type":"control", "action":"next_seek_style"}));
+    let styled = child.until("frame");
+    assert_eq!(styled["generation"], 20);
+    assert_ne!(styled["surface"]["nodes"], frame["surface"]["nodes"]);
+    assert_eq!(styled["surface"]["hits"], frame["surface"]["hits"]);
     child.send(configure(21, 40, false, true));
     // Frames already in flight can precede configure. No hidden generation may be emitted.
     let deadline = Instant::now() + Duration::from_millis(200);

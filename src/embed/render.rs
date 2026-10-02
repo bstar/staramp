@@ -460,6 +460,34 @@ mod tests {
     }
 
     #[test]
+    fn native_seek_styles_change_pixels_without_moving_hit_targets() {
+        for (cw, ch) in [(6, 12), (8, 16), (16, 32)] {
+            let mut surfaces = Vec::new();
+            for style in SeekStyle::ALL {
+                let mut state = playing();
+                state.seek_style = style;
+                let surface = crate::embed::native::surface(
+                    80,
+                    10,
+                    GraphicsConfig {
+                        cell_width: cw,
+                        cell_height: ch,
+                    },
+                    &palette(),
+                    &state,
+                );
+                surface.validate().unwrap();
+                for previous in &surfaces {
+                    let previous: &starkit::native_surface::Surface = previous;
+                    assert_ne!(surface.nodes, previous.nodes);
+                    assert_eq!(surface.hits, previous.hits);
+                }
+                surfaces.push(surface);
+            }
+        }
+    }
+
+    #[test]
     fn native_visualizer_modes_fit_extreme_embed_sizes() {
         for mode in VisMode::all() {
             for (width, height, cw, ch) in [(1, 1, 1, 1), (128, 20, 32, 64), (80, 10, 8, 16)] {

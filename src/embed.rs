@@ -4,6 +4,7 @@
 //! normal UI App, starts a control socket, records activity, or saves a session.
 
 mod metadata;
+mod native;
 mod render;
 mod styles;
 
@@ -38,7 +39,7 @@ const MAX_PATHS: usize = 2048;
 const MAX_PATH_LEN: usize = 8192;
 const MAX_WIDTH: u16 = 240;
 const MAX_HEIGHT: u16 = 20;
-const CAPABILITIES: &[&str] = &["transport_images", "player_styles"];
+const CAPABILITIES: &[&str] = &["transport_images", "player_styles", "native_surface_v1"];
 
 // These are candidates the decoder can attempt, not a claim that every file
 // with this suffix is valid audio. Keep the host's picker broad enough for
@@ -98,6 +99,10 @@ enum Request {
         graphics: Option<GraphicsConfig>,
         #[serde(default)]
         profile: Option<String>,
+        #[serde(default)]
+        native_surface: bool,
+        #[serde(default = "visible_default")]
+        visible: bool,
     },
     Play {
         generation: u64,
@@ -131,6 +136,8 @@ enum Response<'a> {
         height: u16,
         cells: Vec<Cell>,
         images: Vec<TransportImage>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        surface: Option<starkit::native_surface::Surface>,
     },
     Status {
         playing: bool,
@@ -160,6 +167,8 @@ struct View {
     focused: bool,
     palette: Palette,
     graphics: Option<GraphicsConfig>,
+    native_surface: bool,
+    visible: bool,
 }
 
 struct RenderLook<'a> {
@@ -167,6 +176,10 @@ struct RenderLook<'a> {
     wave: &'a [f32],
     seek_phase: f32,
     cfg: &'a Config,
+}
+
+fn visible_default() -> bool {
+    true
 }
 
 pub fn run_stdio() -> Result<()> {
@@ -257,9 +270,16 @@ pub fn run_stdio() -> Result<()> {
     let mut metadata_key: Option<(String, u64)> = None;
     let mut current_metadata: Option<MetadataResult> = None;
     let mut image_cache = render::TransportImageCache::default();
+    let mut last_native: Option<(u64, starkit::native_surface::Surface)> = None;
 
     loop {
-        match rx.recv_timeout(FRAME_TIME) {
+        match rx.recv_timeout(if view.as_ref().is_some_and(|v| !v.visible) {
+            Duration::from_millis(250)
+        } else if std::env::var_os("SSH_CONNECTION").is_some() {
+            Duration::from_millis(67)
+        } else {
+            FRAME_TIME
+        }) {
             Ok(Input::Request(Request::Shutdown) | Input::Eof) => break,
             Ok(Input::Request(request)) => {
                 if let Err(e) =
@@ -293,35 +313,37 @@ pub fn run_stdio() -> Result<()> {
         let now = Instant::now();
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
-        let tapped = player.tap.read(&mut tap_buf);
-        let samples = if tapped { tap_buf.as_slice() } else { &[] };
-        let sample_rate = player.state.sample_rate.load(Relaxed).max(8000);
-        let rate = sample_rate as f32;
-        if last_sample_rate != Some(sample_rate) {
-            spectrum.set_rate(rate);
-            fluid.set_rate(rate);
-            last_sample_rate = Some(sample_rate);
-        }
-        if styles.vis.uses_fluid() {
-            // Native PlayerView gives the first 24 body columns to the clock.
-            let width = view.as_ref().map_or(64, |v| v.width).saturating_sub(24);
-            let count = crate::ui::panels::visualizer::fluid_bar_count(width).max(1);
-            fluid.set_bands(count, rate);
-            fluid.analyze(samples, dt);
-            meters.update(fluid.bands(), dt);
-        } else {
-            spectrum.analyze(samples, dt);
-            meters.update(spectrum.bands(), dt);
-        }
-        if styles.vis.needs_waveform() {
-            wave.fill(0.0);
-            let count = samples.len().min(wave.len());
-            wave[..count].copy_from_slice(&samples[samples.len() - count..]);
-        }
-        if cfg.fx.active() && player.state.state() == PlayState::Playing {
-            seek_phase = (seek_phase + dt / 3.5).fract();
-        } else {
-            seek_phase = 0.0;
+        if view.as_ref().is_some_and(|v| v.visible) {
+            let tapped = player.tap.read(&mut tap_buf);
+            let samples = if tapped { tap_buf.as_slice() } else { &[] };
+            let sample_rate = player.state.sample_rate.load(Relaxed).max(8000);
+            let rate = sample_rate as f32;
+            if last_sample_rate != Some(sample_rate) {
+                spectrum.set_rate(rate);
+                fluid.set_rate(rate);
+                last_sample_rate = Some(sample_rate);
+            }
+            if styles.vis.uses_fluid() {
+                // Native PlayerView gives the first 24 body columns to the clock.
+                let width = view.as_ref().map_or(64, |v| v.width).saturating_sub(24);
+                let count = crate::ui::panels::visualizer::fluid_bar_count(width).max(1);
+                fluid.set_bands(count, rate);
+                fluid.analyze(samples, dt);
+                meters.update(fluid.bands(), dt);
+            } else {
+                spectrum.analyze(samples, dt);
+                meters.update(spectrum.bands(), dt);
+            }
+            if styles.vis.needs_waveform() {
+                wave.fill(0.0);
+                let count = samples.len().min(wave.len());
+                wave[..count].copy_from_slice(&samples[samples.len() - count..]);
+            }
+            if cfg.fx.active() && player.state.state() == PlayState::Playing {
+                seek_phase = (seek_phase + dt / 3.5).fract();
+            } else {
+                seek_phase = 0.0;
+            }
         }
 
         let current_error = player.state.last_error.load_full().map(|v| (*v).clone());
@@ -374,7 +396,7 @@ pub fn run_stdio() -> Result<()> {
             last_status = Some(status);
         }
 
-        if let Some(v) = &view {
+        if let Some(v) = view.as_ref().filter(|v| v.visible) {
             let state = render_state(
                 &player,
                 v.focused,
@@ -387,16 +409,37 @@ pub fn run_stdio() -> Result<()> {
                     cfg: &cfg,
                 },
             );
-            let cells = render::render_frame(v.width, v.height, &v.palette, &state);
-            if cells.len() != usize::from(v.width) * usize::from(v.height) {
+            let cells = if v.native_surface && v.graphics.is_some() {
+                vec![]
+            } else {
+                render::render_frame(v.width, v.height, &v.palette, &state)
+            };
+            if !v.native_surface && cells.len() != usize::from(v.width) * usize::from(v.height) {
                 send_error(&mut output, "renderer returned the wrong cell count".into())?;
                 continue;
             }
-            let images = v.graphics.map_or_else(Vec::new, |graphics| {
-                image_cache
-                    .images(v.width, v.height, &v.palette, &state, graphics)
-                    .to_vec()
-            });
+            let surface = v
+                .graphics
+                .filter(|_| v.native_surface)
+                .map(|g| native::surface(v.width, v.height, g, &v.palette, &state));
+            if let Some(surface) = &surface {
+                if last_native.as_ref().is_some_and(|(generation, previous)| {
+                    *generation == v.generation && previous == surface
+                }) {
+                    continue;
+                }
+                last_native = Some((v.generation, surface.clone()));
+            } else {
+                last_native = None;
+            }
+            let images =
+                v.graphics
+                    .filter(|_| !v.native_surface)
+                    .map_or_else(Vec::new, |graphics| {
+                        image_cache
+                            .images(v.width, v.height, &v.palette, &state, graphics)
+                            .to_vec()
+                    });
             write_response(
                 &mut output,
                 &Response::Frame {
@@ -405,6 +448,7 @@ pub fn run_stdio() -> Result<()> {
                     height: v.height,
                     cells,
                     images,
+                    surface,
                 },
             )?;
         }
@@ -431,11 +475,22 @@ fn handle_request(
             theme,
             graphics,
             profile,
+            native_surface,
+            visible,
         } => {
             if width == 0 || height == 0 || width > MAX_WIDTH || height > MAX_HEIGHT {
                 bail!("invalid panel size {width}x{height}");
             }
             if let Some(graphics) = graphics {
+                if native_surface
+                    && u32::from(width)
+                        * u32::from(graphics.cell_width)
+                        * u32::from(height)
+                        * u32::from(graphics.cell_height)
+                        > 8_000_000
+                {
+                    bail!("native panel exceeds pixel limit");
+                }
                 if graphics.cell_width == 0
                     || graphics.cell_height == 0
                     || graphics.cell_width > 64
@@ -454,6 +509,8 @@ fn handle_request(
                 focused,
                 palette: theme,
                 graphics,
+                native_surface,
+                visible,
             });
         }
         Request::Play {
@@ -515,7 +572,18 @@ fn handle_request(
                     cfg: &default_cfg,
                 },
             );
-            if let Some(target) = render::hit_test(v.width, v.height, x, y, &state) {
+            let target = if let Some(g) = v.graphics.filter(|_| v.native_surface) {
+                let surface = native::surface(v.width, v.height, g, &v.palette, &state);
+                native::hit_test(
+                    &surface,
+                    x.saturating_mul(g.cell_width) + g.cell_width / 2,
+                    y.saturating_mul(g.cell_height) + g.cell_height / 2,
+                    state.duration,
+                )
+            } else {
+                render::hit_test(v.width, v.height, x, y, &state)
+            };
+            if let Some(target) = target {
                 if matches!(button.as_str(), "scroll_up" | "scroll_down") {
                     if target == HitTarget::Visualizer {
                         let notice = if button == "scroll_up" {

@@ -129,3 +129,18 @@ Graphics cells must be 1–64 pixels wide and 1–128 pixels high. An image is
 capped at 65,536 pixels, and all RGBA images at 262,144 bytes per frame. When
 a terminal cell size exceeds an image budget, the image is omitted and its
 text control remains usable.
+
+### Native surfaces (experimental)
+
+A helper advertising `native_surface_v1` accepts `native_surface: true` alongside
+`graphics` in Configure. Frames then contain an empty `cells` array and a
+`surface` using STAR/KIT's bounded pixel primitives. The surface owns its title,
+clock, spectrum, transport, seek and volume layout. STAR/FOLD only places it.
+Pointer coordinates remain terminal cells: STAR/AMP maps each cell's center to
+its own surface hit regions. This does not claim pixel-precise terminal input.
+
+`visible: false` suspends frame publication while playback/status continue.
+Resizing, theme and focus updates reuse Configure and its generation guard.
+Local frame cadence is 30 FPS; an SSH environment uses 15 FPS. Hosts coalesce
+frames into the existing single latest-frame slot. Omitting the extension keeps
+the original cell/transport-image protocol. No web engine is involved.

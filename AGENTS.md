@@ -249,3 +249,11 @@ Silicon archive (Nix remains available there too). Do not restore Debian, Arch
 or standalone Linux tarball build jobs. `scripts/build-dist.sh` accepts only
 `nix`, `appimage` and `macos`; branch release dispatches build artifacts without
 publishing, while version tags create a draft release.
+
+## Native graphical embed experiment
+
+`experiment/native-embed` owns the Rust native player in `src/embed/native.rs`.
+It consumes the player's render state and returns bounded STAR/KIT primitives
+and hit regions through negotiated `native_surface_v1`. Keep transport, seeking,
+volume and visualizer layout here; FOLD is only an embedding host. The ordinary
+cell embed protocol remains the compatibility path. No browser renderer.

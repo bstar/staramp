@@ -393,6 +393,15 @@ fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
             "native_surface": native, "visible": visible
         })
     };
+    child.send(
+        json!({"type":"configure", "generation":19, "width":240, "height":20,
+        "focused":true, "theme":theme(), "native_surface":true,
+        "graphics":{"cell_width":65535,"cell_height":65535}}),
+    );
+    assert!(child.until("error")["message"]
+        .as_str()
+        .unwrap()
+        .contains("pixel limit"));
     child.send(configure(20, 80, true, true));
     let frame = child.until("frame");
     assert!(frame["cells"].as_array().unwrap().is_empty());

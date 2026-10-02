@@ -482,12 +482,12 @@ fn handle_request(
                 bail!("invalid panel size {width}x{height}");
             }
             if let Some(graphics) = graphics {
+                let pixel_width = u64::from(width) * u64::from(graphics.cell_width);
+                let pixel_height = u64::from(height) * u64::from(graphics.cell_height);
                 if native_surface
-                    && u32::from(width)
-                        * u32::from(graphics.cell_width)
-                        * u32::from(height)
-                        * u32::from(graphics.cell_height)
-                        > 8_000_000
+                    && (pixel_width > 8192
+                        || pixel_height > 2048
+                        || pixel_width * pixel_height > 8_000_000)
                 {
                     bail!("native panel exceeds pixel limit");
                 }

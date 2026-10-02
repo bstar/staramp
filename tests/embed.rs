@@ -377,3 +377,66 @@ fn pointer_style_targets_match_visible_native_rows() {
     child.send(json!({"type":"shutdown"}));
     child.finish_profile();
 }
+
+#[test]
+fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
+    let mut child = Session::start();
+    let hello = child.until("hello");
+    assert!(hello["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("native_surface_v1")));
+    let configure = |generation, width, visible, native| {
+        json!({
+            "type": "configure", "generation": generation, "width": width, "height": 10,
+            "focused": true, "theme": theme(), "graphics": {"cell_width": 8, "cell_height": 16},
+            "native_surface": native, "visible": visible
+        })
+    };
+    child.send(
+        json!({"type":"configure", "generation":19, "width":240, "height":20,
+        "focused":true, "theme":theme(), "native_surface":true,
+        "graphics":{"cell_width":65535,"cell_height":65535}}),
+    );
+    assert!(child.until("error")["message"]
+        .as_str()
+        .unwrap()
+        .contains("pixel limit"));
+    child.send(configure(20, 80, true, true));
+    let frame = child.until("frame");
+    assert!(frame["cells"].as_array().unwrap().is_empty());
+    let surface: starkit::native_surface::Surface =
+        serde_json::from_value(frame["surface"].clone()).unwrap();
+    surface.validate().unwrap();
+    assert_eq!(surface.width, 640);
+    assert!(surface.hits.iter().any(|h| h.action == "seek"));
+    child.send(json!({"type":"control", "action":"next_seek_style"}));
+    let styled = child.until("frame");
+    assert_eq!(styled["generation"], 20);
+    assert_ne!(styled["surface"]["nodes"], frame["surface"]["nodes"]);
+    assert_eq!(styled["surface"]["hits"], frame["surface"]["hits"]);
+    child.send(configure(21, 40, false, true));
+    // Frames already in flight can precede configure. No hidden generation may be emitted.
+    let deadline = Instant::now() + Duration::from_millis(200);
+    while Instant::now() < deadline {
+        if let Ok(message) = child.messages.recv_timeout(Duration::from_millis(30)) {
+            assert_ne!(message["generation"], 21);
+        }
+    }
+    child.send(configure(22, 40, true, true));
+    let frame = child.until("frame");
+    assert_eq!(frame["generation"], 22);
+    assert_eq!(frame["surface"]["width"], 320);
+    child.send(configure(23, 40, true, false));
+    loop {
+        let frame = child.until("frame");
+        if frame["generation"] != 23 {
+            continue;
+        }
+        assert!(frame.get("surface").is_none());
+        assert_eq!(frame["cells"].as_array().unwrap().len(), 400);
+        break;
+    }
+    child.send(json!({"type": "shutdown"}));
+    child.finish();
+}

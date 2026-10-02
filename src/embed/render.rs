@@ -460,6 +460,97 @@ mod tests {
     }
 
     #[test]
+    fn native_seek_styles_change_pixels_without_moving_hit_targets() {
+        for (cw, ch) in [(6, 12), (8, 16), (16, 32)] {
+            let mut surfaces = Vec::new();
+            for style in SeekStyle::ALL {
+                let mut state = playing();
+                state.seek_style = style;
+                let surface = crate::embed::native::surface(
+                    80,
+                    10,
+                    GraphicsConfig {
+                        cell_width: cw,
+                        cell_height: ch,
+                    },
+                    &palette(),
+                    &state,
+                );
+                surface.validate().unwrap();
+                for previous in &surfaces {
+                    let previous: &starkit::native_surface::Surface = previous;
+                    assert_ne!(surface.nodes, previous.nodes);
+                    assert_eq!(surface.hits, previous.hits);
+                }
+                surfaces.push(surface);
+            }
+        }
+    }
+
+    #[test]
+    fn native_visualizer_modes_fit_extreme_embed_sizes() {
+        for mode in VisMode::all() {
+            for (width, height, cw, ch) in [(1, 1, 1, 1), (128, 20, 32, 64), (80, 10, 8, 16)] {
+                let mut state = playing();
+                state.vis_mode = *mode;
+                state.bands = vec![1.; 64];
+                let surface = crate::embed::native::surface(
+                    width,
+                    height,
+                    GraphicsConfig {
+                        cell_width: cw,
+                        cell_height: ch,
+                    },
+                    &palette(),
+                    &state,
+                );
+                surface.validate().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn native_surface_is_bounded_and_controls_survive_resize_and_theme() {
+        use crate::embed::native;
+        for (width, height, cw, ch) in [(30, 5, 6, 12), (80, 10, 8, 16), (180, 14, 12, 24)] {
+            for bg in [[20, 20, 24], [245, 245, 250]] {
+                let mut palette = palette();
+                palette.bg = bg;
+                let state = playing();
+                let surface = native::surface(
+                    width,
+                    height,
+                    GraphicsConfig {
+                        cell_width: cw,
+                        cell_height: ch,
+                    },
+                    &palette,
+                    &state,
+                );
+                surface.validate().unwrap();
+                for hit in &surface.hits {
+                    let x = hit.rect.x + hit.rect.width / 2;
+                    let y = hit.rect.y + hit.rect.height / 2;
+                    let target = native::hit_test(&surface, x, y, state.duration);
+                    assert!(target.is_some(), "{}", hit.action);
+                    if hit.action == "seek" {
+                        assert!(matches!(target, Some(HitTarget::Seek(t)) if (t - 60.).abs() < 2.));
+                    }
+                    if hit.action == "volume" {
+                        assert!(
+                            matches!(target, Some(HitTarget::Volume(v)) if (v - 0.5).abs() < 0.02)
+                        );
+                    }
+                }
+                assert!(
+                    native::hit_test(&surface, surface.width, surface.height, state.duration)
+                        .is_none()
+                );
+            }
+        }
+    }
+
+    #[test]
     fn full_body_uses_host_palette_and_contains_player_controls() {
         let cells = render_frame(64, 10, &palette(), &playing());
         assert_eq!(cells.len(), 640);

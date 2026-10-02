@@ -257,3 +257,11 @@ It consumes the player's render state and returns bounded STAR/KIT primitives
 and hit regions through negotiated `native_surface_v1`. Keep transport, seeking,
 volume and visualizer layout here; FOLD is only an embedding host. The ordinary
 cell embed protocol remains the compatibility path. No browser renderer.
+
+Nix Linux builds need dynamic ALSA plugins as well as `alsa-lib`: the host may
+select PipeWire or PulseAudio in its ALSA configuration. The package wraps its
+binary with a joined plugin directory; the dev shell exports that directory.
+For a local executable outside the dev shell, build `.#alsa-plugins` with
+`--out-link target/alsa-plugins` and launch `scripts/run-local.sh`. Keep this
+runtime setup in AMP, including for embedding hosts. The silent-WAV protocol
+probe must advance its native clock; a static 0:00 frame proves no playback.

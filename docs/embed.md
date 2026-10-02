@@ -144,3 +144,29 @@ Resizing, theme and focus updates reuse Configure and its generation guard.
 Local frame cadence is 30 FPS; an SSH environment uses 15 FPS. Hosts coalesce
 frames into the existing single latest-frame slot. Omitting the extension keeps
 the original cell/transport-image protocol. No web engine is involved.
+
+## Nix audio runtime on Linux
+
+The Nix package includes ALSA's dynamic PipeWire and PulseAudio plugins. Its
+wrapper supplies `ALSA_PLUGIN_DIR` unless the caller already set one. A raw
+Cargo executable outside the dev shell needs the same plugins:
+
+```sh
+nix build .#alsa-plugins --out-link target/alsa-plugins
+nix develop -c cargo build --release
+scripts/run-local.sh embed --stdio
+```
+
+`scripts/run-local.sh` is a generic launcher for this checkout, so embedding
+hosts can put a symlink to it on their private PATH. On macOS, audio uses
+CoreAudio and the plugin package is not needed.
+
+An optional real-device test exercises the native clock, pointer transport and
+seeking with silent audio and isolated settings:
+
+```sh
+python3 scripts/test-native-playback.py --binary scripts/run-local.sh
+```
+
+This requires a working local audio session and complements the device-free CI
+tests. It does not prove audible output or a remote machine's audio setup.

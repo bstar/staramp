@@ -124,6 +124,13 @@
             pkgsFor.alsa-lib
             pkgsFor.dbus
           ];
+        # ALSA loads these with dlopen; linking alsa-lib alone does not include
+        # the host's PipeWire/PulseAudio backend in a Nix runtime closure.
+        alsaPlugins = pkgsFor: pkgsFor.buildEnv {
+          name = "staramp-alsa-plugins";
+          paths = [ pkgsFor.alsa-plugins pkgsFor.pipewire ];
+          pathsToLink = [ "/lib/alsa-lib" ];
+        };
         runtimeLibs = [ pkgs.ffmpeg ] ++ linuxLibs pkgs;
         buildTools = with pkgs; [ pkg-config clang ];
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
@@ -159,7 +166,7 @@
             # network it was already going to use.
             cargoLock.allowBuiltinFetchGit = true;
 
-            nativeBuildInputs = with pkgsFor; [ pkg-config clang ];
+            nativeBuildInputs = with pkgsFor; [ pkg-config clang makeWrapper ];
             buildInputs = [ pkgsFor.ffmpeg ] ++ linuxLibs pkgsFor;
 
             LIBCLANG_PATH = "${pkgsFor.llvmPackages.libclang.lib}/lib";
@@ -175,6 +182,13 @@
                 $out/share/icons/hicolor/scalable/apps/staramp.svg
             '';
 
+            postFixup = pkgsFor.lib.optionalString pkgsFor.stdenv.hostPlatform.isLinux ''
+              test -f ${alsaPlugins pkgsFor}/lib/alsa-lib/libasound_module_pcm_pipewire.so
+              test -f ${alsaPlugins pkgsFor}/lib/alsa-lib/libasound_module_pcm_pulse.so
+              wrapProgram $out/bin/staramp \
+                --set-default ALSA_PLUGIN_DIR ${alsaPlugins pkgsFor}/lib/alsa-lib
+            '';
+
             meta = with pkgsFor.lib; {
               description = "A Winamp-feel terminal music player for local libraries";
               homepage = "https://github.com/bstar/staramp";
@@ -185,8 +199,12 @@
           };
       in
       {
-        packages.default = mkStaramp { };
-        packages.staramp = mkStaramp { };
+        packages = {
+          default = mkStaramp { };
+          staramp = mkStaramp { };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          alsa-plugins = alsaPlugins pkgs;
+        };
 
         # There was a `headless` package here, built against ffmpeg-headless
         # for release tarballs. It is gone. Its stated reason was a much
@@ -224,7 +242,7 @@
           drv = self.packages.${system}.default;
         };
 
-        devShells.default = pkgs.mkShell {
+        devShells.default = pkgs.mkShell ({
           packages = (with pkgs; [
             rustc cargo rustfmt clippy rust-analyzer
             # scripts/check-version.sh reads `cargo metadata`.
@@ -243,6 +261,8 @@
           shellHook = ''
             echo "staramp devshell · rustc $(rustc --version | cut -d' ' -f2) · ffmpeg $(ffmpeg -version | head -1 | cut -d' ' -f3)"
           '';
-        };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          ALSA_PLUGIN_DIR = "${alsaPlugins pkgs}/lib/alsa-lib";
+        });
       });
 }

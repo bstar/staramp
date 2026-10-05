@@ -107,6 +107,9 @@ enum Command {
     Embed {
         #[arg(long)]
         stdio: bool,
+        /// Render AMP transport controls for externally managed playback.
+        #[arg(long)]
+        transport: bool,
     },
     /// Decode a file to WAV. Diagnostic: proves sample accuracy without
     /// involving any audio hardware.
@@ -257,9 +260,13 @@ fn main() -> Result<()> {
 
     // The embedded player has no configuration, history, session, log, or
     // control socket to initialise. Keep it before all startup writes.
-    if let Some(Command::Embed { stdio }) = &cli.command {
+    if let Some(Command::Embed { stdio, transport }) = &cli.command {
         anyhow::ensure!(*stdio, "embed requires --stdio");
-        return embed::run_stdio();
+        return if *transport {
+            embed::run_transport_stdio()
+        } else {
+            embed::run_stdio()
+        };
     }
 
     // Before anything creates a file under them. What staramp keeps is the

@@ -192,3 +192,15 @@ must discard prior blocks and forward the new open before granting credits.
 Re-selecting client output lets a reattached frontend replace an old stalled
 stream. Older hosts must not send these controls without the advertised
 capability. Ordinary `staramp`, cell embedding and host output are unaffected.
+
+## Render-only video transport
+
+`staramp embed --stdio --transport` renders the same native transport buttons
+and volume slider for playback owned by a video host. It opens no player or
+sound device and writes no user files. Each bounded JSON line contains pixel
+`width`/`height`, the usual `theme` palette, `playing`, `paused`, `volume` (0–1),
+and optional `pointer: [x, y]`. A rendering response contains `surface`; a
+pointer response contains `action` and an optional normalized volume `value`.
+Actions are `previous`, `play`, `pause`, `stop`, `next`, and `volume`. The host
+assigns previous/next semantics (FOLD seeks five seconds). EOF shuts it down.
+AMP owns both transport geometry and pointer hit testing.

@@ -7,6 +7,8 @@ mod metadata;
 mod native;
 mod render;
 mod styles;
+mod transport;
+pub use transport::run as run_transport_stdio;
 
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;

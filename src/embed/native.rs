@@ -30,7 +30,6 @@ pub fn surface(
     let accent = hex(palette.accent);
     let muted = hex(palette.muted);
     let border = hex(palette.border);
-    let selected = hex(palette.selected);
     let mut s = Surface::new(w, h, hex(palette.bg));
     if w < 128 || h < 64 {
         s.text(R::new(0, 0, w, h), &state.title, &fg, m.font, false);
@@ -232,6 +231,55 @@ pub fn surface(
         rect: seek,
         action: "seek".into(),
     });
+    draw_transport(
+        &mut s,
+        pad,
+        control,
+        controls_y,
+        inner,
+        m,
+        palette,
+        state.state == PlayState::Playing,
+        state.state == PlayState::Paused,
+        state.volume,
+    );
+    s
+}
+
+pub fn hit_test(surface: &Surface, x: u16, y: u16, duration: f64) -> Option<HitTarget> {
+    let hit = surface.hit(x, y)?;
+    let fraction = f64::from(x.saturating_sub(hit.rect.x)) / f64::from(hit.rect.width.max(1));
+    Some(match hit.action.as_str() {
+        "previous" => HitTarget::Previous,
+        "play" => HitTarget::Play,
+        "pause" => HitTarget::Pause,
+        "stop" => HitTarget::Stop,
+        "next" => HitTarget::Next,
+        "seek" => HitTarget::Seek(fraction * duration),
+        "volume" => HitTarget::Volume(fraction as f32),
+        "visualizer" => HitTarget::Visualizer,
+        _ => return None,
+    })
+}
+
+// Both the embedded player and video hosts use AMP's transport geometry/artwork.
+#[allow(clippy::too_many_arguments)]
+fn draw_transport(
+    s: &mut Surface,
+    pad: u16,
+    control: u16,
+    controls_y: u16,
+    inner: u16,
+    m: Metrics,
+    palette: &Palette,
+    playing: bool,
+    paused: bool,
+    volume_level: f32,
+) {
+    let w = s.width;
+    let border = hex(palette.border);
+    let selected = hex(palette.selected);
+    let accent = hex(palette.accent);
     let button = control.min(inner / 6).max(1);
     for (i, name) in ["previous", "play", "pause", "stop", "next"]
         .iter()
@@ -242,8 +290,7 @@ pub fn surface(
             break;
         }
         let rect = R::new(x, controls_y, button, control);
-        let active = (*name == "play" && state.state == PlayState::Playing)
-            || (*name == "pause" && state.state == PlayState::Paused);
+        let active = (*name == "play" && playing) || (*name == "pause" && paused);
         s.fill(rect, if active { &border } else { &selected }, 4);
         let size = m.font.min(button.saturating_sub(4)).min(control);
         s.nodes.push(Primitive::Icon {
@@ -264,17 +311,19 @@ pub fn surface(
     let volume_width = 120.min(inner / 4);
     let volume = R::new(w - pad - volume_width, controls_y, volume_width, control);
     if volume.x > pad + 5 * (button + m.small) {
+        let track_height = 4.min(control);
+        let track_y = controls_y + (control - track_height) / 2;
         s.fill(
-            R::new(volume.x, controls_y + control / 2, volume_width, 4),
+            R::new(volume.x, track_y, volume_width, track_height),
             &border,
             2,
         );
         s.fill(
             R::new(
                 volume.x,
-                controls_y + control / 2,
-                (f32::from(volume_width) * state.volume.clamp(0., 1.)) as u16,
-                4,
+                track_y,
+                (f32::from(volume_width) * volume_level.clamp(0., 1.)) as u16,
+                track_height,
             ),
             &accent,
             2,
@@ -284,21 +333,23 @@ pub fn surface(
             action: "volume".into(),
         });
     }
-    s
 }
 
-pub fn hit_test(surface: &Surface, x: u16, y: u16, duration: f64) -> Option<HitTarget> {
-    let hit = surface.hit(x, y)?;
-    let fraction = f64::from(x.saturating_sub(hit.rect.x)) / f64::from(hit.rect.width.max(1));
-    Some(match hit.action.as_str() {
-        "previous" => HitTarget::Previous,
-        "play" => HitTarget::Play,
-        "pause" => HitTarget::Pause,
-        "stop" => HitTarget::Stop,
-        "next" => HitTarget::Next,
-        "seek" => HitTarget::Seek(fraction * duration),
-        "volume" => HitTarget::Volume(fraction as f32),
-        "visualizer" => HitTarget::Visualizer,
-        _ => return None,
-    })
+pub fn transport_surface(
+    width: u16,
+    height: u16,
+    palette: &Palette,
+    playing: bool,
+    paused: bool,
+    volume: f32,
+) -> Surface {
+    let mut s = Surface::new(width, height, hex(palette.bg));
+    let m = Metrics::from_cell(12, 24);
+    let pad = 4.min(height / 4).min(width / 12);
+    let control = height.saturating_sub(pad * 2).max(1);
+    let inner = width.saturating_sub(pad * 2);
+    draw_transport(
+        &mut s, pad, control, pad, inner, m, palette, playing, paused, volume,
+    );
+    s
 }

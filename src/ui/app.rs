@@ -2943,6 +2943,7 @@ impl App {
                 Command::Prev => Command::Prev,
                 Command::SeekTo(v) => Command::SeekTo(*v),
                 Command::SeekBy(v) => Command::SeekBy(*v),
+                Command::AudioRelay(v) => Command::AudioRelay(*v),
                 Command::Quit => Command::Quit,
             }),
         }

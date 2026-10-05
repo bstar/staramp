@@ -39,7 +39,12 @@ const MAX_PATHS: usize = 2048;
 const MAX_PATH_LEN: usize = 8192;
 const MAX_WIDTH: u16 = 240;
 const MAX_HEIGHT: u16 = 20;
-const CAPABILITIES: &[&str] = &["transport_images", "player_styles", "native_surface_v1"];
+const CAPABILITIES: &[&str] = &[
+    "transport_images",
+    "player_styles",
+    "native_surface_v1",
+    "audio_relay_v1",
+];
 
 // These are candidates the decoder can attempt, not a claim that every file
 // with this suffix is valid audio. Keep the host's picker broad enough for
@@ -151,6 +156,13 @@ enum Response<'a> {
     Notice {
         message: String,
     },
+    AudioOpen {
+        epoch: u64,
+    },
+    Audio {
+        epoch: u64,
+        samples: Vec<i16>,
+    },
     Stopped,
 }
 
@@ -216,6 +228,9 @@ pub fn run_stdio() -> Result<()> {
             }
         })?;
 
+    let audio = crate::audio::relay::receiver();
+    let mut pending_audio = None;
+    let mut audio_epoch = None;
     let mut output = BufWriter::new(io::stdout().lock());
     write_response(
         &mut output,
@@ -310,6 +325,40 @@ pub fn run_stdio() -> Result<()> {
             Err(RecvTimeoutError::Timeout) => {}
         }
 
+        if !crate::audio::relay::enabled() {
+            pending_audio = None;
+            for _ in audio.try_iter() {}
+            audio_epoch = None;
+        } else {
+            for _ in 0..2 {
+                if pending_audio.is_none() {
+                    pending_audio = audio.try_recv().ok();
+                }
+                let Some(block) = pending_audio.as_ref() else {
+                    break;
+                };
+                if block.epoch != crate::audio::relay::current_epoch() {
+                    pending_audio = None;
+                    continue;
+                }
+                if audio_epoch != Some(block.epoch) {
+                    audio_epoch = Some(block.epoch);
+                    crate::audio::relay::reset_credit();
+                    write_response(&mut output, &Response::AudioOpen { epoch: block.epoch })?;
+                }
+                if !crate::audio::relay::take_credit() {
+                    break;
+                }
+                let block = pending_audio.take().unwrap();
+                write_response(
+                    &mut output,
+                    &Response::Audio {
+                        epoch: block.epoch,
+                        samples: block.samples,
+                    },
+                )?;
+            }
+        }
         let now = Instant::now();
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
@@ -543,7 +592,16 @@ fn handle_request(
                 }
                 return Ok(());
             }
-            control(player, &action, value)?;
+            if action == "audio_credit" {
+                let count = value
+                    .filter(|v| v.is_finite() && *v >= 0.0 && *v <= 8.0)
+                    .context("invalid audio credit")?;
+                crate::audio::relay::credit(count as usize);
+            } else if action == "audio_relay" {
+                player.send_checked(Command::AudioRelay(value == Some(1.0)))?;
+            } else {
+                control(player, &action, value)?;
+            }
             if action == "stop" {
                 write_response(output, &Response::Stopped)?;
             }

@@ -170,3 +170,25 @@ python3 scripts/test-native-playback.py --binary scripts/run-local.sh
 
 This requires a working local audio session and complements the device-free CI
 tests. It does not prove audible output or a remote machine's audio setup.
+
+## SSH audio relay (experimental)
+
+`audio_relay_v1` advertises an alternative output, selected with Control
+`audio_relay` and value `1` (client) or `0` (host). The player keeps its queue,
+position, pause state, DSP and volume; client mode opens no host sound device.
+It outputs 48 kHz stereo signed 16-bit PCM after DSP. This mode is not
+bit-perfect playback. Closing the embedded child stops its relay output.
+
+An `audio_open` response contains an opaque `epoch`. Each `audio` response
+contains the same epoch and `samples`, an interleaved signed-integer array
+with at most 1920 samples (20 ms). Initially no audio is sent: the host grants
+up to eight blocks with Control `audio_credit`. Each emitted block consumes
+one credit; queued and granted credits are bounded. The host returns credits
+only as its client consumes data. Controls and visual frames continue when
+credits stop, so pause, seek and shutdown stay responsive on a stalled link.
+
+Seeking and selecting the client route again create a fresh epoch. The host
+must discard prior blocks and forward the new open before granting credits.
+Re-selecting client output lets a reattached frontend replace an old stalled
+stream. Older hosts must not send these controls without the advertised
+capability. Ordinary `staramp`, cell embedding and host output are unaffected.

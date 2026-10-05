@@ -265,3 +265,12 @@ For a local executable outside the dev shell, build `.#alsa-plugins` with
 `--out-link target/alsa-plugins` and launch `scripts/run-local.sh`. Keep this
 runtime setup in AMP, including for embedding hosts. The silent-WAV protocol
 probe must advance its native clock; a static 0:00 frame proves no playback.
+
+## Embedded SSH audio output
+
+`audio::relay` is the optional `audio_relay_v1` output for embedded playback.
+Its virtual output uses a bounded PCM queue and the player clock, without a host
+sound device. Embedded JSONL credits prevent a stalled frontend from blocking
+the embed request loop. Re-routing preserves queue/position/pause; seeking and
+reattaching invalidate queued output with fresh epochs. The ordinary device
+output is the default and does not capture or relay samples.

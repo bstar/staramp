@@ -8,3 +8,5 @@ pub mod source;
 pub mod tap;
 pub mod warm;
 pub mod wav;
+
+pub mod relay;

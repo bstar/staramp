@@ -43,7 +43,7 @@ impl RateMode {
 /// used to do -- meant the answer arrived after every decision that needed it,
 /// and a rate the device had refused was simply played at the wrong speed.
 pub struct Plan {
-    device: cpal::Device,
+    device: Option<cpal::Device>,
     pub device_name: String,
     /// What the device will actually run at.
     pub sample_rate: u32,
@@ -89,6 +89,23 @@ impl Plan {
 /// bit-perfect playback and buys never rebuilding the stream at a track
 /// boundary -- worth having where the device only offers one rate anyway.
 pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) -> Result<Plan> {
+    if super::relay::enabled() {
+        return Ok(Plan {
+            device: None,
+            device_name: "SSH client".into(),
+            sample_rate: 48000,
+            channels: 2,
+            rate_mode: if spec.sample_rate == 48000 {
+                RateMode::Native
+            } else {
+                RateMode::Resampled {
+                    from: spec.sample_rate,
+                    to: 48000,
+                }
+            },
+            remixed_from: (spec.channels != 2).then_some(spec.channels),
+        });
+    }
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -111,7 +128,7 @@ pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) ->
     };
 
     Ok(Plan {
-        device,
+        device: Some(device),
         device_name,
         sample_rate,
         channels,
@@ -144,7 +161,9 @@ impl OutputState {
 }
 
 pub struct Output {
-    stream: cpal::Stream,
+    stream: Option<cpal::Stream>,
+    relay_stop: Arc<AtomicBool>,
+    relay_worker: Option<std::thread::JoinHandle<()>>,
     pub state: Arc<OutputState>,
     pub rate_mode: RateMode,
     /// Rate *and* channels reached the device untouched. Narrower than
@@ -181,6 +200,9 @@ impl Output {
         tap: Arc<Tap>,
         start_paused: bool,
     ) -> Result<Self> {
+        if plan.device.is_none() {
+            return Self::relay(plan, consumer, source_done, tap, start_paused);
+        }
         let bit_perfect = plan.is_bit_perfect();
         let Plan {
             device,
@@ -201,6 +223,7 @@ impl Output {
         let cb_state = Arc::clone(&state);
 
         let stream = device
+            .unwrap()
             .build_output_stream(
                 &config,
                 move |out: &mut [f32], _| {
@@ -253,7 +276,9 @@ impl Output {
         stream.play().context("starting output stream")?;
 
         Ok(Self {
-            stream,
+            stream: Some(stream),
+            relay_stop: Arc::new(AtomicBool::new(false)),
+            relay_worker: None,
             state,
             rate_mode,
             bit_perfect,
@@ -261,6 +286,75 @@ impl Output {
             device_name,
             sample_rate,
             channels,
+        })
+    }
+
+    fn relay(
+        plan: Plan,
+        mut consumer: Consumer<f32>,
+        done: Arc<AtomicBool>,
+        tap: Arc<Tap>,
+        paused: bool,
+    ) -> Result<Self> {
+        let state = Arc::new(OutputState::new(paused));
+        let stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = stop.clone();
+        let cb = state.clone();
+        let epoch = super::relay::next_epoch();
+        let worker = std::thread::Builder::new()
+            .name("staramp-relay-output".into())
+            .spawn(move || {
+                let mut next = std::time::Instant::now();
+                while !worker_stop.load(Ordering::Relaxed) {
+                    if cb.paused.load(Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        next = std::time::Instant::now();
+                        continue;
+                    }
+                    let count = consumer.slots().min(super::relay::FRAMES * 2) / 2 * 2;
+                    if count == 0 {
+                        if done.load(Ordering::Acquire) {
+                            cb.finished.store(true, Ordering::Release);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        next = std::time::Instant::now();
+                        continue;
+                    }
+                    let mut values = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        values.push(consumer.pop().unwrap());
+                    }
+                    let samples = values
+                        .iter()
+                        .map(|v| (v.clamp(-1.0, 1.0) * 32767.0).round() as i16)
+                        .collect();
+                    if !super::relay::send(super::relay::Block { epoch, samples }, &worker_stop) {
+                        break;
+                    }
+                    tap.write(&values, 2);
+                    cb.frames_out
+                        .fetch_add((count / 2) as u64, Ordering::Relaxed);
+                    next += std::time::Duration::from_secs_f64(count as f64 / 96000.0);
+                    while std::time::Instant::now() < next && !worker_stop.load(Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    // Backpressure changes the clock; never burst to catch up.
+                    if next < std::time::Instant::now() {
+                        next = std::time::Instant::now();
+                    }
+                }
+            })?;
+        Ok(Self {
+            stream: None,
+            relay_stop: stop,
+            relay_worker: Some(worker),
+            state,
+            rate_mode: plan.rate_mode,
+            bit_perfect: false,
+            remixed_from: plan.remixed_from,
+            device_name: plan.device_name,
+            sample_rate: plan.sample_rate,
+            channels: plan.channels,
         })
     }
 
@@ -273,7 +367,10 @@ impl Output {
     }
 
     pub fn stop(&self) {
-        let _ = self.stream.pause();
+        self.relay_stop.store(true, Ordering::Relaxed);
+        if let Some(stream) = &self.stream {
+            let _ = stream.pause();
+        }
     }
 }
 
@@ -336,4 +433,53 @@ fn choose_format(device: &cpal::Device, wanted: u32, wanted_channels: u16) -> Re
     }
 
     Ok((supported[0].max_sample_rate().0, channels))
+}
+
+impl Drop for Output {
+    fn drop(&mut self) {
+        self.stop();
+        if let Some(worker) = self.relay_worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+#[cfg(test)]
+mod relay_tests {
+    use super::*;
+    #[test]
+    fn pcm_output_is_bounded_pauses_and_joins_without_a_device() {
+        let receiver = super::super::relay::receiver();
+        for _ in receiver.try_iter() {}
+        let (mut producer, consumer) = crate::audio::ring::create(48000, 2);
+        for _ in 0..1920 {
+            producer.push(0.5).unwrap();
+        }
+        let output = Output::relay(
+            Plan {
+                device: None,
+                device_name: "test".into(),
+                sample_rate: 48000,
+                channels: 2,
+                rate_mode: RateMode::Native,
+                remixed_from: None,
+            },
+            consumer,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(Tap::new(64)),
+            true,
+        )
+        .unwrap();
+        assert!(receiver
+            .recv_timeout(std::time::Duration::from_millis(30))
+            .is_err());
+        output.resume();
+        let block = receiver
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(block.samples.len(), 1920);
+        assert!(block.samples.iter().all(|sample| *sample == 16384));
+        assert!(!output.bit_perfect);
+        drop(output);
+    }
 }

@@ -15,7 +15,7 @@ use anyhow::Result;
 use arc_swap::{ArcSwap, ArcSwapOption};
 use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 
-use super::decode::Decoder;
+use super::decode::{Decoder, StreamSpec};
 use super::dsp::eq::{EqHandle, EqState};
 use super::dsp::gain::{soft_clip, ReplayGain, RgMode};
 use super::output::Output;
@@ -63,6 +63,7 @@ pub enum Command {
     Prev,
     SeekTo(f64),
     SeekBy(f64),
+    AudioRelay(bool),
     Quit,
 }
 
@@ -770,6 +771,50 @@ fn run(
                         );
                     }
                 }
+                Command::AudioRelay(enabled) => {
+                    let seconds = state.position_secs();
+                    let paused = state.paused.load(Ordering::Relaxed);
+                    super::relay::set_enabled(enabled);
+                    if let Some((uri, gain)) = queue
+                        .lock()
+                        .unwrap()
+                        .current()
+                        .map(|t| (t.uri.clone(), t.rg))
+                    {
+                        album_preload = None;
+                        fade = Crossfade::Idle;
+                        stream = None;
+                        decoder = None;
+                        rg_scalar = level(&gain);
+                        open_track(
+                            &vfs,
+                            index.as_ref(),
+                            &uri,
+                            &mut decoder,
+                            &mut stream,
+                            &state,
+                            &eq,
+                            &mut eq_state,
+                            &tap,
+                            &mut cue,
+                            &mut backing,
+                            fixed_rate,
+                        );
+                        if let Some(d) = decoder.as_mut() {
+                            if let Ok(landed) =
+                                d.seek((seconds * d.spec().sample_rate as f64) as u64)
+                            {
+                                state.position_frames.store(landed, Ordering::Relaxed);
+                            }
+                        }
+                        if paused {
+                            state.paused.store(true, Ordering::Relaxed);
+                            if let Some(s) = &stream {
+                                s.output.pause();
+                            }
+                        }
+                    }
+                }
                 Command::SeekTo(secs) => {
                     if let Some(d) = decoder.as_mut() {
                         let rate = d.spec().sample_rate as f64;
@@ -780,7 +825,13 @@ fn run(
                             // audio, which is heard before the jump lands.
                             // `drain` does not yet remove it -- see its note.
                             if let Some(s) = &mut stream {
-                                drain(&mut s.producer);
+                                if super::relay::enabled() {
+                                    if let Err(error) = reset_relay(s, &d.spec(), &tap) {
+                                        fail_track(&state, format!("audio relay seek: {error}"));
+                                    }
+                                } else {
+                                    drain(&mut s.producer);
+                                }
                             }
                             eq_state.reset();
                             // A successor already mixed in has been consumed
@@ -798,7 +849,13 @@ fn run(
                         if let Ok(landed) = d.seek(frame) {
                             state.position_frames.store(landed, Ordering::Relaxed);
                             if let Some(s) = &mut stream {
-                                drain(&mut s.producer);
+                                if super::relay::enabled() {
+                                    if let Err(error) = reset_relay(s, &d.spec(), &tap) {
+                                        fail_track(&state, format!("audio relay seek: {error}"));
+                                    }
+                                } else {
+                                    drain(&mut s.producer);
+                                }
                             }
                             eq_state.reset();
                             fade = Crossfade::Idle;
@@ -1808,6 +1865,19 @@ pub fn needs_rebuild(
     next: &super::decode::StreamSpec,
 ) -> bool {
     current_rate != next.sample_rate || current_channels != next.channels
+}
+
+fn reset_relay(s: &mut Stream, spec: &StreamSpec, tap: &Arc<Tap>) -> Result<()> {
+    let plan = super::output::plan(spec, None)?;
+    let (producer, consumer) = ring::create(s.sample_rate, s.channels);
+    let source_done = Arc::new(AtomicBool::new(false));
+    let output = Output::open(plan, consumer, source_done.clone(), tap.clone(), true)?;
+    s.output = output;
+    s.producer = producer;
+    s.source_done = source_done;
+    s.primed = false;
+    s.opened_at = std::time::Instant::now();
+    Ok(())
 }
 
 #[cfg(test)]

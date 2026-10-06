@@ -214,6 +214,13 @@ mod tests {
             proptest::prop_assert_eq!(result.is_ok(), (1..=8192).contains(&width) && (1..=8192).contains(&height) && u64::from(width)*u64::from(height)<=32_000_000);
         }
     }
+    proptest::proptest! {
+        #[test]
+        fn movie_controls_stay_inside_compact_and_fullscreen_surfaces(width in 1u16..8193, height in 1u16..160) {
+            let mut r = request(); r.width = width; r.height = height; r.movie = true;
+            proptest::prop_assert!(respond(r).is_ok());
+        }
+    }
     #[test]
     fn rejects_invalid_dimensions_and_volume() {
         let mut r = request();

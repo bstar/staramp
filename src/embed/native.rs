@@ -6,7 +6,7 @@ use super::{
 use crate::audio::player::PlayState;
 use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
-use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Surface};
+use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
 fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
@@ -242,6 +242,7 @@ pub fn surface(
         state.state == PlayState::Playing,
         state.state == PlayState::Paused,
         state.volume,
+        false,
     );
     s
 }
@@ -337,6 +338,7 @@ fn draw_transport(
     playing: bool,
     paused: bool,
     volume_level: f32,
+    movie: bool,
 ) {
     let w = s.width;
     let border = hex(palette.border);
@@ -345,36 +347,47 @@ fn draw_transport(
     let fg = hex(palette.fg);
     let bg = hex(palette.bg);
     let button = control.min(44).min(inner / 6).max(1);
-    for (i, name) in ["previous", "play", "pause", "stop", "next"]
-        .iter()
-        .enumerate()
-    {
+    let toggle = if playing && !paused { "pause" } else { "play" };
+    let movie_actions = ["previous", toggle, "next", "stop"];
+    let audio_actions = ["previous", "play", "pause", "stop", "next"];
+    let actions: &[&str] = if movie {
+        &movie_actions
+    } else {
+        &audio_actions
+    };
+    for (i, name) in actions.iter().enumerate() {
         let x = pad + i as u16 * (button + m.small);
         if x + button > w - pad {
             break;
         }
         let rect = R::new(x, controls_y, button, control);
-        let active = (*name == "play" && playing) || (*name == "pause" && paused);
+        let active = if movie {
+            i == 1
+        } else {
+            (*name == "play" && playing) || (*name == "pause" && paused)
+        };
         s.fill(
             rect,
             if active { &accent } else { &selected },
             (control / 4).min(10),
         );
-        let size = 24
-            .min(button.saturating_sub(12))
-            .min(control.saturating_sub(8))
-            .max(1);
-        control_glyph(
-            s,
-            R::new(
+        // Use the full 24-unit face: AMP's artwork already includes optical padding.
+        let size = button.min(control).min(40);
+        s.nodes.push(Primitive::Icon {
+            rect: R::new(
                 x + (button - size) / 2,
                 controls_y + (control - size) / 2,
                 size,
                 size,
             ),
-            name,
-            if active { &bg } else { &fg },
-        );
+            name: match *name {
+                "previous" if movie => "media-rewind".into(),
+                "next" if movie => "media-forward".into(),
+                "play" | "pause" | "stop" => format!("media-{name}"),
+                other => other.into(),
+            },
+            color: if active { bg.clone() } else { fg.clone() },
+        });
         s.hits.push(HitRegion {
             rect,
             action: (*name).into(),
@@ -382,7 +395,7 @@ fn draw_transport(
     }
     let volume_width = 120.min(inner / 4);
     let volume = R::new(w - pad - volume_width, controls_y, volume_width, control);
-    if volume.x > pad + 5 * (button + m.small) + 32 {
+    if volume.x > pad + actions.len() as u16 * (button + m.small) + 32 {
         let size = 22.min(control);
         control_glyph(
             s,
@@ -428,7 +441,7 @@ pub fn transport_surface(
     let control = height.saturating_sub(pad * 2).max(1);
     let inner = width.saturating_sub(pad * 2);
     draw_transport(
-        &mut s, pad, control, pad, inner, m, palette, playing, paused, volume,
+        &mut s, pad, control, pad, inner, m, palette, playing, paused, volume, false,
     );
     s
 }
@@ -445,13 +458,23 @@ pub fn movie_transport_surface(
     font: u16,
 ) -> Surface {
     let reserve = (width / 2).min(408);
-    let mut surface = transport_surface(
-        width.saturating_sub(reserve).max(1),
-        height,
+    let transport_width = width.saturating_sub(reserve).max(1);
+    let mut surface = Surface::new(transport_width, height, hex(palette.bg));
+    let m = Metrics::from_cell(12, 24);
+    let pad = 4.min(height / 4).min(transport_width / 12);
+    let control = height.saturating_sub(pad * 2).max(1);
+    draw_transport(
+        &mut surface,
+        pad,
+        control,
+        pad,
+        transport_width.saturating_sub(pad * 2),
+        m,
         palette,
         playing,
         paused,
         volume,
+        true,
     );
     surface.width = width;
     let button = reserve / 3;

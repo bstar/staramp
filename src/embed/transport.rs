@@ -206,6 +206,24 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn movie_transport_has_one_play_pause_toggle_and_seek_controls() {
+        for paused in [false, true] {
+            let mut r = request();
+            r.movie = true;
+            r.width = 1200;
+            r.paused = paused;
+            let surface = respond(r).unwrap().surface.unwrap();
+            let actions: Vec<_> = surface.hits.iter().map(|h| h.action.as_str()).collect();
+            assert!(actions.contains(&if paused { "play" } else { "pause" }));
+            assert!(!actions.contains(&if paused { "pause" } else { "play" }));
+            assert!(
+                actions.contains(&"previous")
+                    && actions.contains(&"next")
+                    && actions.contains(&"stop")
+            );
+        }
+    }
     proptest::proptest! {
         #[test]
         fn bounded_geometry_never_panics(width in 0u16..9000, height in 0u16..160, volume in 0u8..=100) {

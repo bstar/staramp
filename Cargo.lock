@@ -3293,7 +3293,7 @@ dependencies = [
 [[package]]
 name = "starkit"
 version = "0.3.0"
-source = "git+https://github.com/bstar/starkit?rev=7a54b588775ca362999553b6627d83d853f973b7#7a54b588775ca362999553b6627d83d853f973b7"
+source = "git+https://github.com/bstar/starkit?rev=150745d7e22f5b3283a33f27764f410d28f061f9#150745d7e22f5b3283a33f27764f410d28f061f9"
 dependencies = [
  "anyhow",
  "crossterm",

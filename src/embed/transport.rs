@@ -224,6 +224,26 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn volume_slider_has_space_before_audio_picker() {
+        let mut r = request();
+        r.movie = true;
+        r.width = 1200;
+        let surface = respond(r).unwrap().surface.unwrap();
+        let volume = surface
+            .hits
+            .iter()
+            .find(|h| h.action == "volume")
+            .unwrap()
+            .rect;
+        let audio = surface
+            .hits
+            .iter()
+            .find(|h| h.action == "audio_tracks")
+            .unwrap()
+            .rect;
+        assert!(audio.x >= volume.x + volume.width + 24);
+    }
     proptest::proptest! {
         #[test]
         fn bounded_geometry_never_panics(width in 0u16..9000, height in 0u16..160, volume in 0u8..=100) {

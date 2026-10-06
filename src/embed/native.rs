@@ -264,66 +264,15 @@ pub fn hit_test(surface: &Surface, x: u16, y: u16, duration: f64) -> Option<HitT
 }
 
 // Both the embedded player and video hosts use AMP's transport geometry/artwork.
-// A single 24-pixel grid keeps transport and movie controls independent of fonts.
 fn control_glyph(s: &mut Surface, rect: R, name: &str, color: &str) {
     if rect.width.min(rect.height) < 8 {
         return;
     }
-    let unit = f32::from(rect.width.min(rect.height)) / 24.;
-    let mut bar = |x: u16, y: u16, w: u16, h: u16| {
-        let px = |v: u16| (f32::from(v) * unit).round() as u16;
-        s.fill(
-            R::new(rect.x + px(x), rect.y + px(y), px(w).max(1), px(h).max(1)),
-            color,
-            px(1),
-        );
-    };
-    match name {
-        "play" | "next" | "previous" => {
-            for row in 0..16u16 {
-                let length = 12 - row.abs_diff(7).min(7);
-                let x = if name == "previous" { 18 - length } else { 6 };
-                bar(x, 4 + row, length, 1);
-            }
-            if name == "next" {
-                bar(19, 4, 2, 16);
-            }
-            if name == "previous" {
-                bar(3, 4, 2, 16);
-            }
-        }
-        "pause" => {
-            bar(6, 4, 4, 16);
-            bar(14, 4, 4, 16);
-        }
-        "stop" => bar(5, 5, 14, 14),
-        "speaker" => {
-            bar(3, 9, 4, 6);
-            for row in 0..14u16 {
-                bar(7, 5 + row, 6 - row.abs_diff(6).min(5), 1);
-            }
-            bar(16, 8, 2, 8);
-            bar(20, 5, 2, 14);
-        }
-        "subtitles" => {
-            bar(2, 4, 20, 2);
-            bar(2, 18, 20, 2);
-            bar(2, 4, 2, 16);
-            bar(20, 4, 2, 16);
-            bar(6, 10, 5, 2);
-            bar(13, 10, 5, 2);
-            bar(6, 14, 12, 2);
-        }
-        "fullscreen" => {
-            for (x, y) in [(3, 3), (15, 3), (3, 19), (15, 19)] {
-                bar(x, y, 6, 2);
-            }
-            for (x, y) in [(3, 3), (19, 3), (3, 15), (19, 15)] {
-                bar(x, y, 2, 6);
-            }
-        }
-        _ => {}
-    }
+    s.nodes.push(Primitive::Icon {
+        rect,
+        name: format!("media-{name}"),
+        color: color.into(),
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -458,7 +407,8 @@ pub fn movie_transport_surface(
     font: u16,
 ) -> Surface {
     let reserve = (width / 2).min(408);
-    let transport_width = width.saturating_sub(reserve).max(1);
+    let separation = 24.min(width / 24);
+    let transport_width = width.saturating_sub(reserve + separation).max(1);
     let mut surface = Surface::new(transport_width, height, hex(palette.bg));
     let m = Metrics::from_cell(12, 24);
     let pad = 4.min(height / 4).min(transport_width / 12);
@@ -480,7 +430,7 @@ pub fn movie_transport_surface(
     let button = reserve / 3;
     let pad = 4.min(height / 4);
     for (i, (label, action, glyph)) in [
-        ("Audio", "audio_tracks", "speaker"),
+        ("Audio", "audio_tracks", "headphones"),
         ("Subtitles", "subtitle_tracks", "subtitles"),
         ("Full screen", "fullscreen", "fullscreen"),
     ]

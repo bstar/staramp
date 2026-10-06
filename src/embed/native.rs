@@ -353,3 +353,124 @@ pub fn transport_surface(
     );
     s
 }
+
+/// Movie controls share AMP's transport artwork and add native track pickers.
+#[allow(clippy::too_many_arguments)]
+pub fn movie_transport_surface(
+    width: u16,
+    height: u16,
+    palette: &Palette,
+    playing: bool,
+    paused: bool,
+    volume: f32,
+    font: u16,
+) -> Surface {
+    let reserve = width.min(360);
+    let mut surface = transport_surface(
+        width.saturating_sub(reserve).max(1),
+        height,
+        palette,
+        playing,
+        paused,
+        volume,
+    );
+    surface.width = width;
+    let button = reserve / 3;
+    let pad = 4.min(height / 4);
+    for (i, (label, action)) in [
+        ("Audio", "audio_tracks"),
+        ("Subtitles", "subtitle_tracks"),
+        ("Full screen", "fullscreen"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let rect = R::new(
+            width - reserve + i as u16 * button,
+            pad,
+            button.saturating_sub(4),
+            height.saturating_sub(pad * 2),
+        );
+        surface.fill(rect, &hex(palette.selected), 4);
+        surface.text(
+            R::new(
+                rect.x + 6,
+                rect.y,
+                rect.width.saturating_sub(12),
+                rect.height,
+            ),
+            *label,
+            &hex(palette.fg),
+            font.max(10),
+            false,
+        );
+        surface.hits.push(HitRegion {
+            rect,
+            action: (*action).into(),
+        });
+    }
+    surface
+}
+
+pub fn track_surface(
+    width: u16,
+    height: u16,
+    palette: &Palette,
+    title: &str,
+    entries: &[String],
+    selected: usize,
+    font: u16,
+) -> Surface {
+    let mut surface = Surface::new(width, height, hex(palette.bg));
+    let font = font.max(10);
+    let row = font + 12;
+    let pad = 12.min(width / 4);
+    surface.text(
+        R::new(pad, 4, width.saturating_sub(pad * 2 + row), row),
+        title,
+        &hex(palette.accent),
+        font,
+        true,
+    );
+    let close = R::new(width.saturating_sub(row), 0, row, row);
+    surface.text(close, "×", &hex(palette.fg), font, true);
+    surface.hits.push(HitRegion {
+        rect: close,
+        action: "picker_close".into(),
+    });
+    let visible = height.saturating_sub(row + 8) / row;
+    let offset = selected.saturating_sub(visible.saturating_sub(1) as usize);
+    for (index, label) in entries
+        .iter()
+        .enumerate()
+        .skip(offset)
+        .take(visible as usize)
+    {
+        let rect = R::new(
+            pad,
+            row + 4 + (index - offset) as u16 * row,
+            width.saturating_sub(pad * 2),
+            row,
+        );
+        if index == selected {
+            surface.fill(rect, &hex(palette.selected), 4);
+        }
+        surface.text(
+            R::new(
+                rect.x + 8,
+                rect.y,
+                rect.width.saturating_sub(16),
+                rect.height,
+            ),
+            label,
+            &hex(palette.fg),
+            font,
+            index == selected,
+        );
+        surface.hits.push(HitRegion {
+            rect,
+            action: format!("track:{index}"),
+        });
+    }
+    surface
+}

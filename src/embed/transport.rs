@@ -16,32 +16,68 @@ struct Request {
     volume: f32,
     #[serde(default)]
     pointer: Option<[u16; 2]>,
+    #[serde(default)]
+    movie: bool,
+    #[serde(default)]
+    picker: bool,
+    #[serde(default)]
+    entries: Vec<String>,
+    #[serde(default)]
+    selected: usize,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    font: u16,
 }
 
 #[derive(Serialize)]
 struct Response {
     surface: Option<starkit::native_surface::Surface>,
-    action: Option<&'static str>,
+    action: Option<String>,
     value: Option<f32>,
 }
 
 fn respond(request: Request) -> Result<Response> {
     ensure!(
-        (1..=8192).contains(&request.width) && (1..=128).contains(&request.height),
+        (1..=8192).contains(&request.width)
+            && (1..=8192).contains(&request.height)
+            && u64::from(request.width) * u64::from(request.height) <= 32_000_000,
         "Invalid transport dimensions"
     );
     ensure!(
         request.volume.is_finite() && (0.0..=1.0).contains(&request.volume),
         "Invalid volume"
     );
-    let surface = native::transport_surface(
-        request.width,
-        request.height,
-        &request.theme,
-        request.playing,
-        request.paused,
-        request.volume,
-    );
+    let surface = if request.picker {
+        native::track_surface(
+            request.width,
+            request.height,
+            &request.theme,
+            &request.title,
+            &request.entries,
+            request.selected,
+            request.font,
+        )
+    } else if request.movie {
+        native::movie_transport_surface(
+            request.width,
+            request.height,
+            &request.theme,
+            request.playing,
+            request.paused,
+            request.volume,
+            request.font,
+        )
+    } else {
+        native::transport_surface(
+            request.width,
+            request.height,
+            &request.theme,
+            request.playing,
+            request.paused,
+            request.volume,
+        )
+    };
     surface.validate()?;
     let mut response = Response {
         surface: None,
@@ -49,6 +85,16 @@ fn respond(request: Request) -> Result<Response> {
         value: None,
     };
     if let Some([x, y]) = request.pointer {
+        if let Some(hit) = surface.hit(x, y).filter(|h| {
+            h.action.starts_with("track:")
+                || matches!(
+                    h.action.as_str(),
+                    "audio_tracks" | "subtitle_tracks" | "fullscreen" | "picker_close"
+                )
+        }) {
+            response.action = Some(hit.action.clone());
+            return Ok(response);
+        }
         response.action = match native::hit_test(&surface, x, y, 0.0) {
             Some(HitTarget::Previous) => Some("previous"),
             Some(HitTarget::Play) => Some("play"),
@@ -60,7 +106,8 @@ fn respond(request: Request) -> Result<Response> {
                 Some("volume")
             }
             _ => None,
-        };
+        }
+        .map(str::to_owned);
     } else {
         response.surface = Some(surface);
     }
@@ -107,6 +154,12 @@ mod tests {
             paused: false,
             volume: 0.8,
             pointer: None,
+            movie: false,
+            picker: false,
+            entries: vec![],
+            selected: 0,
+            title: String::new(),
+            font: 20,
         }
     }
     #[test]
@@ -118,16 +171,47 @@ mod tests {
                 hit.rect.x + hit.rect.width / 2,
                 hit.rect.y + hit.rect.height / 2,
             ]);
-            assert_eq!(respond(request).unwrap().action, Some(hit.action.as_str()));
+            assert_eq!(
+                respond(request).unwrap().action.as_deref(),
+                Some(hit.action.as_str())
+            );
         }
         assert_eq!(surface.hits.len(), 6);
+    }
+    #[test]
+    fn movie_buttons_and_track_rows_accept_mouse_selection() {
+        for picker in [false, true] {
+            let mut r = request();
+            r.movie = !picker;
+            r.picker = picker;
+            r.height = if picker { 300 } else { 48 };
+            r.entries = vec!["Auto".into(), "Off".into(), "English".into()];
+            let surface = respond(r).unwrap().surface.unwrap();
+            for hit in &surface.hits {
+                let mut r = request();
+                r.movie = !picker;
+                r.picker = picker;
+                r.height = if picker { 300 } else { 48 };
+                r.entries = vec!["Auto".into(), "Off".into(), "English".into()];
+                r.pointer = Some([
+                    hit.rect.x + hit.rect.width / 2,
+                    hit.rect.y + hit.rect.height / 2,
+                ]);
+                if hit.action != "volume" {
+                    assert_eq!(
+                        respond(r).unwrap().action.as_deref(),
+                        Some(hit.action.as_str())
+                    );
+                }
+            }
+        }
     }
     proptest::proptest! {
         #[test]
         fn bounded_geometry_never_panics(width in 0u16..9000, height in 0u16..160, volume in 0u8..=100) {
             let mut r = request(); r.width = width; r.height = height; r.volume = f32::from(volume) / 100.0;
             let result = respond(r);
-            proptest::prop_assert_eq!(result.is_ok(), (1..=8192).contains(&width) && (1..=128).contains(&height));
+            proptest::prop_assert_eq!(result.is_ok(), (1..=8192).contains(&width) && (1..=8192).contains(&height) && u64::from(width)*u64::from(height)<=32_000_000);
         }
     }
     #[test]

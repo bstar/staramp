@@ -263,7 +263,7 @@ g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  ]             next preset          equalizer                                ║          
           ║  up/down, j/k  choose a filter      click [ON ]          enable or bypass    ║          
           ║  left/right    filter gain, 1 dB    click the chevrons   change preset       ║          
-          ║  shift+left/rightfilter gain, 10    click a filter       select it           ║          
+          ║  shift+left/right filter gain, 10   click a filter       select it           ║          
           ║dB                                   wheel over the panel previous / next     ║          
           ║  enter         bypass the filter  filter                                     ║          
           ║  a             add a filter         album                                    ║          
@@ -307,7 +307,7 @@ aaaaaaaaaabccccccccccccccccddddddddddddddddeeecccccccccccccccccccccccddddddddddd
 aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeefffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccccdddddddddddddddeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabcccccccccccccccccccdddddddddddddddecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddddddddeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa

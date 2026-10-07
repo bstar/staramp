@@ -8,6 +8,8 @@ use super::{native, render::HitTarget, Palette};
 
 #[derive(Deserialize)]
 struct Request {
+    #[serde(default)]
+    cells: Option<[u16; 2]>,
     width: u16,
     height: u16,
     theme: Palette,
@@ -31,8 +33,15 @@ struct Request {
 }
 
 #[derive(Serialize)]
+struct CellTransport {
+    columns: u16,
+    rows: u16,
+    cells: Vec<super::Cell>,
+}
+#[derive(Serialize)]
 struct Response {
     surface: Option<starkit::native_surface::Surface>,
+    cells: Option<CellTransport>,
     action: Option<String>,
     value: Option<f32>,
 }
@@ -80,6 +89,7 @@ fn respond(request: Request) -> Result<Response> {
     };
     surface.validate()?;
     let mut response = Response {
+        cells: None,
         surface: None,
         action: None,
         value: None,
@@ -109,9 +119,115 @@ fn respond(request: Request) -> Result<Response> {
         }
         .map(str::to_owned);
     } else {
+        if let Some([columns, rows]) = request.cells {
+            response.cells = Some(cell_transport(&surface, columns, rows, &request.theme)?);
+        }
         response.surface = Some(surface);
     }
     Ok(response)
+}
+
+/// Cell artwork uses the same transport surface and hit regions as native buttons.
+fn cell_transport(
+    surface: &starkit::native_surface::Surface,
+    columns: u16,
+    rows: u16,
+    palette: &Palette,
+) -> Result<CellTransport> {
+    use starkit::{
+        native_surface::Primitive,
+        ratatui::{
+            buffer::Buffer,
+            layout::Rect,
+            style::{Color, Modifier, Style},
+        },
+    };
+    ensure!(
+        columns > 0 && rows > 0 && usize::from(columns) * usize::from(rows) <= 512,
+        "Transport cell grid exceeds limits"
+    );
+    let area = Rect::new(0, 0, columns, rows);
+    let mut buffer = Buffer::empty(area);
+    buffer.set_style(
+        area,
+        Style::default()
+            .fg(Color::Rgb(palette.fg[0], palette.fg[1], palette.fg[2]))
+            .bg(Color::Rgb(palette.bg[0], palette.bg[1], palette.bg[2])),
+    );
+    let color = |s: &str| {
+        let n = u32::from_str_radix(s.trim_start_matches('#'), 16).unwrap_or(0);
+        Color::Rgb((n >> 16) as u8, (n >> 8) as u8, n as u8)
+    };
+    for node in &surface.nodes {
+        let (rect, text, foreground, bold) = match node {
+            Primitive::Text {
+                rect,
+                text,
+                color,
+                bold,
+                ..
+            } => (*rect, text.as_str(), color.as_str(), *bold),
+            Primitive::Icon { rect, name, color } => (
+                *rect,
+                match name.as_str() {
+                    "media-rewind" | "previous" => "<<",
+                    "media-forward" | "next" => ">>",
+                    "media-play" => ">",
+                    "media-pause" => "||",
+                    "media-stop" => "[]",
+                    "speaker" => "vol",
+                    "fullscreen" => "full",
+                    "audio_tracks" => "audio",
+                    "subtitle_tracks" => "subs",
+                    _ => "",
+                },
+                color.as_str(),
+                false,
+            ),
+            _ => continue,
+        };
+        let x = (u32::from(rect.x) * u32::from(columns) / u32::from(surface.width)) as u16;
+        let y = ((u32::from(rect.y) + u32::from(rect.height) / 2) * u32::from(rows)
+            / u32::from(surface.height)) as u16;
+        if x < columns && y < rows {
+            buffer.set_stringn(
+                x,
+                y,
+                text,
+                usize::from(columns - x),
+                Style::default()
+                    .fg(color(foreground))
+                    .add_modifier(if bold {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            );
+        }
+    }
+    Ok(CellTransport {
+        columns,
+        rows,
+        cells: buffer
+            .content
+            .iter()
+            .map(|c| {
+                let rgb = |c: Color, default| {
+                    if let Color::Rgb(r, g, b) = c {
+                        [r, g, b]
+                    } else {
+                        default
+                    }
+                };
+                super::Cell {
+                    symbol: c.symbol().into(),
+                    fg: rgb(c.fg, palette.fg),
+                    bg: rgb(c.bg, palette.bg),
+                    modifiers: c.modifier.bits(),
+                }
+            })
+            .collect(),
+    })
 }
 
 pub fn run() -> Result<()> {
@@ -139,6 +255,7 @@ mod tests {
     use super::*;
     fn request() -> Request {
         Request {
+            cells: None,
             width: 600,
             height: 48,
             theme: Palette {
@@ -160,6 +277,33 @@ mod tests {
             selected: 0,
             title: String::new(),
             font: 20,
+        }
+    }
+    #[test]
+    fn cell_controls_reuse_the_native_buttons_and_pointer_actions() {
+        let mut r = request();
+        r.movie = true;
+        r.cells = Some([80, 2]);
+        let response = respond(r).unwrap();
+        let cells = response.cells.unwrap();
+        assert_eq!(cells.cells.len(), 160);
+        assert!(cells.cells.iter().any(|c| c.symbol == "|"));
+        let surface = response.surface.unwrap();
+        for hit in &surface.hits {
+            if hit.action == "volume" {
+                continue;
+            }
+            let mut r = request();
+            r.movie = true;
+            r.cells = Some([80, 2]);
+            r.pointer = Some([
+                hit.rect.x + hit.rect.width / 2,
+                hit.rect.y + hit.rect.height / 2,
+            ]);
+            assert_eq!(
+                respond(r).unwrap().action.as_deref(),
+                Some(hit.action.as_str())
+            );
         }
     }
     #[test]

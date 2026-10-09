@@ -239,13 +239,14 @@ with its editable master in `treatments/winamp-01.svg`. The current proof is
 separate from that reference. The later flat FOLD-style proof is an experiment;
 it does not establish a replacement approved target.
 
-Resume status: the measured player specification, KIT skin foundation and offline
-proof exist. Interactive proof code and 2x/state captures are present in the
-working tree; validate current results before calling those gates complete.
-Visual acceptance, production skin migration, full-module skinning, negotiated
-asset transport, SSH measurements, and Linux/macOS parity remain open.
-The most recent feedback identifies excessive font sizes and visual busyness;
-resolve those against the preserved target before broadening implementation.
+Resume status: the measured specification, KIT skin foundation, original-density
+artwork, and shared production player exist. Negotiated cached asset transport
+has local protocol coverage, and the standalone rack has keyboard button focus.
+EQ, Album and Activity start folded; secondary typography has been reduced in
+response to the font-size and busyness feedback. Visual acceptance, remaining
+module skinning, physical SSH measurements and Linux/macOS parity remain open.
+Resolve the player treatment against the preserved target before migrating the
+remaining module skins. See `skin-progress.md` for evidence and limitations.
 
 The original plan follows without scope reduction:
 
@@ -394,3 +395,13 @@ Build and install the matching binaries, document the KIT interfaces, and retain
 - **Functional acceptance:** existing capabilities remain accessible and behave correctly.
 
 The first implementation milestone is the **KIT showcase plus one faithful player module**. That gives us concrete evidence that the approach works before we invest in the entire application again.
+
+### Native player button focus
+
+With the Player module focused, **Alt+Left/Right** cycles the visible transport,
+shuffle, and repeat buttons; **Enter** activates the focused button. **Escape**
+clears button focus. **Tab/Shift+Tab** retain module navigation and clear the
+button focus when leaving Player. Ordinary Left/Right seeking and existing
+transport shortcuts are unchanged. Dialogs keep their own keyboard handling.
+This currently applies to the standalone native rack; embedded hosts continue
+to own their keyboard routing.

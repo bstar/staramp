@@ -208,9 +208,25 @@ impl PlayerSkin {
         if width / density < 720 || height / density < 230 {
             // Defined compatibility presentation for hosts too short for the
             // full player. Its controls remain the ordinary AMP controls.
-            return Ok(native::classic_surface(
-                width, height, graphics, palette, state, radius,
-            ));
+            let mut surface =
+                native::classic_surface(width, height, graphics, palette, state, radius);
+            if let Some(rect) = self.focused.as_ref().and_then(|action| {
+                surface
+                    .hits
+                    .iter()
+                    .find(|h| &h.action == action)
+                    .map(|h| h.rect)
+            }) {
+                surface.nodes.push(Primitive::Border {
+                    rect,
+                    color: format!(
+                        "#{:02x}{:02x}{:02x}",
+                        palette.accent[0], palette.accent[1], palette.accent[2]
+                    ),
+                    radius: radius.min(3),
+                });
+            }
+            return Ok(surface);
         }
         self.prepare(palette, density, radius == 0)?;
         let surface = native::player_surface(
@@ -325,6 +341,33 @@ mod tests {
             border: [116, 121, 134],
             error: [240, 60, 60],
         }
+    }
+    #[test]
+    fn compact_fallback_keeps_keyboard_focus_visible_without_changing_hits() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let graphics = GraphicsConfig {
+            cell_width: 8,
+            cell_height: 16,
+        };
+        let before = skin
+            .surface_at_density(640, 180, graphics, &palette(), &state(), 8, 1)
+            .unwrap();
+        skin.focused = Some("play".into());
+        let focused = skin
+            .surface_at_density(640, 180, graphics, &palette(), &state(), 8, 1)
+            .unwrap();
+        focused.validate().unwrap();
+        assert_eq!(before.hits, focused.hits);
+        let rect = focused
+            .hits
+            .iter()
+            .find(|h| h.action == "play")
+            .unwrap()
+            .rect;
+        assert!(
+            matches!(focused.nodes.last(), Some(Primitive::Border { rect: drawn, .. }) if *drawn == rect)
+        );
+        assert!(focused.assets.is_empty());
     }
     #[test]
     fn active_hover_pressed_and_focus_ink_remains_readable_across_palettes() {

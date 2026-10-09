@@ -52,3 +52,13 @@ variants, and legacy fallback. This does not establish visual acceptance,
 physical SSH latency, audible playback or macOS fidelity. The production player
 still needs measured comparison with the preserved reference; the remaining
 modules have not been migrated to this skin.
+
+### Production keyboard button focus
+
+The standalone native rack now cycles visible player buttons with Alt+Left/Right
+and activates them with Enter, using the emitted hit geometry and ordinary AMP
+actions. Tab retains module navigation; leaving Player clears button focus.
+Dialogs and cell mode keep their existing routing. Narrow compatibility surfaces
+receive an accent outline rather than losing the focus indication. Graphical
+fixture checks cover activation, seek-shortcut preservation and overlay isolation;
+this does not establish embedded-host keyboard parity or physical-terminal testing.

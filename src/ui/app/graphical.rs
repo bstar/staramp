@@ -951,6 +951,61 @@ impl Rack<'_> {
             }
         }
     }
+    /// Preserve ordinary seek/module shortcuts while making drawn buttons
+    /// reachable without a pointer. Order comes from the emitted surface.
+    fn player_control_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        if self.overlay || self.cells || !self.skins || self.app.panels.focus != Focus::Player {
+            return false;
+        }
+        if modifiers == KeyModifiers::ALT && matches!(code, KeyCode::Left | KeyCode::Right) {
+            let mut actions = Vec::new();
+            if let Some(surface) = &self.surface {
+                for hit in &surface.hits {
+                    if matches!(
+                        hit.action.as_str(),
+                        "previous" | "play" | "pause" | "stop" | "next" | "shuffle" | "repeat"
+                    ) && !actions.contains(&hit.action)
+                    {
+                        actions.push(hit.action.clone());
+                    }
+                }
+            }
+            if actions.is_empty() {
+                return false;
+            }
+            let current = self
+                .skin
+                .focused
+                .as_ref()
+                .and_then(|name| actions.iter().position(|a| a == name));
+            let index = match (current, code) {
+                (Some(i), KeyCode::Left) => (i + actions.len() - 1) % actions.len(),
+                (Some(i), _) => (i + 1) % actions.len(),
+                (None, KeyCode::Left) => actions.len() - 1,
+                (None, _) => 0,
+            };
+            self.skin.focused = Some(actions[index].clone());
+            return true;
+        }
+        if modifiers.is_empty() && code == KeyCode::Enter {
+            if let Some(name) = self.skin.focused.clone() {
+                // Recheck the current surface: a resize can remove a control.
+                if self
+                    .surface
+                    .as_ref()
+                    .is_some_and(|s| s.hits.iter().any(|h| h.action == name))
+                {
+                    self.action(&name, 0, 0);
+                    return true;
+                }
+                self.skin.focused = None;
+            }
+        }
+        if code == KeyCode::Esc {
+            self.skin.focused = None;
+        }
+        false
+    }
     fn action(&mut self, name: &str, x: u16, y: u16) {
         if let Some(module) = name.strip_prefix("fold:") {
             if !self.folded.remove(module) {
@@ -1535,6 +1590,10 @@ impl Controller for Rack<'_> {
         match input {
             Input::Key { code, modifiers } => {
                 if let Some(code) = key(&code) {
+                    let modifiers = KeyModifiers::from_bits_truncate(modifiers);
+                    if self.player_control_key(code, modifiers) {
+                        return;
+                    }
                     let before = self.app.panels.focus;
                     let module = match before {
                         Focus::Equalizer => Some("eq"),
@@ -1549,11 +1608,9 @@ impl Controller for Rack<'_> {
                             return;
                         }
                     }
-                    self.app.dispatch_key(KeyEvent::new(
-                        code,
-                        KeyModifiers::from_bits_truncate(modifiers),
-                    ));
+                    self.app.dispatch_key(KeyEvent::new(code, modifiers));
                     if before != self.app.panels.focus {
+                        self.skin.focused = None;
                         if let Some((_, start, height)) = self
                             .modules
                             .iter()
@@ -1831,6 +1888,38 @@ impl App {
             generation: 0,
         };
         rack.scene(v);
+        rack.app.panels.focus = Focus::Player;
+        rack.input(Input::Key {
+            code: "right".into(),
+            modifiers: KeyModifiers::ALT.bits(),
+        });
+        assert_eq!(rack.skin.focused.as_deref(), Some("previous"));
+        assert!(rack.player_control_key(KeyCode::Right, KeyModifiers::ALT));
+        assert_eq!(rack.skin.focused.as_deref(), Some("play"));
+        assert!(!rack.player_control_key(KeyCode::Right, KeyModifiers::NONE));
+        assert_eq!(rack.skin.focused.as_deref(), Some("play"));
+        assert!(rack.player_control_key(KeyCode::Left, KeyModifiers::ALT));
+        assert_eq!(rack.skin.focused.as_deref(), Some("previous"));
+        assert!(!rack.player_control_key(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(rack.skin.focused.is_none());
+        rack.skin.focused = Some("shuffle".into());
+        let shuffled = rack.app.player.queue.lock().unwrap().shuffled();
+        rack.input(Input::Key {
+            code: "enter".into(),
+            modifiers: 0,
+        });
+        assert_ne!(rack.app.player.queue.lock().unwrap().shuffled(), shuffled);
+        rack.input(Input::Key {
+            code: "tab".into(),
+            modifiers: 0,
+        });
+        assert!(rack.skin.focused.is_none());
+        assert_ne!(rack.app.panels.focus, Focus::Player);
+        assert!(!rack.player_control_key(KeyCode::Right, KeyModifiers::ALT));
+        rack.app.panels.focus = Focus::Player;
+        rack.overlay = true;
+        assert!(!rack.player_control_key(KeyCode::Right, KeyModifiers::ALT));
+        rack.overlay = false;
         let closed_height = rack
             .modules
             .iter()

@@ -28,6 +28,20 @@ embedding. Small/older hosts retain the compatibility player.
 
 ## Verification
 
+The October 9 large-window startup failure was reproduced at 1400×2000:
+the rack capped its canvas at 1800 pixels high, causing the host to stretch
+fixed bitmap glyphs and reject the frame. The canvas now matches the physical
+viewport, including one-pixel gutters at 2x density. KIT accepts surface
+coordinates up to its existing terminal viewport budget; decoded asset limits
+remain unchanged. Renderer failures also retain their underlying error in the
+terminal and file log.
+
+Regression rendering covers tall (1400×2000), odd-sized (2737×1801), and 4K
+(3840×2160) viewports. The release additionally passed isolated Linux Kitty
+sessions requested at 1400×2000 and 5121×2161, including themes, F9 round trips,
+clean quit, and configuration persistence. These checks do not establish macOS
+or physical SSH visual parity.
+
 | Area | Evidence | Remaining |
 | --- | --- | --- |
 | Artwork and colors | Original-density atlas geometry; production raster checks for source palette and active/inactive button contrast | User visual review; variable font baselines across platforms |

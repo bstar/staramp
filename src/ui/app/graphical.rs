@@ -1583,8 +1583,8 @@ impl Controller for Rack<'_> {
             self.app.draw(area, &mut buffer);
             let surface = classic::form(
                 &buffer,
-                v.width.min(4096) as u16,
-                v.height.min(1800) as u16,
+                v.width as u16,
+                v.height as u16,
                 font,
                 &c,
                 self.radius,
@@ -1609,7 +1609,7 @@ impl Controller for Rack<'_> {
             return scene;
         }
         let density = if self.skins
-            && v.width >= 1456
+            && v.width >= 1472
             && v.height >= 600
             && v.height / u32::from(v.rows.max(1)) >= 32
         {
@@ -1618,8 +1618,8 @@ impl Controller for Rack<'_> {
             1
         };
         self.density = density;
-        let w = (v.width.min(4096) as u16) / density;
-        let h = (v.height.min(1800) as u16) / density;
+        let w = v.width as u16 / density;
+        let h = v.height as u16 / density;
         let mut surface = Surface::new(w, h, native::hex(palette.bg));
         if self.skins {
             if let Err(error) = self.skin.prepare(&palette, density, self.radius == 0) {
@@ -1860,6 +1860,10 @@ impl Controller for Rack<'_> {
         if density > 1 {
             surface = surface.at_density(density).expect("bounded rack density");
         }
+        // Odd viewport dimensions leave a one-pixel gutter at 2x density.
+        // Pad the canvas instead of scaling every fixed atlas crop to fit it.
+        surface.width = v.width as u16;
+        surface.height = v.height as u16;
         let mut scene = Scene::from_buffer(
             &starkit::ratatui::buffer::Buffer::empty(area),
             v,
@@ -2313,6 +2317,27 @@ impl App {
             rows: 71,
             generation: 0,
         };
+        // The production terminal uses real pixel dimensions, including tall,
+        // odd-sized and 4K windows. Fixed glyphs must never be rescaled to fit.
+        for (width, height, rows) in [(1400, 2000, 100), (2737, 1801, 56), (3840, 2160, 67)] {
+            let v = Viewport {
+                width,
+                height,
+                columns: 171,
+                rows,
+                generation: 0,
+            };
+            let scene = rack.scene(v);
+            let surface = rack.surface.as_ref().unwrap();
+            assert_eq!(
+                (u32::from(surface.width), u32::from(surface.height)),
+                (width, height)
+            );
+            surface.validate()?;
+            // Rendering is the gate: surface validation alone cannot detect a
+            // host stretching a fixed atlas crop to a different pixel size.
+            starkit::terminal_graphics::renderer::render_reference(&scene)?;
+        }
         let selected_scene = rack.scene(selected_view);
         starkit::terminal_graphics::renderer::render_reference(&selected_scene)?
             .save(output.join("selected-rack.png"))?;

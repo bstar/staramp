@@ -39,7 +39,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 # stated version is one nobody can tell has moved. It also makes the `[patch]`
 # above fail loudly rather than silently if the local checkout has drifted to
 # a version this no longer accepts.
-starkit = { git = "https://github.com/bstar/starkit", rev = "4f6edb7836bf6ddc95fa574b2d6d9f0340561756", version = "0.3", features = [
+starkit = { git = "https://github.com/bstar/starkit", rev = "8c3badd41ccda68f0bff27b7af045c28776d090f", version = "0.3", features = [
     "image",
     "wsz",
     "net",

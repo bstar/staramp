@@ -226,3 +226,171 @@ fixed player geometry while scrolling, surface bounds, existing embed controls,
 and import/DSP response regressions. This is not a claim that every acceptance
 checklist item has been exercised manually. macOS, audible SSH playback, and
 physical mouse/terminal behavior still need live validation.
+
+## Recovered skin implementation plan
+
+Recovered verbatim on 2026-10-09 from the earlier conversation's seven-step
+plan, following the request to create a proper plan and then start it.
+This is the skin implementation plan; the earlier generic native rack above
+is a prototype and does not establish visual acceptance.
+
+The selected full-rack design is [Classic stacked rack](treatments/approved.html),
+with its editable master in `treatments/winamp-01.svg`. The current proof is
+separate from that reference. The later flat FOLD-style proof is an experiment;
+it does not establish a replacement approved target.
+
+Resume status: the measured player specification, KIT skin foundation and offline
+proof exist. Interactive proof code and 2x/state captures are present in the
+working tree; validate current results before calling those gates complete.
+Visual acceptance, production skin migration, full-module skinning, negotiated
+asset transport, SSH measurements, and Linux/macOS parity remain open.
+The most recent feedback identifies excessive font sizes and visual busyness;
+resolve those against the preserved target before broadening implementation.
+
+The original plan follows without scope reduction:
+
+## Goal
+
+Reproduce the approved Classic stacked rack faithfully in native Rust inside Kitty, locally and over SSH.
+
+**Build the rendering foundation in STAR/KIT so STAR/FOLD and other tools can adopt it later.** AMP is the first application; this phase won’t redesign the other apps.
+
+## 1. Establish a measurable design specification
+
+Turn the approved design into an executable specification:
+
+- Panel dimensions, margins, padding, and alignment.
+- Title strips, bevel thickness, corner radii, and recessed displays.
+- Typography roles, sizes, weights, baselines, and spacing.
+- Button dimensions and interaction states.
+- Rules for resizing, scrolling, and module visibility.
+
+Use matching content and colors for visual comparisons. Capture populated, empty, loading, and error states separately.
+
+**Deliverable:** a reference sheet with annotated measurements and reference images.
+
+## 2. Build a reusable skin system in KIT
+
+Introduce reusable components rather than more application-specific rectangle drawing.
+
+| KIT capability | Purpose |
+|---|---|
+| Nine-slice images | Preserve corners while panels resize |
+| Tiled strips | Repeat borders, grooves, and LED patterns cleanly |
+| Sprite atlases | Store icons, digits, and control states |
+| Theme masks | Recolor assets through existing theme roles |
+| Layout constraints | Define fixed, flexible, and minimum dimensions |
+| Shared interaction geometry | Keep drawing, hover, clicking, and dragging aligned |
+| Asset cache | Reuse decoded images and rendered components |
+
+Assets need explicit dimensions, density, stretch regions, tint roles, and content insets. Rounded and rigid corners become skin variants.
+
+Keep these APIs independent of music playback so FOLD can later use them for tabs, panes, menus, and preview controls.
+
+**Deliverable:** a KIT component showcase rendered through the real terminal frontend.
+
+## 3. Prototype typography before committing to custom fonts
+
+Compare three treatments at actual display sizes:
+
+1. A bundled outline font with carefully controlled metrics.
+2. Custom bitmap lettering for fixed labels and branding.
+3. A hybrid with bitmap controls and outline text for filenames, metadata, and Unicode.
+
+Create custom clock digits and transport artwork immediately. Select the text approach through actual Linux and Mac captures.
+
+Check:
+
+- Small-size readability and consistent baselines.
+- Retina and ordinary display densities.
+- Accented characters, CJK, symbols, and fallback.
+- Truncation and long labels.
+- Font licensing and redistribution.
+
+**Deliverable:** a typography comparison inside Kitty. A complete custom font family proceeds only if this demonstrates a benefit.
+
+## 4. Prove the player module
+
+Implement **only the player** using the new foundation:
+
+- Skinned frame and title strip.
+- Recessed display.
+- Clock, analyzer, title, and technical metadata.
+- Seek bar.
+- Square transport controls.
+- Shuffle, repeat, and volume.
+- Hover, pressed, disabled, and keyboard focus states.
+
+Use the same AMP-owned component for standalone and embedded playback.
+
+### Visual acceptance gate
+
+Compare the actual application against the approved reference using:
+
+- Identical viewport, palette, and fixture data.
+- Side-by-side images.
+- Transparent overlays and difference images.
+- Linux and Mac captures.
+- Several window sizes and display densities.
+
+Geometry, baseline, and spacing discrepancies must be resolved. Expected rasterization differences should be identified explicitly.
+
+**No expansion to the remaining panels until this component passes your visual review.**
+
+## 5. Make resizing and SSH part of the foundation
+
+Separate **UI scale** from **window dimensions**:
+
+- Wider windows expand content areas.
+- Controls, lettering, corners, and bevels retain their intended proportions.
+- Smaller windows use defined layouts and scrolling.
+- Text is never silently shrunk to make a layout fit.
+
+For SSH:
+
+- Negotiate skin and asset capabilities.
+- Cache assets on the local frontend.
+- Send asset identifiers and changing state after initialization.
+- Bound frame queues and prioritize interaction.
+- Measure bandwidth, input latency, frame cadence, and CPU.
+
+The current input path reports terminal-cell precision. Small controls therefore need usable hit areas, and any finer pointer support must be explicitly negotiated.
+
+**Deliverable:** a responsive player with measured local and SSH behavior.
+
+## 6. Complete AMP module by module
+
+Apply the accepted foundation in this order:
+
+1. **Parametric EQ:** response curve, handles, exact-value fields, profile controls, import/export.
+2. **Album:** artwork, metadata hierarchy, provenance, navigation, catalog actions.
+3. **Activity:** provider cards, recent listens, delivery states, retry controls.
+4. **Playlist:** numbered rows, durations, grouping, selection, tagging, toolbar, scrolling.
+5. **Menus and dialogs:** consistent skin, typography, keyboard and mouse behavior.
+
+Each module gets its own visual comparison and functional checks before moving on.
+
+Existing playback, history, library, and EQ logic remain the authoritative state shared with ASCII mode.
+
+## 7. Validate parity and deliver
+
+Complete the action-by-action parity checklist across:
+
+- Keyboard and mouse.
+- ASCII/native switching.
+- Standalone and FOLD embedding.
+- All existing themes.
+- Rounded and rigid variants.
+- Local and SSH operation.
+- Linux and macOS.
+
+Build and install the matching binaries, document the KIT interfaces, and retain reproducible reference captures.
+
+## Completion standard
+
+“Done” requires both:
+
+- **Visual acceptance:** the actual application reproduces the approved treatment.
+- **Functional acceptance:** existing capabilities remain accessible and behave correctly.
+
+The first implementation milestone is the **KIT showcase plus one faithful player module**. That gives us concrete evidence that the approach works before we invest in the entire application again.

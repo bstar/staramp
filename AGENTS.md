@@ -274,3 +274,14 @@ sound device. Embedded JSONL credits prevent a stalled frontend from blocking
 the embed request loop. Re-routing preserves queue/position/pause; seeking and
 reattaching invalidate queued output with fresh epochs. The ordinary device
 output is the default and does not capture or relay samples.
+
+## Active Classic skin work
+
+The ongoing skin work is in the sibling `staramp-graphical` worktree on
+`feature/skinned-native-ui`, with generic foundation work in `starkit-amp-rack`.
+The full recovered seven-step plan is in `docs/graphical/README.md` under
+"Recovered skin implementation plan". The approved Classic stacked rack is
+`docs/graphical/treatments/winamp-01.svg`, shown by `treatments/approved.html`.
+Keep the approved reference visible and separate from runtime proofs. The flat
+FOLD-style player is an experiment, not an accepted replacement design.
+Complete the player visual gate before migrating the remaining modules.

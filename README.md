@@ -42,6 +42,14 @@ Inside the player, `?` shows every key, `space` plays and pauses, `p` opens the
 playlist, `i` the album window, `l` the library browser, and `q` quits. The
 mouse works everywhere the keyboard does.
 
+## Native Classic rack (experimental)
+
+Run `staramp graphical` inside Kitty for the native Rust Classic rack.
+F9 switches graphical/cell presentation without replacing the player session.
+All sixteen themes are available with Alt+T. Panel corners are configurable;
+transport buttons stay square. See [graphical mode](docs/graphical/README.md)
+for configuration, EQ imports, SSH behavior, and verification limits.
+
 ## What it does
 
 - **Plays everything.** FLAC, MP3, Vorbis, AAC and ALAC natively; Monkey's

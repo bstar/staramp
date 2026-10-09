@@ -187,6 +187,7 @@ pub struct PlayerRenderState {
     pub duration: f64,
     pub volume: f32,
     pub repeat: RepeatMode,
+    pub shuffled: bool,
     pub bit_perfect: bool,
     pub focused: bool,
     pub bands: Vec<f32>,
@@ -206,6 +207,8 @@ pub enum HitTarget {
     Pause,
     Stop,
     Next,
+    Repeat,
+    Shuffle,
     /// Absolute position in seconds.
     Seek(f64),
     /// Normalized volume, 0 through 1.
@@ -446,6 +449,7 @@ mod tests {
             duration: 120.0,
             volume: 0.5,
             repeat: RepeatMode::Off,
+            shuffled: false,
             bit_perfect: false,
             focused: true,
             bands: vec![0.5; 20],

@@ -196,6 +196,10 @@ pub struct Vis {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ui {
+    /// Native composition, independent of the selected color theme.
+    pub layout: String,
+    /// `rounded` or `rigid`; transport buttons remain square.
+    pub corners: String,
     /// Blank columns kept either side of the window.
     ///
     /// Defaults to 1: panel borders sitting flush against the terminal edge
@@ -380,6 +384,8 @@ impl Default for Vis {
 impl Default for Ui {
     fn default() -> Self {
         Self {
+            layout: "classic-rack".into(),
+            corners: "rounded".into(),
             padding_x: 1,
             padding_y: 0,
             seek_style: "ansi".into(),
@@ -527,6 +533,10 @@ theme = "winamp-classic"
 volume = 1.0
 
 [ui]
+# Native composition is independent of the color theme.
+layout = "classic-rack"
+# Panel corners: rounded or rigid. Transport controls stay square.
+corners = "rounded"
 # How album covers are drawn: auto, kitty, blocks, or off.
 graphics = "auto"
 # Transport buttons: "auto" draws them as pictures wherever the terminal can

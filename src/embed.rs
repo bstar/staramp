@@ -4,8 +4,8 @@
 //! normal UI App, starts a control socket, records activity, or saves a session.
 
 mod metadata;
-mod native;
-mod render;
+pub(crate) mod native;
+pub(crate) mod render;
 mod styles;
 mod transport;
 pub use transport::run as run_transport_stdio;
@@ -469,10 +469,16 @@ pub fn run_stdio() -> Result<()> {
                 send_error(&mut output, "renderer returned the wrong cell count".into())?;
                 continue;
             }
-            let surface = v
-                .graphics
-                .filter(|_| v.native_surface)
-                .map(|g| native::surface(v.width, v.height, g, &v.palette, &state));
+            let surface = v.graphics.filter(|_| v.native_surface).map(|g| {
+                native::surface_with_radius(
+                    v.width,
+                    v.height,
+                    g,
+                    &v.palette,
+                    &state,
+                    if cfg.ui.corners == "rigid" { 0 } else { 8 },
+                )
+            });
             if let Some(surface) = &surface {
                 if last_native.as_ref().is_some_and(|(generation, previous)| {
                     *generation == v.generation && previous == surface
@@ -803,6 +809,11 @@ fn pointer(player: &Player, target: HitTarget) -> Result<()> {
         HitTarget::Pause => control(player, "pause", None),
         HitTarget::Stop => control(player, "stop", None),
         HitTarget::Next => control(player, "next", None),
+        HitTarget::Repeat => control(player, "repeat", None),
+        HitTarget::Shuffle => {
+            player.queue.lock().unwrap().toggle_shuffle();
+            Ok(())
+        }
         HitTarget::Seek(value) => control(player, "seek", Some(value)),
         HitTarget::Volume(value) => control(player, "volume", Some(f64::from(value))),
         HitTarget::Visualizer | HitTarget::SeekRow => Ok(()),
@@ -856,6 +867,10 @@ fn render_state(
             if channels == 1 { "mono" } else { "stereo" }
         )
     };
+    let (repeat, shuffled) = {
+        let q = player.queue.lock().unwrap();
+        (q.repeat(), q.shuffled())
+    };
     PlayerRenderState {
         title,
         subtitle,
@@ -864,7 +879,8 @@ fn render_state(
         position: st.position_secs(),
         duration: st.duration_secs(),
         volume: player.volume(),
-        repeat: player.queue.lock().unwrap().repeat(),
+        repeat,
+        shuffled,
         bit_perfect: st.bit_perfect.load(Relaxed),
         focused,
         bands: meters.bars().to_vec(),

@@ -21,7 +21,7 @@ apt-get install -y -qq --no-install-recommends \
   ca-certificates curl file git xz-utils \
   build-essential pkg-config clang libclang-dev \
   libasound2-dev libdbus-1-dev \
-  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libavfilter-dev
 
 if ! command -v cargo >/dev/null; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \

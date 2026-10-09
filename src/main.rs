@@ -49,6 +49,18 @@ struct Cli {
     #[arg(short, long, global = true)]
     verbose: bool,
 
+    #[cfg(feature = "terminal-graphics")]
+    #[arg(long, hide = true)]
+    graphical_relay: Option<String>,
+    #[cfg(feature = "terminal-graphics")]
+    #[arg(long, hide = true)]
+    attach_only: bool,
+    #[cfg(feature = "terminal-graphics")]
+    #[arg(long, hide = true)]
+    graphical_server: Option<String>,
+    #[cfg(feature = "terminal-graphics")]
+    #[arg(long, hide = true)]
+    directory: Option<PathBuf>,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -102,6 +114,17 @@ enum ScrobbleCmd {
 
 #[derive(Subcommand)]
 enum Command {
+    #[cfg(feature = "terminal-graphics")]
+    #[command(hide = true)]
+    RenderRack { output: PathBuf },
+    /// Run the native Classic Rack inside Kitty. F9 switches presentation.
+    #[cfg(feature = "terminal-graphics")]
+    Graphical {
+        target: Option<PathBuf>,
+        /// Run playback on this SSH host; rendering stays in the local terminal.
+        #[arg(long)]
+        ssh: Option<String>,
+    },
     /// Run a standalone player using the versioned JSON-lines embed protocol.
     #[command(hide = true)]
     Embed {
@@ -258,6 +281,10 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    #[cfg(feature = "terminal-graphics")]
+    if let Some(name) = &cli.graphical_relay {
+        return graphical_relay(name, cli.directory.as_deref(), cli.attach_only);
+    }
     // The embedded player has no configuration, history, session, log, or
     // control socket to initialise. Keep it before all startup writes.
     if let Some(Command::Embed { stdio, transport }) = &cli.command {
@@ -290,7 +317,39 @@ fn main() -> Result<()> {
 
     let _guard = starkit::logging::init(&paths::PATHS, cli.verbose)?;
 
+    #[cfg(feature = "terminal-graphics")]
+    if let Some(name) = cli.graphical_server {
+        return cmd_tui_mode(cli.directory, Some("off".into()), Some(&name));
+    }
     match cli.command {
+        #[cfg(feature = "terminal-graphics")]
+        Some(Command::RenderRack { output }) => ui::app::App::render_rack_references(&output),
+        #[cfg(feature = "terminal-graphics")]
+        Some(Command::Graphical { target, ssh }) => {
+            use starkit::terminal_graphics::client::{self, Launch};
+            client::run_with_preference(
+                Launch {
+                    executable: if ssh.is_some() {
+                        "staramp".into()
+                    } else {
+                        std::env::current_exe()?.to_string_lossy().into_owned()
+                    },
+                    host: ssh,
+                    ssh_config: None,
+                    session: format!("rack-{}", std::process::id()),
+                    directory: target.map(|p| p.to_string_lossy().into_owned()),
+                    attach_only: false,
+                    play: None,
+                },
+                |_| None,
+                || None,
+                client::PresentationOptions::default(),
+                client::PresentationPreference {
+                    cells: false,
+                    path: paths::config_dir()?.join("presentation"),
+                },
+            )
+        }
         Some(Command::Embed { .. }) => unreachable!("handled before startup"),
         Some(Command::Decode {
             input,
@@ -1689,6 +1748,14 @@ fn cmd_art(cmd: ArtCmd) -> Result<()> {
 }
 
 fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result<()> {
+    cmd_tui_mode(target, graphics_override, None)
+}
+
+fn cmd_tui_mode(
+    target: Option<PathBuf>,
+    graphics_override: Option<String>,
+    native_session: Option<&str>,
+) -> Result<()> {
     let cfg = config::Config::load().unwrap_or_default();
 
     // Before anything touches the terminal. Detecting a graphics protocol
@@ -1730,6 +1797,10 @@ fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result
         if let Some(t) = target.as_ref().filter(|t| t.is_file()) {
             app.ask_about(t.clone());
         }
+        #[cfg(feature = "terminal-graphics")]
+        if let Some(name) = native_session {
+            return app.run_graphical(name);
+        }
         return app.run();
     }
 
@@ -1762,7 +1833,42 @@ fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result
             app.offer_resume(s);
         }
     }
+    #[cfg(feature = "terminal-graphics")]
+    if let Some(name) = native_session {
+        return app.run_graphical(name);
+    }
+    let _ = native_session;
     app.run()
+}
+
+#[cfg(feature = "terminal-graphics")]
+fn graphical_relay(name: &str, target: Option<&Path>, attach_only: bool) -> Result<()> {
+    use starkit::terminal_graphics::session;
+    let root = paths::runtime_dir()?.join("graphical");
+    let socket = session::socket_path(&root, name)?;
+    if attach_only {
+        return session::relay(&socket);
+    }
+    let mut child = std::process::Command::new(std::env::current_exe()?);
+    child.args(["--graphical-server", name]);
+    if let Some(target) = target {
+        child.arg("--directory").arg(target);
+    }
+    let mut child = child
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .spawn()?;
+    for _ in 0..200 {
+        if socket.exists() {
+            return session::relay(&socket);
+        }
+        if let Some(status) = child.try_wait()? {
+            anyhow::bail!("Graphical player exited: {status}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let _ = child.kill();
+    anyhow::bail!("Graphical player did not become ready")
 }
 
 fn cmd_query(expr: String, count_only: bool, explain: bool) -> Result<()> {

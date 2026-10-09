@@ -214,3 +214,7 @@ opt-level = 2
 # ---------------------------------------------------------------------------
 # .deb packaging (cargo deb)
 # ---------------------------------------------------------------------------
+
+[features]
+default = ["terminal-graphics"]
+terminal-graphics = ["starkit/terminal-graphics"]

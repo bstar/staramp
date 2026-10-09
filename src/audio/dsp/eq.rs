@@ -195,9 +195,13 @@ impl EqSettings {
     /// profile would be a second copy of the maths, and the two would agree
     /// only until one of them was edited.
     ///
-    /// Channel masks are ignored: the display shows one curve, and a filter
-    /// applied to one channel still belongs on it.
+    /// The default display follows the first audio channel.
     pub fn magnitude_db_at(&self, f: f64, sample_rate: u32) -> f64 {
+        self.magnitude_db_at_channel(f, sample_rate, 0)
+    }
+
+    /// The compiled response of one channel, including its channel masks.
+    pub fn magnitude_db_at_channel(&self, f: f64, sample_rate: u32, channel: usize) -> f64 {
         if !self.enabled {
             return 0.0;
         }
@@ -212,6 +216,9 @@ impl EqSettings {
             }
         } else {
             for stage in &self.stages {
+                if !stage.channels.contains(channel) {
+                    continue;
+                }
                 mag *= match &stage.filter {
                     CompiledFilter::Gain(v) => *v,
                     CompiledFilter::Biquad(c) => c.magnitude_at(f, sr),
@@ -749,6 +756,30 @@ mod tests {
         // Far either side it does nothing.
         assert!(s.magnitude_db_at(50.0, sr).abs() < 0.5);
         assert!(s.magnitude_db_at(15_000.0, sr).abs() < 0.5);
+    }
+
+    #[test]
+    fn response_does_not_multiply_filters_from_different_channels() {
+        use crate::audio::dsp::apo::{Filter, Profile, Stage};
+        let p = Profile {
+            name: "split".into(),
+            stages: vec![
+                Stage {
+                    enabled: true,
+                    channels: ChannelMask(1),
+                    filter: Filter::Preamp { gain_db: 6. },
+                },
+                Stage {
+                    enabled: true,
+                    channels: ChannelMask(2),
+                    filter: Filter::Preamp { gain_db: -6. },
+                },
+            ],
+        };
+        let eq = EqSettings::from_profile(true, &p, 44100);
+        assert!((eq.magnitude_db_at_channel(1000., 44100, 0) - 6.).abs() < 0.01);
+        assert!((eq.magnitude_db_at_channel(1000., 44100, 1) + 6.).abs() < 0.01);
+        assert_eq!(eq.magnitude_db_at_channel(1000., 44100, 2), 0.);
     }
 
     /// A preamp moves the whole curve, and a disabled chain is flat.

@@ -60,7 +60,7 @@ impl Browser {
                         .and_then(|v| v.to_str())
                         .map(str::to_ascii_lowercase)
                         .as_deref(),
-                    Some("txt" | "apo")
+                    Some("txt" | "apo" | "json")
                 );
                 (directory || apo).then_some(Entry { path, directory })
             })
@@ -132,7 +132,7 @@ impl FileView<'_> {
     pub fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
         let title = match self.browser.purpose {
-            Purpose::ImportEq => "import apo profile",
+            Purpose::ImportEq => "import EQ profile · APO / EasyEffects",
             Purpose::ExportEq => "export apo profile",
         };
         let hint = match self.browser.purpose {

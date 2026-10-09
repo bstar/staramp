@@ -5,6 +5,9 @@
 //! structure is the point: it is what makes the thing read as Winamp rather
 //! than as one more bordered box full of sections.
 
+#[cfg(feature = "terminal-graphics")]
+mod graphical;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1998,8 +2001,19 @@ impl App {
                 if browser.purpose == Purpose::ImportEq {
                     let selected = browser.selected_file().map(std::path::Path::to_path_buf);
                     let Some(path) = selected else { return true };
-                    match crate::audio::dsp::apo::Profile::parse_file(&path) {
-                        Ok(profile) => {
+                    match crate::audio::dsp::profiles::load(&path) {
+                        Ok(import) => {
+                            if !import.excluded.is_empty()
+                                && browser.confirm.as_ref() != Some(&path)
+                            {
+                                browser.confirm = Some(path);
+                                self.note(format!(
+                                    "EQ only; excluded {} — Enter again to import",
+                                    import.excluded.join(", ")
+                                ));
+                                return true;
+                            }
+                            let profile = import.profile;
                             if let Err(error) = profile.save_managed() {
                                 self.note(format!("could not import EQ: {error}"));
                                 return true;
@@ -3682,97 +3696,158 @@ impl App {
         }
     }
 
+    fn tick_player(&mut self) {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.25);
+        self.last_frame = now;
+
+        if self.vis.mode != VisMode::Off {
+            if self.player.tap.read(&mut self.vis.tap_buf) {
+                if self.vis.mode.uses_fluid() {
+                    self.feed_fluid(dt);
+                    self.vis.meters.update(self.vis.fluid.bands(), dt);
+                    self.player.publish_bands(self.vis.fluid.bands());
+                } else {
+                    self.vis.analyzer.analyze(&self.vis.tap_buf, dt);
+                    self.vis.meters.update(self.vis.analyzer.bands(), dt);
+                    // Publish for any instance mirroring this one.
+                    self.player.publish_bands(self.vis.analyzer.bands());
+                }
+                if self.vis.mode.needs_waveform() {
+                    // The trace modes want the newest samples, not a
+                    // spectrum.
+                    let n = self.vis.wave.len().min(self.vis.tap_buf.len());
+                    self.vis.wave[..n]
+                        .copy_from_slice(&self.vis.tap_buf[self.vis.tap_buf.len() - n..]);
+                }
+            } else if !self.session.bands.is_empty() {
+                // A window following another has no audio of its own --
+                // its player is detached and its tap never fills -- so the
+                // spectrum arrives over the socket instead. The leader has
+                // been sending it all along; this is where it is used.
+                //
+                // The count is the leader's, taken from the leader's width.
+                // `Meters::update` resizes when it changes and the panel
+                // resamples to its own bar count, so two windows of
+                // different widths both draw a full spectrum.
+                self.vis.meters.update(&self.session.bands.clone(), dt);
+            }
+        }
+        self.advance_seek_phase(dt);
+        self.advance_retry_phase(dt);
+        self.vis.onset.feed(self.vis.analyzer.bands(), dt);
+        self.advance_effects(dt);
+
+        if now.duration_since(self.look.last_marquee) >= MARQUEE_STEP {
+            self.look.marquee = self.look.marquee.wrapping_add(1);
+            self.look.last_marquee = now;
+        }
+
+        self.poll_mirror();
+        self.poll_import();
+        self.sync_view();
+        self.check_track_change();
+        let activity_state = self.player.state.state();
+        if activity_state == PlayState::Stopped
+            && now.duration_since(self.last_sonic_request) >= Duration::from_secs(10)
+        {
+            if let Some(worker) = &self.sonic {
+                worker.request_idle(1);
+            }
+            self.last_sonic_request = now;
+        }
+        let activity_revision = self
+            .player
+            .state
+            .track_revision
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let activity_item = self.player.current_item();
+        let activity_position = self.player.state.position_secs();
+        let activity_duration = self.player.state.duration_secs();
+        self.activity.observe(
+            !self.is_mirror(),
+            activity_revision,
+            activity_state,
+            activity_item.clone(),
+            activity_position,
+            activity_duration,
+        );
+        self.discord.observe(
+            !self.is_mirror(),
+            activity_revision,
+            activity_state,
+            activity_item,
+            activity_position,
+            activity_duration,
+        );
+        if self.over.resume.is_none() && !self.is_mirror() && self.import.is_none() {
+            self.save_session(false);
+        }
+        self.poll_auth();
+        self.poll_art_outcome();
+        self.publish_mpris();
+    }
+
+    fn dispatch_key(&mut self, k: KeyEvent) {
+        if let Some(e) = self.fx.running.as_mut() {
+            e.finish();
+        }
+        // The resume prompt answers raw keys rather than
+        // actions: `n` should decline without becoming a
+        // global binding that shadows something else.
+        if self.over.resume.is_some() && self.answer_resume(k) {
+            return;
+        }
+        if self.import_artist_type(k) {
+            return;
+        }
+        if self.edit.auth.is_some() && self.auth_type(k) {
+            return;
+        }
+        if self.eq_value_type(k) {
+            return;
+        }
+        if self.file_browser_key(k) {
+            return;
+        }
+        // Naming a playlist eats keys ahead of everything, so
+        // `l` in a playlist name does not open the browser.
+        if self.edit.naming.is_some() && self.name_type(k) {
+            return;
+        }
+        // So does the filter box, for the same reason.
+        if self.edit.typing.is_some() && self.filter_type(k) {
+            return;
+        }
+        // The search line is the only other thing that eats raw
+        // keys, and for the same reason as the resume prompt.
+        if self.library_type(k) {
+            return;
+        }
+        // Three layers, narrowest first. The library is an
+        // overlay and takes precedence over the panel behind
+        // it; the focused panel gets first refusal after
+        // that; and the global table has whatever neither
+        // wanted, which is what keeps every existing binding
+        // working from everywhere.
+        let action = match g_prefix(&mut self.edit.g_prefix, k) {
+            PrefixKey::Waiting => return,
+            PrefixKey::Action(action) => Some(action),
+            PrefixKey::None if self.over.library.is_some() => {
+                keymap::library(k).or_else(|| keymap::resolve(k))
+            }
+            PrefixKey::None => {
+                keymap::module(self.panels.focus.into(), k).or_else(|| keymap::resolve(k))
+            }
+        };
+        if let Some(action) = action {
+            self.handle(action);
+        }
+    }
+
     fn event_loop(&mut self, term: &mut term::Tui) -> Result<()> {
         while !self.quit {
-            let now = Instant::now();
-            let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.25);
-            self.last_frame = now;
-
-            if self.vis.mode != VisMode::Off {
-                if self.player.tap.read(&mut self.vis.tap_buf) {
-                    if self.vis.mode.uses_fluid() {
-                        self.feed_fluid(dt);
-                        self.vis.meters.update(self.vis.fluid.bands(), dt);
-                        self.player.publish_bands(self.vis.fluid.bands());
-                    } else {
-                        self.vis.analyzer.analyze(&self.vis.tap_buf, dt);
-                        self.vis.meters.update(self.vis.analyzer.bands(), dt);
-                        // Publish for any instance mirroring this one.
-                        self.player.publish_bands(self.vis.analyzer.bands());
-                    }
-                    if self.vis.mode.needs_waveform() {
-                        // The trace modes want the newest samples, not a
-                        // spectrum.
-                        let n = self.vis.wave.len().min(self.vis.tap_buf.len());
-                        self.vis.wave[..n]
-                            .copy_from_slice(&self.vis.tap_buf[self.vis.tap_buf.len() - n..]);
-                    }
-                } else if !self.session.bands.is_empty() {
-                    // A window following another has no audio of its own --
-                    // its player is detached and its tap never fills -- so the
-                    // spectrum arrives over the socket instead. The leader has
-                    // been sending it all along; this is where it is used.
-                    //
-                    // The count is the leader's, taken from the leader's width.
-                    // `Meters::update` resizes when it changes and the panel
-                    // resamples to its own bar count, so two windows of
-                    // different widths both draw a full spectrum.
-                    self.vis.meters.update(&self.session.bands.clone(), dt);
-                }
-            }
-            self.advance_seek_phase(dt);
-            self.advance_retry_phase(dt);
-            self.vis.onset.feed(self.vis.analyzer.bands(), dt);
-            self.advance_effects(dt);
-
-            if now.duration_since(self.look.last_marquee) >= MARQUEE_STEP {
-                self.look.marquee = self.look.marquee.wrapping_add(1);
-                self.look.last_marquee = now;
-            }
-
-            self.poll_mirror();
-            self.poll_import();
-            self.sync_view();
-            self.check_track_change();
-            let activity_state = self.player.state.state();
-            if activity_state == PlayState::Stopped
-                && now.duration_since(self.last_sonic_request) >= Duration::from_secs(10)
-            {
-                if let Some(worker) = &self.sonic {
-                    worker.request_idle(1);
-                }
-                self.last_sonic_request = now;
-            }
-            let activity_revision = self
-                .player
-                .state
-                .track_revision
-                .load(std::sync::atomic::Ordering::Relaxed);
-            let activity_item = self.player.current_item();
-            let activity_position = self.player.state.position_secs();
-            let activity_duration = self.player.state.duration_secs();
-            self.activity.observe(
-                !self.is_mirror(),
-                activity_revision,
-                activity_state,
-                activity_item.clone(),
-                activity_position,
-                activity_duration,
-            );
-            self.discord.observe(
-                !self.is_mirror(),
-                activity_revision,
-                activity_state,
-                activity_item,
-                activity_position,
-                activity_duration,
-            );
-            if self.over.resume.is_none() && !self.is_mirror() && self.import.is_none() {
-                self.save_session(false);
-            }
-            self.poll_auth();
-            self.poll_art_outcome();
-            self.publish_mpris();
+            self.tick_player();
             term.draw(|f| self.draw(f.area(), f.buffer_mut()))?;
 
             if self
@@ -3797,59 +3872,7 @@ impl App {
             if event::poll(FRAME)? {
                 match event::read()? {
                     Event::Key(k) if k.kind == KeyEventKind::Press => {
-                        if let Some(e) = self.fx.running.as_mut() {
-                            e.finish();
-                        }
-                        // The resume prompt answers raw keys rather than
-                        // actions: `n` should decline without becoming a
-                        // global binding that shadows something else.
-                        if self.over.resume.is_some() && self.answer_resume(k) {
-                            continue;
-                        }
-                        if self.import_artist_type(k) {
-                            continue;
-                        }
-                        if self.edit.auth.is_some() && self.auth_type(k) {
-                            continue;
-                        }
-                        if self.eq_value_type(k) {
-                            continue;
-                        }
-                        if self.file_browser_key(k) {
-                            continue;
-                        }
-                        // Naming a playlist eats keys ahead of everything, so
-                        // `l` in a playlist name does not open the browser.
-                        if self.edit.naming.is_some() && self.name_type(k) {
-                            continue;
-                        }
-                        // So does the filter box, for the same reason.
-                        if self.edit.typing.is_some() && self.filter_type(k) {
-                            continue;
-                        }
-                        // The search line is the only other thing that eats raw
-                        // keys, and for the same reason as the resume prompt.
-                        if self.library_type(k) {
-                            continue;
-                        }
-                        // Three layers, narrowest first. The library is an
-                        // overlay and takes precedence over the panel behind
-                        // it; the focused panel gets first refusal after
-                        // that; and the global table has whatever neither
-                        // wanted, which is what keeps every existing binding
-                        // working from everywhere.
-                        let action = match g_prefix(&mut self.edit.g_prefix, k) {
-                            PrefixKey::Waiting => continue,
-                            PrefixKey::Action(action) => Some(action),
-                            PrefixKey::None if self.over.library.is_some() => {
-                                keymap::library(k).or_else(|| keymap::resolve(k))
-                            }
-                            PrefixKey::None => keymap::module(self.panels.focus.into(), k)
-                                .or_else(|| keymap::resolve(k)),
-                        };
-                        if let Some(action) = action {
-                            self.handle(action);
-                        }
+                        self.dispatch_key(k);
                     }
                     Event::Mouse(m) => {
                         self.edit.g_prefix = false;
@@ -7719,7 +7742,7 @@ impl App {
         }
     }
 
-    fn draw_playlist(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn prepare_playlist_rows(&mut self) -> Option<usize> {
         let q = self.player.queue.lock().unwrap();
         // Shown in play order, not storage order. With shuffle on those differ,
         // Nothing is highlighted until a track is actually loaded.
@@ -7772,6 +7795,11 @@ impl App {
             }
         }
 
+        playing
+    }
+
+    fn draw_playlist(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+        let playing = self.prepare_playlist_rows();
         let visible = playlist::list_rect(area).height as usize;
         let row = self.queue.rows.row_of_track(self.queue.cursor).unwrap_or(0);
         self.queue.scroll = PlaylistView::clamp_scroll(row, self.queue.scroll, visible);
@@ -8167,7 +8195,7 @@ impl App {
                 rows.extend([
                     (Row::action("add peaking filter"), Setting::EqAdd),
                     (Row::action("reset profile"), Setting::EqReset),
-                    (Row::action("import APO profile…"), Setting::EqImport),
+                    (Row::action("import EQ profile…"), Setting::EqImport),
                     (Row::action("export APO profile…"), Setting::EqExport),
                 ]);
                 ("equalizer".into(), rows)
@@ -8939,6 +8967,10 @@ impl App {
         let Some(item) = s.items.get(s.cursor).copied() else {
             return;
         };
+        self.apply_setting(item);
+    }
+
+    fn apply_setting(&mut self, item: Setting) {
         match item {
             Setting::Graphics => self.cycle_graphics(),
             Setting::FetchArt => self.toggle_art_fetch(),

@@ -1,0 +1,267 @@
+{
+  "height": 7,
+  "baseline": 7,
+  "glyphs": {
+    "A": {
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "B": {
+      "rect": {
+        "x": 6,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "C": {
+      "rect": {
+        "x": 12,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "D": {
+      "rect": {
+        "x": 18,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "E": {
+      "rect": {
+        "x": 24,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "F": {
+      "rect": {
+        "x": 30,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "G": {
+      "rect": {
+        "x": 36,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "H": {
+      "rect": {
+        "x": 42,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "I": {
+      "rect": {
+        "x": 48,
+        "y": 0,
+        "width": 3,
+        "height": 7
+      },
+      "advance": 4
+    },
+    "J": {
+      "rect": {
+        "x": 52,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "K": {
+      "rect": {
+        "x": 58,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "L": {
+      "rect": {
+        "x": 64,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "M": {
+      "rect": {
+        "x": 70,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "N": {
+      "rect": {
+        "x": 76,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "O": {
+      "rect": {
+        "x": 82,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "P": {
+      "rect": {
+        "x": 88,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "Q": {
+      "rect": {
+        "x": 94,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "R": {
+      "rect": {
+        "x": 100,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "S": {
+      "rect": {
+        "x": 106,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "T": {
+      "rect": {
+        "x": 112,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "U": {
+      "rect": {
+        "x": 118,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "V": {
+      "rect": {
+        "x": 124,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "W": {
+      "rect": {
+        "x": 130,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "X": {
+      "rect": {
+        "x": 136,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "Y": {
+      "rect": {
+        "x": 142,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "Z": {
+      "rect": {
+        "x": 148,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    " ": {
+      "rect": {
+        "x": 154,
+        "y": 0,
+        "width": 3,
+        "height": 7
+      },
+      "advance": 4
+    },
+    "/": {
+      "rect": {
+        "x": 158,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    },
+    "-": {
+      "rect": {
+        "x": 164,
+        "y": 0,
+        "width": 5,
+        "height": 7
+      },
+      "advance": 6
+    }
+  }
+}

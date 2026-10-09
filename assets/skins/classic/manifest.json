@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "author": "STAR/AMP",
+  "license": "MIT",
+  "palette": {
+    "panel": "#303340",
+    "shadow": "#101117",
+    "highlight": "#7c8294",
+    "title": "#242733",
+    "ink": "#d7d9cf",
+    "accent": "#a4d791",
+    "well": "#101813",
+    "raised": "#474d5d"
+  },
+  "insets": {
+    "panel": [
+      6,
+      6,
+      6,
+      6
+    ],
+    "well": [
+      3,
+      3,
+      3,
+      3
+    ],
+    "button": [
+      4,
+      4,
+      4,
+      4
+    ]
+  },
+  "densities": [
+    1,
+    2
+  ]
+}

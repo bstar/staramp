@@ -183,7 +183,7 @@ impl Rack<'_> {
         };
         let mut frame_colors = c.clone();
         if self.app.panels.focus == focus {
-            frame_colors.highlight = c.accent.clone();
+            frame_colors.title = c.inset.clone();
         }
         classic::frame(
             &mut s,
@@ -192,75 +192,77 @@ impl Rack<'_> {
             self.radius,
             false,
         );
+        s.fill(R::new(7, 7, w - 14, 24), &frame_colors.title, 2);
         label(
             &mut s,
             c,
-            R::new(12, 4, w.saturating_sub(140), font + 12),
+            R::new(18, 7, w.saturating_sub(140), 24),
             title,
             font,
             true,
         );
-        classic::button(
+        classic::label(
             &mut s,
-            R::new(w.saturating_sub(122), 5, 110, font + 10),
-            c,
-            "SETTINGS",
+            R::new(w.saturating_sub(96), 7, 78, 24),
             "settings",
-            font.saturating_sub(3),
+            &c.dim,
+            font.saturating_sub(2),
             false,
         );
+        s.hits.push(HitRegion {
+            rect: R::new(w.saturating_sub(100), 7, 82, 24),
+            action: "settings".into(),
+        });
         s
     }
     fn eq(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
         let h = 294.max(font * 16);
         let mut s = self.window(w, h, c, "PARAMETRIC EQUALIZER", font);
         let e = &self.app.eq;
-        label(
-            &mut s,
-            c,
-            R::new(84, 38, w.saturating_sub(418), 32),
-            &e.active().name,
-            font,
-            true,
-        );
         classic::button(
             &mut s,
-            R::new(16, 38, 28, 29),
+            R::new(14, 40, 48, 29),
             c,
-            "‹",
-            "eq-prev",
+            if e.enabled { "ON" } else { "OFF" },
+            "eq-enabled",
+            font,
+            e.enabled,
+        );
+        let profile_width = w.saturating_sub(570).clamp(100, 420);
+        let profile = R::new(76, 40, profile_width, 29);
+        classic::frame(&mut s, profile, c, 0, true);
+        classic::label(
+            &mut s,
+            R::new(88, 40, profile_width - 24, 29),
+            format!("Profile: {}  ›", e.active().name),
+            &c.accent,
             font,
             false,
         );
-        classic::button(
-            &mut s,
-            R::new(50, 38, 28, 29),
-            c,
-            "›",
-            "eq-next",
-            font,
-            false,
-        );
+        s.hits.push(HitRegion {
+            rect: profile,
+            action: "eq-next".into(),
+        });
         for (i, (text, action)) in [
-            (if e.enabled { "ON" } else { "OFF" }, "eq-enabled"),
             ("IMPORT", "eq-import"),
             ("EXPORT", "eq-export"),
             ("SAVE AS", "eq-save"),
         ]
-        .iter()
+        .into_iter()
         .enumerate()
         {
             classic::button(
                 &mut s,
-                R::new(w.saturating_sub(330) + i as u16 * 78, 38, 72, 29),
+                R::new(w - 294 + i as u16 * 92, 40, 82, 29),
                 c,
                 text,
                 action,
-                font.saturating_sub(2),
+                font,
                 false,
             );
         }
         let plot = R::new(48, 86, w.saturating_sub(410).max(80), 132);
+        classic::frame(&mut s, R::new(22, 78, plot.width + 38, 167), c, 0, true);
         classic::frame(&mut s, plot, c, 0, true);
         for db in [-12, -6, 0, 6, 12] {
             let y = plot.y + ((12 - db) as u16 * (plot.height - 1) / 24);
@@ -418,15 +420,23 @@ impl Rack<'_> {
                 _ => vec![("Edit filter coefficients".into(), "eq-width")],
             };
             for (i, (text, action)) in vals.into_iter().enumerate() {
-                classic::button(
+                let (name, value) = text.split_once("  ").unwrap_or(("Value", &text));
+                let y = 111 + i as u16 * 26;
+                classic::label(&mut s, R::new(x, y, 108, 24), name, &c.dim, font, false);
+                let r = R::new(x + 113, y, 188, 24);
+                classic::frame(&mut s, r, c, 0, true);
+                classic::label(
                     &mut s,
-                    R::new(x, 111 + i as u16 * 29, 310, 26),
-                    c,
-                    &text,
-                    action,
+                    R::new(r.x + 10, y, 168, 24),
+                    value.trim(),
+                    &c.accent,
                     font,
                     false,
                 );
+                s.hits.push(HitRegion {
+                    rect: r,
+                    action: action.into(),
+                });
             }
             classic::button(
                 &mut s,
@@ -545,38 +555,87 @@ impl Rack<'_> {
             a.as_ref().and_then(|a| a.art.clone()).unwrap_or_default(),
         ];
         for (i, text) in lines.into_iter().enumerate() {
-            label(
+            let y = 52 + i as u16 * 26;
+            classic::label(
                 &mut s,
-                c,
-                R::new(x, 46 + i as u16 * 26, w.saturating_sub(x + 16), 24),
+                R::new(x, y, w.saturating_sub(x + 16), 28),
                 text,
-                font,
+                if i == 0 || i == 4 {
+                    &c.accent
+                } else if i == 1 {
+                    &c.ink
+                } else {
+                    &c.dim
+                },
+                if i == 0 {
+                    font + 8
+                } else if i == 1 {
+                    font + 2
+                } else {
+                    font
+                },
                 i == 0,
             );
+            if i == 3 {
+                s.fill(
+                    R::new(x, y + 28, w.saturating_sub(x + 18), 1),
+                    &c.highlight,
+                    0,
+                );
+            }
         }
         let bottom = s.height - 44;
-        for (i, (text, action)) in [
-            ("PREV", "cover-prev"),
-            ("NEXT", "cover-next"),
-            ("CHOOSE", "cover-choose"),
-            ("RETRY", "cover-retry"),
-            ("ORIGINAL", "cover-open"),
-            ("ARTIST", "catalog-artist"),
-            ("ALBUM", "catalog-album"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let size = (w - 32) / 7;
+        for (x, width, text, action) in [
+            (16, 29, "‹", "cover-prev"),
+            (167, 29, "›", "cover-next"),
+            (214, 99, "CHOOSE", "cover-choose"),
+            (323, 81, "RETRY", "cover-retry"),
+        ] {
             classic::button(
                 &mut s,
-                R::new(16 + i as u16 * size, bottom, size - 6, 29),
+                R::new(x, bottom, width, 29),
                 c,
                 text,
                 action,
+                font,
+                false,
+            );
+        }
+        classic::label(
+            &mut s,
+            R::new(78, bottom, 74, 29),
+            a.as_ref()
+                .map(|a| format!("{} / {}", a.choice + 1, a.choices))
+                .unwrap_or_else(|| "— / —".into()),
+            &c.dim,
+            font,
+            false,
+        );
+        for (x, title, action) in [
+            (w.saturating_sub(260), "artist ↗", "catalog-artist"),
+            (w.saturating_sub(182), "album ↗", "catalog-album"),
+        ] {
+            let rect = R::new(x, 7, 74, 24);
+            classic::label(&mut s, rect, title, &c.dim, font.saturating_sub(2), false);
+            s.hits.push(HitRegion {
+                rect,
+                action: action.into(),
+            });
+        }
+        if w > 600 {
+            let rect = R::new(w - 180, bottom, 162, 29);
+            classic::label(
+                &mut s,
+                rect,
+                "Click art: original ↗",
+                &c.dim,
                 font.saturating_sub(2),
                 false,
             );
+            s.hits.push(HitRegion {
+                rect,
+                action: "cover-open".into(),
+            });
         }
         s
     }
@@ -730,6 +789,29 @@ impl Rack<'_> {
                 false,
             );
         }
+        let well_height = s.height - 82;
+        classic::frame(&mut s, R::new(10, 38, w - 20, well_height), c, 0, true);
+        let toolbar_y = s.height - 36;
+        for (i, (title, action)) in [
+            ("ADD", "library"),
+            ("REM", "queue-remove"),
+            ("SEL", "queue-tag"),
+            ("MISC", "settings:playlist"),
+            ("LIST", "playlists"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            classic::button(
+                &mut s,
+                R::new(14 + i as u16 * 63, toolbar_y, 57, 29),
+                c,
+                title,
+                action,
+                font,
+                false,
+            );
+        }
         let row_h = font + 10;
         let selected_row = self
             .app
@@ -740,7 +822,7 @@ impl Rack<'_> {
         self.app.queue.scroll = PlaylistView::clamp_scroll(
             selected_row,
             self.app.queue.scroll,
-            ((s.height - 76) / row_h) as usize,
+            ((s.height - 86) / row_h) as usize,
         );
         let marked = {
             let q = self.app.player.queue.lock().unwrap();
@@ -758,7 +840,7 @@ impl Rack<'_> {
             .rows()
             .iter()
             .skip(self.app.queue.scroll)
-            .take(((s.height - 76) / row_h) as usize)
+            .take(((s.height - 86) / row_h) as usize)
             .enumerate()
         {
             let index = self.app.queue.scroll + line;
@@ -774,9 +856,9 @@ impl Rack<'_> {
                     .get(*i)
                     .map(|item| {
                         format!(
-                            "{}{} — {}",
+                            "{:02}. {}{}",
+                            i + 1,
                             if marked.contains(i) { "● " } else { "" },
-                            item.artist.as_deref().unwrap_or(""),
                             item.title.as_deref().unwrap_or("Untitled")
                         )
                     })
@@ -788,11 +870,29 @@ impl Rack<'_> {
             label(
                 &mut s,
                 c,
-                R::new(r.x + 8, r.y, r.width - 16, r.height),
+                R::new(r.x + 8, r.y, r.width.saturating_sub(90), r.height),
                 text,
                 font,
                 false,
             );
+            if let playlist::Row::Track(i) = row {
+                if let Some(seconds) = self
+                    .app
+                    .queue
+                    .items
+                    .get(*i)
+                    .and_then(|item| item.duration_secs)
+                {
+                    classic::label(
+                        &mut s,
+                        R::new(w - 82, r.y, 58, r.height),
+                        format!("{:02}:{:02}", seconds / 60, seconds % 60),
+                        &c.dim,
+                        font,
+                        false,
+                    );
+                }
+            }
             s.hits.push(HitRegion {
                 rect: r,
                 action: format!("playlist:{index}"),
@@ -860,6 +960,8 @@ impl Rack<'_> {
             }
             "playlists" => a.handle(Action::OpenPlaylistPicker),
             "library" => a.open_library(),
+            "queue-remove" => a.handle(Action::RemoveTagged),
+            "queue-tag" => a.handle(Action::TagRow),
             "help" => a.handle(Action::Help),
             "repeat" => a.handle(Action::CycleRepeat),
             "shuffle" => a.handle(Action::ToggleShuffle),
@@ -1036,7 +1138,10 @@ impl Controller for Rack<'_> {
             (v.width / u32::from(v.columns.max(1))) as u16,
             (v.height / u32::from(v.rows.max(1))) as u16,
         )
-        .font;
+        .font
+        .saturating_mul(3)
+        .saturating_div(4)
+        .max(10);
         if self.app.over.library.is_some() || self.app.over.files.is_some() {
             self.app.draw(area, &mut buffer);
             let surface = classic::form(
@@ -1082,15 +1187,18 @@ impl Controller for Rack<'_> {
             self.radius,
         );
         append(&mut surface, player, 8, 8, 0, "player");
-        classic::button(
+        classic::label(
             &mut surface,
-            R::new(w - 128, 12, 110, font + 10),
-            &c,
-            "SETTINGS",
-            "settings:player",
-            font.saturating_sub(3),
+            R::new(w - 100, 15, 80, 24),
+            "settings",
+            &c.dim,
+            font.saturating_sub(2),
             false,
         );
+        surface.hits.push(HitRegion {
+            rect: R::new(w - 104, 15, 84, 24),
+            action: "settings:player".into(),
+        });
         let top = player_h + 16;
         self.modules.clear();
         let mut y = i32::from(top) - i32::from(self.offset);

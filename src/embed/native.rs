@@ -80,19 +80,20 @@ pub fn classic_surface(
     }
     let pad = 12;
     classic::frame(&mut s, R::new(0, 0, w, h), &c, radius, false);
-    let header = m.font + 12;
+    s.fill(R::new(7, 7, w - 14, 24), &c.title, 2);
+    let header = 24;
     classic::label(
         &mut s,
-        R::new(pad, 4, w - pad * 2, header),
-        "S T A R / A M P · PLAYER",
+        R::new(18, 7, w - 36, header),
+        "S T A R / A M P",
         &c.ink,
-        m.font,
+        m.font.saturating_sub(1),
         true,
     );
-    let button = (m.font + 16).min(40);
+    let button = 29;
     let controls_y = h - button - pad;
     let seek_y = controls_y - header - 4;
-    let display_y = header + 8;
+    let display_y = 43;
     let display_h = seek_y.saturating_sub(display_y + 8);
     classic::frame(
         &mut s,
@@ -101,8 +102,8 @@ pub fn classic_surface(
         0,
         true,
     );
-    let clock_w = (m.font * 10).min(w / 3);
-    let clock_h = (m.font * 3).min(display_h.saturating_sub(30));
+    let clock_w = 174.min(w / 3);
+    let clock_h = 54.min(display_h.saturating_sub(30));
     classic::clock(
         &mut s,
         R::new(pad + 12, display_y + 12, clock_w - 24, clock_h),
@@ -247,9 +248,9 @@ pub fn classic_surface(
         &mut s,
         R::new(x, display_y + display_h - header * 2, width, header),
         &state.title,
-        &fg,
+        &accent,
         m.font,
-        true,
+        false,
     );
     classic::label(
         &mut s,
@@ -335,7 +336,7 @@ pub fn classic_surface(
         let rect = R::new(pad + i as u16 * (button + 6), controls_y, button, button);
         let active = (*name == "play" && state.state == PlayState::Playing)
             || (*name == "pause" && state.state == PlayState::Paused);
-        classic::frame(&mut s, rect, &c, 0, active);
+        classic::button(&mut s, rect, &c, "", name, m.font, active);
         let icon = button.saturating_sub(8);
         s.nodes.push(Primitive::Icon {
             rect: R::new(rect.x + 4, rect.y + 4, icon, icon),

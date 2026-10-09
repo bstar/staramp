@@ -205,6 +205,7 @@ audio plays on the host; this command does not enable FOLD's embedded PCM relay.
 [ui]
 layout = "classic-rack"
 corners = "rounded" # or "rigid"; transport buttons remain square
+graphical_palette = "classic" # selected design colors; "theme" uses ui.theme
 ```
 
 The player stays fixed while the lower modules scroll. EQ handles drag frequency
@@ -239,14 +240,40 @@ with its editable master in `treatments/winamp-01.svg`. The current proof is
 separate from that reference. The later flat FOLD-style proof is an experiment;
 it does not establish a replacement approved target.
 
-Resume status: the measured specification, KIT skin foundation, original-density
-artwork, and shared production player exist. Negotiated cached asset transport
-has local protocol coverage, and the standalone rack has keyboard button focus.
-EQ, Album and Activity start folded; secondary typography has been reduced in
-response to the font-size and busyness feedback. Visual acceptance, remaining
-module skinning, physical SSH measurements and Linux/macOS parity remain open.
-Resolve the player treatment against the preserved target before migrating the
-remaining module skins. See `skin-progress.md` for evidence and limitations.
+### Bitmap precision and fluid sizing
+
+The user's October 9 selection is explicitly **01 — Classic stacked rack ·
+parametric EQ**. `treatments/selected-design.json` freezes the source assets and
+their hashes. Design selection does not mean the implementation has passed
+visual review.
+
+Use original bitmap artwork at 1x and 2x for frame corners, bevels, control
+states, transport symbols and clock digits. Preserve corner dimensions; tile
+edges and expand the interiors. Window resizing changes layout constraints,
+never the scale of a completed screenshot. Keep drawing and interaction bounds
+in the same component. Theme masks retain existing color themes, and rounded
+and rigid frames remain supported.
+
+Clock atlases preserve the reference's fractional digit advances. Fixed-label
+lettering must be measured against the source; track titles and other variable
+Unicode content remain shaped text. All AMP artwork belongs to AMP. KIT owns
+the generic compositor, density handling, caches and transport.
+
+`render-rack` captures the real shared player at 900 and 1352 logical pixels,
+at both densities, under `selected-player-*-*x.png`, plus the complete production
+rack under `selected-rack*.png`. Compare these separately labeled captures
+against the preserved reference. They are diagnostic fixture renders, not
+evidence of macOS or SSH acceptance.
+
+Implementation status: the complete production rack now uses the original-density
+skin, including EQ, Album, Activity and Playlist. Bitmap labels, clock and transport
+symbols use the study's artwork and source palette. First native launch shows all
+modules with the reference LED analyzer; subsequent launches preserve panel visibility. Headers fold sections,
+secondary modules stack at narrow sizes, and the player stays fixed while scrolling.
+Alt+T selects an existing AMP theme and persists that palette choice. Isolated Linux
+Kitty startup, keyboard/theme changes, F9 switching, clean quit and configuration
+persistence passed. Visual acceptance, the full manual parity checklist, physical
+SSH measurements and macOS validation remain open. See `skin-progress.md`.
 
 The original plan follows without scope reduction:
 

@@ -117,46 +117,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-active-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-active-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "2/button-active": [
@@ -239,46 +199,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-active-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-active-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "1/button-disabled": [
@@ -361,46 +281,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-disabled-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-disabled-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "2/button-disabled": [
@@ -483,46 +363,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-disabled-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-disabled-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "1/button-focus": [
@@ -609,46 +449,6 @@
       {
         "sprite": {
           "asset": "1/mask-button-focus-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-focus-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-focus-6",
           "rect": {
             "x": 0,
             "y": 0,
@@ -751,46 +551,6 @@
       {
         "sprite": {
           "asset": "2/mask-button-focus-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-focus-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-focus-6",
           "rect": {
             "x": 0,
             "y": 0,
@@ -1193,46 +953,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-hover-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-hover-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "2/button-hover": [
@@ -1315,46 +1035,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-hover-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-hover-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "1/button-normal": [
@@ -1437,46 +1117,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-normal-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "1/mask-button-normal-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 24
-          },
-          "density": 1,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "2/button-normal": [
@@ -1559,46 +1199,6 @@
           "nine_slice": null
         },
         "tint": "control_highlight"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-normal-4",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
-      },
-      {
-        "sprite": {
-          "asset": "2/mask-button-normal-5",
-          "rect": {
-            "x": 0,
-            "y": 0,
-            "width": 48,
-            "height": 48
-          },
-          "density": 2,
-          "content": {
-            "left": 0,
-            "top": 0,
-            "right": 0,
-            "bottom": 0
-          },
-          "nine_slice": null
-        },
-        "tint": "edge_shadow"
       }
     ],
     "1/button-pressed": [

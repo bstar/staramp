@@ -200,6 +200,11 @@ pub struct Ui {
     pub layout: String,
     /// `rounded` or `rigid`; transport buttons remain square.
     pub corners: String,
+    /// Native skin colors: `classic` (selected design) or `theme`.
+    pub graphical_palette: String,
+    /// One-time initialization of the complete native rack; ordinary panel
+    /// visibility settings are respected after its first launch.
+    pub graphical_rack_initialized: bool,
     /// Blank columns kept either side of the window.
     ///
     /// Defaults to 1: panel borders sitting flush against the terminal edge
@@ -386,6 +391,8 @@ impl Default for Ui {
         Self {
             layout: "classic-rack".into(),
             corners: "rounded".into(),
+            graphical_palette: "classic".into(),
+            graphical_rack_initialized: false,
             padding_x: 1,
             padding_y: 0,
             seek_style: "ansi".into(),
@@ -537,6 +544,8 @@ volume = 1.0
 layout = "classic-rack"
 # Panel corners: rounded or rigid. Transport controls stay square.
 corners = "rounded"
+# Use the selected design colors, or adapt to the active theme.
+graphical_palette = "classic"
 # How album covers are drawn: auto, kitty, blocks, or off.
 graphics = "auto"
 # Transport buttons: "auto" draws them as pictures wherever the terminal can

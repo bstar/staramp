@@ -9,6 +9,83 @@ use starkit::native_surface::{
 };
 use std::collections::BTreeMap;
 
+/// Theme adaptation is calibrated against the selected study, rather than
+/// replacing every independently designed surface with one generic blend.
+pub(crate) const REFERENCE_PALETTE: Palette = Palette {
+    bg: [23, 24, 32],
+    fg: [215, 217, 207],
+    muted: [152, 158, 172],
+    accent: [164, 215, 145],
+    selected: [48, 63, 61],
+    border: [116, 121, 134],
+    error: [224, 152, 133],
+};
+pub(crate) fn tone(p: &Palette, original: &str, ink: bool) -> String {
+    calibrated(
+        original,
+        &native::hex(if ink {
+            REFERENCE_PALETTE.fg
+        } else {
+            REFERENCE_PALETTE.bg
+        }),
+        &native::hex(if ink { p.fg } else { p.bg }),
+    )
+}
+fn generic(p: &Palette) -> Colors {
+    Colors::new(p.bg, p.fg, p.muted, p.accent, p.border)
+}
+fn calibrated(original: &str, reference: &str, actual: &str) -> String {
+    use starkit::theme::color::Rgb;
+    let a = Rgb::parse_hex(original).expect("skin source color");
+    let b = Rgb::parse_hex(reference).expect("reference theme color");
+    let c = Rgb::parse_hex(actual).expect("resolved theme color");
+    let channel = |a, b, c| (i16::from(a) + i16::from(c) - i16::from(b)).clamp(0, 255) as u8;
+    Rgb::new(
+        channel(a.r, b.r, c.r),
+        channel(a.g, b.g, c.g),
+        channel(a.b, b.b, c.b),
+    )
+    .to_hex()
+}
+pub(crate) fn colors(p: &Palette) -> Colors {
+    let a = generic(p);
+    let r = generic(&REFERENCE_PALETTE);
+    Colors {
+        panel: calibrated("#303340", &r.panel, &a.panel),
+        inset: calibrated("#101813", &r.inset, &a.inset),
+        ink: native::hex(p.fg),
+        dim: native::hex(p.muted),
+        accent: native::hex(p.accent),
+        highlight: calibrated("#7c8294", &r.highlight, &a.highlight),
+        shadow: calibrated("#101117", &r.shadow, &a.shadow),
+        raised: calibrated("#474d5d", &r.raised, &a.raised),
+        title: calibrated("#242733", &r.title, &a.title),
+    }
+}
+fn role_base(role: &str, p: &Palette) -> String {
+    let c = generic(p);
+    match role {
+        "panel" | "quiet_panel" | "disabled" | "quiet_disabled" => c.panel,
+        "shadow" | "edge_shadow" | "well_shadow" | "control_border" => c.shadow,
+        "highlight" | "control_highlight" | "well_highlight" | "active" | "quiet_active" => {
+            c.highlight
+        }
+        "title" | "pressed" => c.title,
+        "ink" => c.ink,
+        "accent" => c.accent,
+        "well" | "background" => c.inset,
+        "control" => c.raised,
+        "hover" | "quiet_hover" => {
+            use starkit::theme::color::Rgb;
+            Rgb::new(p.selected[0], p.selected[1], p.selected[2])
+                .mix(Rgb::new(p.accent[0], p.accent[1], p.accent[2]), 0.16)
+                .to_hex()
+        }
+        "well_border" | "border" => native::hex(p.border),
+        _ => unreachable!("unknown skin role {role}"),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct Manifest {
     sprites: BTreeMap<String, Sprite>,
@@ -21,6 +98,10 @@ struct Prepared {
     source: PixelRect,
     insets: [u16; 4],
 }
+struct GlyphAsset {
+    id: String,
+    png: String,
+}
 pub(crate) struct PlayerSkin {
     source: AssetCache,
     manifest: Manifest,
@@ -32,12 +113,19 @@ pub(crate) struct PlayerSkin {
     pub pressed: Option<String>,
     pub focused: Option<String>,
     disabled: std::collections::BTreeSet<&'static str>,
+    glyphs: BTreeMap<(u16, &'static str), GlyphAsset>,
 }
 impl PlayerSkin {
     pub fn new() -> Result<Self> {
         let mut source = AssetCache::new(8_000_000);
         for (id, png) in super::skin_assets::PNGS {
             source.insert_png(id, png)?;
+        }
+        let mut glyphs = BTreeMap::new();
+        for (density, name, png) in super::skin_assets::GLYPHS {
+            let pixels = starkit::image::load_from_memory(png)?.to_rgba8();
+            let (id, png) = starkit::terminal_graphics::assets::encode_skin(&pixels)?;
+            glyphs.insert((*density, *name), GlyphAsset { id, png });
         }
         Ok(Self {
             source,
@@ -52,51 +140,21 @@ impl PlayerSkin {
             pressed: None,
             focused: None,
             disabled: Default::default(),
+            glyphs,
         })
     }
-    fn prepare(&mut self, palette: &Palette, density: u16, rigid: bool) -> Result<()> {
+    pub(crate) fn prepare(&mut self, palette: &Palette, density: u16, rigid: bool) -> Result<()> {
         if self.palette.as_ref() == Some(palette) && self.density == density && self.rigid == rigid
         {
             return Ok(());
         }
-        let c = Colors::new(
-            palette.bg,
-            palette.fg,
-            palette.muted,
-            palette.accent,
-            palette.border,
-        );
-        let hover = starkit::theme::color::Rgb::new(
-            palette.selected[0],
-            palette.selected[1],
-            palette.selected[2],
-        )
-        .mix(
-            starkit::theme::color::Rgb::new(
-                palette.accent[0],
-                palette.accent[1],
-                palette.accent[2],
-            ),
-            0.16,
-        )
-        .to_hex();
         let mut roles = BTreeMap::new();
-        for role in self.manifest.roles.keys() {
-            let value = match role.as_str() {
-                "panel" | "quiet_panel" | "disabled" | "quiet_disabled" => &c.panel,
-                "shadow" | "edge_shadow" | "well_shadow" | "control_border" => &c.shadow,
-                "highlight" | "control_highlight" | "well_highlight" => &c.highlight,
-                "title" => &c.title,
-                "ink" => &c.ink,
-                "accent" => &c.accent,
-                "well" | "background" => &c.inset,
-                "control" => &c.raised,
-                "hover" | "quiet_hover" => &hover,
-                "active" | "quiet_active" => &c.highlight,
-                "pressed" => &c.title,
-                "well_border" | "border" => &super::native::hex(palette.border),
-                _ => anyhow::bail!("Unmapped skin theme role: {role}"),
-            };
+        for (role, original) in &self.manifest.roles {
+            let value = calibrated(
+                original,
+                &role_base(role, &REFERENCE_PALETTE),
+                &role_base(role, palette),
+            );
             roles.insert(
                 role.clone(),
                 [
@@ -177,6 +235,70 @@ impl PlayerSkin {
             tint: None,
         });
     }
+    pub(crate) fn frame(&self, s: &mut Surface, rect: PixelRect, inset: bool) {
+        <Self as native::PlayerArtwork>::frame(self, s, rect, inset);
+    }
+    pub(crate) fn button(&self, s: &mut Surface, rect: PixelRect, action: &str, active: bool) {
+        <Self as native::PlayerArtwork>::button(self, s, rect, action, active);
+    }
+    pub(crate) fn ink(&self, action: &str, active: bool) -> String {
+        <Self as native::PlayerArtwork>::button_ink(self, action, active)
+    }
+    pub(crate) fn label(
+        &self,
+        s: &mut Surface,
+        rect: PixelRect,
+        text: &str,
+        tint: &str,
+        centered: bool,
+    ) -> bool {
+        let Some((_, y, width, height)) = super::skin_assets::LABELS
+            .iter()
+            .find(|(label, _, _, _)| *label == text)
+        else {
+            return false;
+        };
+        if *width > rect.width {
+            return false;
+        }
+        let x = rect.x
+            + if centered {
+                (rect.width - width) / 2
+            } else {
+                0
+            };
+        self.glyph(
+            s,
+            PixelRect::new(x, rect.y, *width, *height),
+            "fixed-labels",
+            PixelRect::new(0, *y, *width, *height),
+            tint,
+        );
+        true
+    }
+    fn glyph(
+        &self,
+        s: &mut Surface,
+        rect: PixelRect,
+        name: &'static str,
+        source: PixelRect,
+        tint: &str,
+    ) {
+        let asset = &self.glyphs[&(self.density, name)];
+        s.assets.insert(asset.id.clone(), Some(asset.png.clone()));
+        s.nodes.push(Primitive::Sprite {
+            rect,
+            asset: asset.id.clone(),
+            source: PixelRect::new(
+                source.x * self.density,
+                source.y * self.density,
+                source.width * self.density,
+                source.height * self.density,
+            ),
+            insets: None,
+            tint: Some(tint.into()),
+        });
+    }
     #[allow(clippy::too_many_arguments)]
     pub fn surface(
         &mut self,
@@ -196,6 +318,32 @@ impl PlayerSkin {
             radius,
             density(width, height, graphics),
         )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn logical_surface(
+        &mut self,
+        width: u16,
+        height: u16,
+        graphics: GraphicsConfig,
+        palette: &Palette,
+        state: &PlayerRenderState,
+        radius: u16,
+        density: u16,
+    ) -> Result<Surface> {
+        self.disabled = ["previous", "play", "pause", "stop", "next", "seek"]
+            .into_iter()
+            .filter(|action| !state.control_enabled(action))
+            .collect();
+        self.prepare(palette, density, radius == 0)?;
+        Ok(native::player_surface(
+            width,
+            height,
+            graphics,
+            palette,
+            state,
+            radius,
+            Some(self),
+        ))
     }
     #[allow(clippy::too_many_arguments)]
     pub fn surface_at_density(
@@ -262,6 +410,67 @@ pub(crate) fn density(width: u16, height: u16, graphics: GraphicsConfig) -> u16 
     }
 }
 impl native::PlayerArtwork for PlayerSkin {
+    fn fixed_label(
+        &self,
+        s: &mut Surface,
+        rect: PixelRect,
+        text: &str,
+        color: &str,
+        centered: bool,
+    ) -> bool {
+        self.label(s, rect, text, color, centered)
+    }
+    fn clock(&self, s: &mut Surface, origin: [u16; 2], value: &str, color: &str) {
+        let p = self.palette.expect("prepared skin palette");
+        let inactive = starkit::theme::color::Rgb::new(p.bg[0], p.bg[1], p.bg[2])
+            .mix(
+                starkit::theme::color::Rgb::new(p.accent[0], p.accent[1], p.accent[2]),
+                0.14,
+            )
+            .to_hex();
+        let r = REFERENCE_PALETTE;
+        let reference = starkit::theme::color::Rgb::new(r.bg[0], r.bg[1], r.bg[2])
+            .mix(
+                starkit::theme::color::Rgb::new(r.accent[0], r.accent[1], r.accent[2]),
+                0.14,
+            )
+            .to_hex();
+        let inactive = calibrated("#203226", &reference, &inactive);
+        let mut offset = 0u16;
+        for character in value.chars() {
+            let (index, width, advance) = match character {
+                '0'..='9' => (character as u16 - '0' as u16, 35, 341),
+                ':' => (10, 15, 143),
+                _ => continue,
+            };
+            let x = origin[0] + offset / 10;
+            if u32::from(x) + u32::from(width) > u32::from(s.width) {
+                break;
+            }
+            let rect = PixelRect::new(x, origin[1], width, 54);
+            let source = PixelRect::new(index * 35, (offset % 10) * 54, width, 54);
+            self.glyph(s, rect, "clock-off", source, &inactive);
+            self.glyph(s, rect, "clock-on", source, color);
+            offset += advance;
+        }
+    }
+    fn transport_icon(&self, s: &mut Surface, rect: PixelRect, action: &str, active: bool) {
+        let index = match action {
+            "previous" => 0,
+            "play" => 1,
+            "pause" => 2,
+            "stop" => 3,
+            "next" => 4,
+            _ => return,
+        };
+        self.glyph(
+            s,
+            rect,
+            "transport-glyphs",
+            PixelRect::new(index * 29, 0, 29, 29),
+            &self.button_ink(action, active),
+        );
+    }
     fn frame(&self, s: &mut Surface, rect: PixelRect, inset: bool) {
         self.paint(
             s,
@@ -278,26 +487,34 @@ impl native::PlayerArtwork for PlayerSkin {
     fn button_ink(&self, action: &str, active: bool) -> String {
         use starkit::theme::color::Rgb;
         let p = self.palette.expect("prepared skin palette");
-        let c = Colors::new(p.bg, p.fg, p.muted, p.accent, p.border);
         let kind = self.button_kind(action, active);
         if kind == "button-disabled" {
             // Disabled controls are intentionally subdued, not promoted to
             // bright active ink by the enabled-control contrast correction.
             return native::hex(p.muted);
         }
-        let color = if kind == "button-pressed" {
-            c.title
-        } else if kind == "button-hover" {
-            Rgb::new(p.selected[0], p.selected[1], p.selected[2])
-                .mix(Rgb::new(p.accent[0], p.accent[1], p.accent[2]), 0.16)
-                .to_hex()
-        } else if kind == "button-active" {
-            c.highlight
-        } else {
-            c.raised
+        let role = match kind {
+            "button-pressed" => "pressed",
+            "button-hover" => "hover",
+            "button-active" => "active",
+            _ => "control",
         };
+        let color = calibrated(
+            &self.manifest.roles[role],
+            &role_base(role, &REFERENCE_PALETTE),
+            &role_base(role, &p),
+        );
         let background = Rgb::parse_hex(&color).expect("derived skin color");
-        let ink = Rgb::new(p.fg[0], p.fg[1], p.fg[2]);
+        let ink = Rgb::parse_hex(&calibrated(
+            if active { "#10161a" } else { "#e0e2d5" },
+            &native::hex(if active {
+                REFERENCE_PALETTE.bg
+            } else {
+                REFERENCE_PALETTE.fg
+            }),
+            &native::hex(if active { p.bg } else { p.fg }),
+        ))
+        .unwrap();
         if background.contrast(ink) >= 4.5 {
             ink.to_hex()
         } else {
@@ -357,6 +574,120 @@ mod tests {
         }
     }
     #[test]
+    fn reference_palette_keeps_the_original_artwork_colors() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let surface = skin
+            .surface_at_density(
+                1352,
+                230,
+                GraphicsConfig {
+                    cell_width: 8,
+                    cell_height: 16,
+                },
+                &REFERENCE_PALETTE,
+                &state(),
+                8,
+                1,
+            )
+            .unwrap();
+        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+            .render(&starkit::image::RgbaImage::new(1352, 230), &surface)
+            .unwrap();
+        for (x, y, color) in [
+            (700, 180, [48, 51, 64, 255]),
+            (700, 104, [16, 24, 19, 255]),
+            (20, 210, [71, 77, 93, 255]),
+            (55, 210, [107, 114, 130, 255]),
+        ] {
+            assert_eq!(image.get_pixel(x, y).0, color, "reference color at {x},{y}");
+        }
+    }
+    #[test]
+    fn bitmap_clock_and_transport_preserve_reference_geometry_at_both_densities() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut state = state();
+        state.position = 69.;
+        for density in [1, 2] {
+            let surface = skin
+                .surface_at_density(
+                    1352 * density,
+                    230 * density,
+                    GraphicsConfig {
+                        cell_width: 8 * density,
+                        cell_height: 16 * density,
+                    },
+                    &palette(),
+                    &state,
+                    8,
+                    density,
+                )
+                .unwrap();
+            surface.validate().unwrap();
+            let clock_id = &skin.glyphs[&(density, "clock-on")].id;
+            let clock = surface
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    Primitive::Sprite {
+                        rect,
+                        source,
+                        asset,
+                        insets: None,
+                        ..
+                    } if asset == clock_id => Some((*rect, *source)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(clock.len(), 4);
+            for ((rect, source), (x, sx, sy, width)) in clock.iter().zip([
+                (28, 35, 0, 35),
+                (62, 350, 54, 15),
+                (76, 0, 216, 35),
+                (110, 315, 270, 35),
+            ]) {
+                assert_eq!(
+                    *rect,
+                    PixelRect::new(x * density, 58 * density, width * density, 54 * density)
+                );
+                assert_eq!(
+                    *source,
+                    PixelRect::new(sx * density, sy * density, width * density, 54 * density)
+                );
+            }
+            let icon_id = &skin.glyphs[&(density, "transport-glyphs")].id;
+            let icons = surface
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    Primitive::Sprite {
+                        rect,
+                        source,
+                        asset,
+                        insets: None,
+                        ..
+                    } if asset == icon_id => Some((*rect, *source)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(icons.len(), 5);
+            for (i, (rect, source)) in icons.iter().enumerate() {
+                assert_eq!(
+                    *rect,
+                    PixelRect::new(
+                        (16 + i as u16 * 35) * density,
+                        187 * density,
+                        29 * density,
+                        29 * density
+                    )
+                );
+                assert_eq!(
+                    *source,
+                    PixelRect::new(i as u16 * 29 * density, 0, 29 * density, 29 * density)
+                );
+            }
+        }
+    }
+    #[test]
     fn compact_fallback_keeps_keyboard_focus_visible_without_changing_hits() {
         let mut skin = PlayerSkin::new().unwrap();
         let graphics = GraphicsConfig {
@@ -411,24 +742,20 @@ mod tests {
                     skin.pressed = (kind == "button-pressed").then(|| "play".into());
                     let color = skin.button_ink("play", kind == "button-active");
                     let foreground = Rgb::parse_hex(&color).unwrap();
-                    let c = Colors::new(
-                        palette.bg,
-                        palette.fg,
-                        palette.muted,
-                        palette.accent,
-                        palette.border,
+                    let mut surface = Surface::new(24, 24, "#000000".into());
+                    skin.button(
+                        &mut surface,
+                        PixelRect::new(0, 0, 24, 24),
+                        "play",
+                        kind == "button-active",
                     );
-                    let background = match kind {
-                        "button-active" => Rgb::parse_hex(&c.highlight).unwrap(),
-                        "button-pressed" => Rgb::parse_hex(&c.title).unwrap(),
-                        "button-hover" => Rgb::new(
-                            palette.selected[0],
-                            palette.selected[1],
-                            palette.selected[2],
-                        )
-                        .mix(Rgb::new(accent[0], accent[1], accent[2]), 0.16),
-                        _ => Rgb::parse_hex(&c.raised).unwrap(),
-                    };
+                    let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new(
+                        "monospace",
+                    )
+                    .render(&starkit::image::RgbaImage::new(24, 24), &surface)
+                    .unwrap();
+                    let pixel = image.get_pixel(12, 12);
+                    let background = Rgb::new(pixel[0], pixel[1], pixel[2]);
                     assert!(foreground.contrast(background) >= 4.5, "{kind}");
                 }
             }

@@ -1,0 +1,20 @@
+{
+  "selection": "01 \u2014 Classic stacked rack \u00b7 parametric EQ",
+  "decision": "User explicitly requested this precise design and bitmap artwork with fluid layout.",
+  "date": "2026-10-09",
+  "assets_sha256": {
+    "winamp-01.svg": "6b119fa7a8c78a15b6f181ff78c4cff7928428c1b8cd7419709624e580c79389",
+    "winamp-01.png": "9c3bed76d736fef9d915338e7548fca2de1244c9f29f6d0fefb6a4361703596e"
+  },
+  "size": [
+    1400,
+    1462
+  ],
+  "player": [
+    24,
+    48,
+    1352,
+    230
+  ],
+  "implementation_accepted": false
+}

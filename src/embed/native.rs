@@ -8,7 +8,7 @@ use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
 use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
-pub(super) fn hex(c: [u8; 3]) -> String {
+pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 fn clock(seconds: f64) -> String {
@@ -91,6 +91,13 @@ fn player_button(
 ) {
     if let Some(art) = art {
         art.button(s, r, action, active);
+        if art.fixed_label(s, r, text, &art.button_ink(action, active), true) {
+            s.hits.push(HitRegion {
+                rect: r,
+                action: action.into(),
+            });
+            return;
+        }
         let text_width = (text.chars().count() as u16)
             .saturating_mul(size)
             .saturating_mul(3)
@@ -119,9 +126,19 @@ fn player_button(
 }
 
 pub(super) trait PlayerArtwork {
+    fn fixed_label(
+        &self,
+        s: &mut Surface,
+        rect: R,
+        text: &str,
+        color: &str,
+        centered: bool,
+    ) -> bool;
     fn frame(&self, s: &mut Surface, rect: R, inset: bool);
     fn button(&self, s: &mut Surface, rect: R, action: &str, active: bool);
     fn button_ink(&self, action: &str, active: bool) -> String;
+    fn clock(&self, s: &mut Surface, origin: [u16; 2], value: &str, color: &str);
+    fn transport_icon(&self, s: &mut Surface, rect: R, action: &str, active: bool);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -136,14 +153,21 @@ pub(super) fn player_surface(
 ) -> Surface {
     use starkit::native_surface::classic::{self, Colors};
     let m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
-    let c = Colors::new(
-        palette.bg,
-        palette.fg,
-        palette.muted,
-        palette.accent,
-        palette.border,
-    );
+    let c = if artwork.is_some() {
+        super::skin::colors(palette)
+    } else {
+        Colors::new(
+            palette.bg,
+            palette.fg,
+            palette.muted,
+            palette.accent,
+            palette.border,
+        )
+    };
     let accent = c.accent.clone();
+    let border = hex(palette.border);
+    let header_ink = super::skin::tone(palette, "#bbc6d5", true);
+    let led_off = super::skin::tone(palette, "#1c2a20", false);
     let fg = c.ink.clone();
     let w = w.min((8_000_000 / u32::from(h.max(1))) as u16);
     let mut s = Surface::new(w, h, hex(palette.bg));
@@ -155,14 +179,34 @@ pub(super) fn player_surface(
     player_frame(artwork, &mut s, R::new(0, 0, w, h), &c, radius, false);
     s.fill(R::new(7, 7, w - 14, 24), &c.title, 2);
     let header = 24;
-    classic::label(
-        &mut s,
-        R::new(18, 7, w - 36, header),
-        "S T A R / A M P",
-        &c.ink,
-        m.font.saturating_sub(1),
-        true,
-    );
+    if !artwork.is_some_and(|art| {
+        art.fixed_label(
+            &mut s,
+            R::new(18, 7, w - 36, 24),
+            "S T A R / A M P",
+            &header_ink,
+            false,
+        )
+    }) {
+        classic::label(
+            &mut s,
+            R::new(18, 7, w - 36, header),
+            "S T A R / A M P",
+            &c.ink,
+            m.font.saturating_sub(1),
+            true,
+        );
+    }
+    if artwork.is_some() && state.bit_perfect {
+        classic::label(
+            &mut s,
+            R::new(w.saturating_sub(218), 7, 108, 24),
+            "bit-perfect",
+            &c.dim,
+            12,
+            false,
+        );
+    }
     let button = 29;
     let controls_y = h - button - pad;
     let seek_y = controls_y - header - 4;
@@ -178,23 +222,27 @@ pub(super) fn player_surface(
     );
     let clock_w = 174.min(w / 3);
     let clock_h = 54.min(display_h.saturating_sub(30));
-    classic::clock(
-        &mut s,
-        R::new(
-            pad + if artwork.is_some() { 14 } else { 12 },
-            display_y + if artwork.is_some() { 15 } else { 12 },
-            clock_w - 24,
-            clock_h,
-        ),
-        &clock(state.position),
-        &accent,
-    );
+    if let Some(art) = artwork {
+        art.clock(&mut s, [28, 58], &clock(state.position), &accent);
+    } else {
+        classic::clock(
+            &mut s,
+            R::new(
+                pad + if artwork.is_some() { 14 } else { 12 },
+                display_y + if artwork.is_some() { 15 } else { 12 },
+                clock_w - 24,
+                clock_h,
+            ),
+            &clock(state.position),
+            &accent,
+        );
+    }
     classic::label(
         &mut s,
         R::new(pad + 12, display_y + display_h - 24, clock_w - 16, 20),
         match state.state {
-            PlayState::Playing => "PLAY",
-            PlayState::Paused => "PAUSE",
+            PlayState::Playing => "PLAY · STEREO",
+            PlayState::Paused => "PAUSE · STEREO",
             PlayState::Stopped => "STOP",
         },
         &accent,
@@ -203,8 +251,12 @@ pub(super) fn player_surface(
     );
     let x = pad + clock_w + if artwork.is_some() { 2 } else { 0 };
     let width = w.saturating_sub(pad * 2 + x);
-    let analyzer_top = display_y + 8;
-    let analyzer_height = display_h.saturating_sub(header * 2 + 16);
+    let analyzer_top = display_y + if artwork.is_some() { 9 } else { 8 };
+    let analyzer_height = if artwork.is_some() {
+        48
+    } else {
+        display_h.saturating_sub(header * 2 + 16)
+    };
     let pad = pad * 2;
     if analyzer_height > 2 {
         if state.vis_mode.needs_waveform() {
@@ -243,10 +295,14 @@ pub(super) fn player_surface(
                 previous = level;
             }
         } else if state.vis_mode != VisMode::Off {
-            let bands = state
-                .bars
-                .count(width / graphics.cell_width.max(1))
-                .clamp(1, 128);
+            let bands = if artwork.is_some() {
+                56.min((width / 4) as usize).max(1)
+            } else {
+                state
+                    .bars
+                    .count(width / graphics.cell_width.max(1))
+                    .clamp(1, 128)
+            };
             let step = (width / bands as u16).max(1);
             for i in 0..bands {
                 let level = state
@@ -279,7 +335,11 @@ pub(super) fn player_surface(
                                 },
                                 size.min(analyzer_height - dy),
                             ),
-                            &c.title,
+                            if artwork.is_some() {
+                                &led_off
+                            } else {
+                                &c.title
+                            },
                             0,
                         );
                     }
@@ -296,7 +356,7 @@ pub(super) fn player_surface(
                                 size.min(bar_h - dy),
                             ),
                             &accent,
-                            1,
+                            0,
                         );
                     }
                 } else {
@@ -343,23 +403,31 @@ pub(super) fn player_surface(
         R::new(x, display_y + display_h - header * 2, width, header),
         &state.title,
         &accent,
-        m.font,
+        if artwork.is_some() { 13 } else { m.font },
         false,
     );
     classic::label(
         &mut s,
         R::new(x, display_y + display_h - header, width, header),
-        if state.bit_perfect {
+        if state.bit_perfect && artwork.is_none() {
             format!("{} · BIT PERFECT", state.tech)
         } else {
             state.tech.clone()
         },
         &c.dim,
-        m.font.saturating_sub(2).max(1),
+        if artwork.is_some() {
+            11
+        } else {
+            m.font.saturating_sub(2).max(1)
+        },
         false,
     );
     let pad = if artwork.is_some() { 16 } else { 12 };
-    let time_w = (m.font * 5).min(w / 5);
+    let time_w = if artwork.is_some() {
+        62
+    } else {
+        (m.font * 5).min(w / 5)
+    };
     classic::label(
         &mut s,
         R::new(pad, seek_y, time_w, header),
@@ -383,7 +451,9 @@ pub(super) fn player_surface(
         0.
     };
     let played = (f64::from(seek.width) * fraction) as u16;
-    let thickness = if state.seek_style == SeekStyle::THIN {
+    let thickness = if artwork.is_some() {
+        3
+    } else if state.seek_style == SeekStyle::THIN {
         2
     } else if state.seek_style == SeekStyle::BLOCKS {
         header.saturating_sub(4).max(1)
@@ -391,7 +461,7 @@ pub(super) fn player_surface(
         4
     }
     .min(header);
-    if state.seek_style == SeekStyle::BAR && header >= 6 {
+    if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
         for dy in [0, 4] {
             let y = seek.y + (header - 6) / 2 + dy;
             s.fill(R::new(seek.x, y, seek.width, 2), &c.shadow, 0);
@@ -410,7 +480,11 @@ pub(super) fn player_surface(
                 seek.width,
                 thickness,
             ),
-            &c.shadow,
+            if artwork.is_some() {
+                &border
+            } else {
+                &c.shadow
+            },
             radius,
         );
         s.fill(
@@ -431,25 +505,29 @@ pub(super) fn player_surface(
         let active = (*name == "play" && state.state == PlayState::Playing)
             || (*name == "pause" && state.state == PlayState::Paused);
         player_button(artwork, &mut s, rect, &c, "", name, m.font, active);
-        let icon = button.saturating_sub(8);
-        s.nodes.push(Primitive::Icon {
-            rect: R::new(rect.x + 4, rect.y + 4, icon, icon),
-            name: match *name {
-                "previous" | "next" => format!("media-{name}"),
-                _ => format!("media-{name}"),
-            },
-            color: artwork
-                .map(|art| art.button_ink(name, active))
-                .unwrap_or_else(|| {
-                    if !state.control_enabled(name) {
-                        c.dim.clone()
-                    } else if active {
-                        accent.clone()
-                    } else {
-                        fg.clone()
-                    }
-                }),
-        });
+        if let Some(art) = artwork {
+            art.transport_icon(&mut s, rect, name, active);
+        } else {
+            let icon = button.saturating_sub(8);
+            s.nodes.push(Primitive::Icon {
+                rect: R::new(rect.x + 4, rect.y + 4, icon, icon),
+                name: match *name {
+                    "previous" | "next" => format!("media-{name}"),
+                    _ => format!("media-{name}"),
+                },
+                color: artwork
+                    .map(|art| art.button_ink(name, active))
+                    .unwrap_or_else(|| {
+                        if !state.control_enabled(name) {
+                            c.dim.clone()
+                        } else if active {
+                            accent.clone()
+                        } else {
+                            fg.clone()
+                        }
+                    }),
+            });
+        }
         s.hits.push(HitRegion {
             rect,
             action: (*name).into(),

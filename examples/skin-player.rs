@@ -35,7 +35,7 @@ impl Default for State {
     fn default() -> Self {
         Self {
             theme: 0,
-            classic: false,
+            classic: true,
             bitmap: false,
             density: 1,
             rigid: false,
@@ -73,6 +73,14 @@ impl Proof {
         for density in [1, 2] {
             for entry in std::fs::read_dir(root.join(format!("{density}x")))? {
                 let entry = entry?;
+                // The production clock atlases are not used by this isolated
+                // proof. Keep them out of its independent bounded cache.
+                if matches!(
+                    entry.path().file_stem().and_then(|s| s.to_str()),
+                    Some("clock-on" | "clock-off" | "transport-glyphs" | "fixed-labels")
+                ) {
+                    continue;
+                }
                 if entry.path().extension().is_some_and(|e| e == "png") {
                     let id = format!(
                         "{density}/{}",
@@ -678,7 +686,15 @@ fn main() -> Result<()> {
     ] {
         player(&mut proof, 1352, &state)?.save(out.join(format!("player-{name}.png")))?;
     }
-    player(&mut proof, 1352, &State::default())?.save(out.join("player-fold-rack.png"))?;
+    player(
+        &mut proof,
+        1352,
+        &State {
+            classic: false,
+            ..Default::default()
+        },
+    )?
+    .save(out.join("player-fold-rack.png"))?;
     for (i, theme) in starkit::theme::BUILTINS.iter().enumerate() {
         player(
             &mut proof,

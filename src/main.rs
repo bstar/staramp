@@ -1812,8 +1812,20 @@ fn cmd_tui_mode(
         _ => Vec::new(),
     };
 
-    let (root, items) = build_queue(&cfg, target.as_deref(), &index_path()?)?;
-    if items.is_empty() && playlists.is_empty() {
+    let index = index_path()?;
+    let (root, items) = if native_session.is_some() && target.is_none() && !index.exists() {
+        // The graphical player can open its Library and Playlist controls
+        // before the first scan. Do not hide errors from an existing index.
+        (
+            cfg.library_root
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("/")),
+            Vec::new(),
+        )
+    } else {
+        build_queue(&cfg, target.as_deref(), &index)?
+    };
+    if items.is_empty() && playlists.is_empty() && native_session.is_none() {
         anyhow::bail!(
             "nothing to play — run `staramp scan <dir>` first, or pass a playlist or directory"
         );

@@ -39,6 +39,8 @@ pub struct Rack<'a> {
     folded: std::collections::HashSet<String>,
     skin: crate::embed::skin::PlayerSkin,
     skins: bool,
+    reference_colors: bool,
+    density: u16,
 }
 fn color(c: crate::theme::color::Rgb) -> [u8; 3] {
     [c.r, c.g, c.b]
@@ -89,6 +91,22 @@ impl App {
             matches!(cfg.ui.corners.as_str(), "rounded" | "rigid"),
             "ui.corners must be rounded or rigid"
         );
+        anyhow::ensure!(
+            matches!(cfg.ui.graphical_palette.as_str(), "classic" | "theme"),
+            "ui.graphical_palette must be classic or theme"
+        );
+        if !cfg.ui.graphical_rack_initialized {
+            self.panels.eq = true;
+            self.panels.album = true;
+            self.panels.history = true;
+            self.panels.playlist = true;
+            self.panels.focus = Focus::Player;
+            self.vis.mode = VisMode::Leds;
+            self.saving.pending.insert(
+                ("ui".into(), "graphical_rack_initialized".into()),
+                crate::config::edit::Value::Bool(true),
+            );
+        }
         let root = graphical_root()?;
         session::serve_exclusive(
             &root,
@@ -111,10 +129,9 @@ impl App {
                 modules: Vec::new(),
                 skin: crate::embed::skin::PlayerSkin::new()?,
                 skins: false,
-                folded: ["eq", "album", "activity"]
-                    .into_iter()
-                    .map(str::to_owned)
-                    .collect(),
+                reference_colors: cfg.ui.graphical_palette == "classic",
+                density: 1,
+                folded: Default::default(),
             },
         )
     }
@@ -124,6 +141,9 @@ pub fn graphical_root() -> Result<PathBuf> {
 }
 impl Rack<'_> {
     fn palette(&self) -> Palette {
+        if self.reference_colors {
+            return crate::embed::skin::REFERENCE_PALETTE;
+        }
         let t = &self.app.look.theme;
         Palette {
             bg: color(t.bg),
@@ -187,9 +207,49 @@ impl Rack<'_> {
         }
         .clear_empty_idle()
     }
+    fn frame(&self, s: &mut Surface, r: R, c: &Colors, radius: u16, inset: bool) {
+        if self.skins {
+            self.skin.frame(s, r, inset);
+        } else {
+            classic::frame(s, r, c, radius, inset);
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn button(
+        &self,
+        s: &mut Surface,
+        r: R,
+        c: &Colors,
+        text: &str,
+        action: &str,
+        font: u16,
+        active: bool,
+    ) {
+        if !self.skins {
+            classic::button(s, r, c, text, action, font, active);
+            return;
+        }
+        self.skin.button(s, r, action, active);
+        let ink = self.skin.ink(action, active);
+        if !self.skin.label(s, r, text, &ink, true) {
+            let width = (text.chars().count() as u16 * font * 3 / 5).min(r.width);
+            classic::label(
+                s,
+                R::new(r.x + (r.width - width) / 2, r.y, width, r.height),
+                text,
+                &ink,
+                font,
+                true,
+            );
+        }
+        s.hits.push(HitRegion {
+            rect: r,
+            action: action.into(),
+        });
+    }
     fn window(&self, w: u16, h: u16, c: &Colors, title: &str, font: u16) -> Surface {
-        let mut s = Surface::new(w, h, hex(self.app.look.theme.bg));
-        s.background = hex(self.app.look.theme.bg);
+        let mut s = Surface::new(w, h, native::hex(self.palette().bg));
+        s.background = native::hex(self.palette().bg);
         let focus = match title {
             "PARAMETRIC EQUALIZER" => Focus::Equalizer,
             "ALBUM" => Focus::Album,
@@ -200,7 +260,7 @@ impl Rack<'_> {
         if self.app.panels.focus == focus {
             frame_colors.title = c.inset.clone();
         }
-        classic::frame(
+        self.frame(
             &mut s,
             R::new(0, 0, w, h),
             &frame_colors,
@@ -208,25 +268,43 @@ impl Rack<'_> {
             false,
         );
         s.fill(R::new(7, 7, w - 14, 24), &frame_colors.title, 2);
-        label(
-            &mut s,
-            c,
-            R::new(26, 7, w.saturating_sub(148), 24),
-            title,
-            font,
-            true,
-        );
+        let title_rect = R::new(18, 7, w.saturating_sub(166), 24);
+        if !self.skins
+            || !self.skin.label(
+                &mut s,
+                title_rect,
+                title,
+                &crate::embed::skin::tone(&self.palette(), "#bbc6d5", true),
+                false,
+            )
+        {
+            label(&mut s, c, title_rect, title, 12, true);
+        }
         classic::label(
             &mut s,
-            R::new(w.saturating_sub(96), 7, 78, 24),
+            R::new(w.saturating_sub(114), 7, 78, 24),
             "settings",
             &c.dim,
             font.saturating_sub(2),
             false,
         );
         s.hits.push(HitRegion {
-            rect: R::new(w.saturating_sub(100), 7, 82, 24),
+            rect: R::new(w.saturating_sub(118), 7, 82, 24),
             action: "settings".into(),
+        });
+        let close = R::new(w - 32, 7, 18, 24);
+        classic::label(&mut s, close, "×", &c.dim, 12, false);
+        s.hits.push(HitRegion {
+            rect: close,
+            action: format!(
+                "close:{}",
+                match focus {
+                    Focus::Equalizer => "eq",
+                    Focus::Album => "album",
+                    Focus::History => "activity",
+                    _ => "playlist",
+                }
+            ),
         });
         s
     }
@@ -240,22 +318,24 @@ impl Rack<'_> {
             s.hits.retain(|hit| hit.rect.y < 32);
             let header = std::mem::take(&mut s.nodes);
             let width = s.width;
-            classic::frame(&mut s, R::new(0, 0, width, 38), c, self.radius, false);
+            self.frame(&mut s, R::new(0, 0, width, 38), c, self.radius, false);
             s.nodes.extend(header);
         }
         let glyph = if folded { "▸" } else { "▾" };
-        classic::label(&mut s, R::new(8, 7, 12, 24), glyph, &c.dim, 11, false);
+        if folded {
+            classic::label(&mut s, R::new(8, 7, 9, 24), glyph, &c.dim, 9, false);
+        }
         s.hits.push(HitRegion {
-            rect: R::new(7, 7, s.width.saturating_sub(115), 24),
+            rect: R::new(7, 7, s.width.saturating_sub(140), 24),
             action: format!("fold:{name}"),
         });
         s
     }
     fn eq(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
-        let h = 294.max(font * 16);
+        let h = 294;
         let mut s = self.window(w, h, c, "PARAMETRIC EQUALIZER", font);
         let e = &self.app.eq;
-        classic::button(
+        self.button(
             &mut s,
             R::new(14, 40, 48, 29),
             c,
@@ -266,7 +346,7 @@ impl Rack<'_> {
         );
         let profile_width = w.saturating_sub(570).clamp(100, 420);
         let profile = R::new(76, 40, profile_width, 29);
-        classic::frame(&mut s, profile, c, 0, true);
+        self.frame(&mut s, profile, c, 0, true);
         classic::label(
             &mut s,
             R::new(88, 40, profile_width - 24, 29),
@@ -287,9 +367,14 @@ impl Rack<'_> {
         .into_iter()
         .enumerate()
         {
-            classic::button(
+            self.button(
                 &mut s,
-                R::new(w - 294 + i as u16 * 92, 40, 82, 29),
+                R::new(
+                    w - 294 + i as u16 * 92,
+                    40,
+                    if i == 2 { 96 } else { 82 },
+                    29,
+                ),
                 c,
                 text,
                 action,
@@ -297,9 +382,36 @@ impl Rack<'_> {
                 false,
             );
         }
+        let preamp = e
+            .active()
+            .stages
+            .iter()
+            .find_map(|s| {
+                if let Filter::Preamp { gain_db } = s.filter {
+                    Some(gain_db)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(0.);
+        if w > 1100 {
+            let rect = R::new(520, 40, 170, 29);
+            classic::label(
+                &mut s,
+                rect,
+                format!("Preamp  {preamp:+.1} dB"),
+                &c.dim,
+                12,
+                false,
+            );
+            s.hits.push(HitRegion {
+                rect,
+                action: "eq-preamp".into(),
+            });
+        }
         let plot = R::new(48, 86, w.saturating_sub(410).max(80), 132);
-        classic::frame(&mut s, R::new(22, 78, plot.width + 38, 167), c, 0, true);
-        classic::frame(&mut s, plot, c, 0, true);
+        self.frame(&mut s, R::new(22, 78, plot.width + 38, 167), c, 0, true);
+
         for db in [-12, -6, 0, 6, 12] {
             let y = plot.y + ((12 - db) as u16 * (plot.height - 1) / 24);
             s.fill(
@@ -309,25 +421,39 @@ impl Rack<'_> {
             );
             classic::label(
                 &mut s,
-                R::new(8, y.saturating_sub(7), 36, 16),
+                R::new(14, y.saturating_sub(7), 26, 16),
                 format!("{db:+}"),
                 &c.dim,
                 font.saturating_sub(2),
                 false,
             );
         }
-        for (i, f) in [20., 100., 1000., 10000., 20000.].into_iter().enumerate() {
+        for (i, (f, tick)) in [
+            (20., "20"),
+            (50., "50"),
+            (100., "100"),
+            (200., "200"),
+            (500., "500"),
+            (1000., "1k"),
+            (2000., "2k"),
+            (5000., "5k"),
+            (10000., "10k"),
+            (20000., "20k"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let x = plot.x + ((f64::log10(f / 20.) / 3.) * f64::from(plot.width - 1)) as u16;
             s.fill(R::new(x, plot.y, 1, plot.height), &c.shadow, 0);
             classic::label(
                 &mut s,
                 R::new(
-                    x.saturating_sub(if i == 4 { 40 } else { 0 }),
+                    x.saturating_sub(if i == 9 { 20 } else { 8 }),
                     plot.y + plot.height + 3,
                     48,
                     20,
                 ),
-                format!("{f:.0}"),
+                tick,
                 &c.dim,
                 font.saturating_sub(2),
                 false,
@@ -339,14 +465,6 @@ impl Rack<'_> {
             .get(e.stage)
             .map(|s| s.channels.0.trailing_zeros().min(63) as usize)
             .unwrap_or(0);
-        classic::label(
-            &mut s,
-            R::new(plot.x, plot.y.saturating_sub(22), plot.width, 20),
-            format!("RESPONSE · CHANNEL {}", channel + 1),
-            &c.dim,
-            font.saturating_sub(3),
-            false,
-        );
         if self.curve.as_ref().is_none_or(|c| {
             c.profile != *e.active()
                 || c.rate != e.compiled_rate
@@ -380,37 +498,39 @@ impl Rack<'_> {
             rect: plot,
             points,
             color: c.accent.clone(),
-            width: 1,
+            width: 2,
         });
         s.hits.push(HitRegion {
             rect: plot,
             action: "eq-plot".into(),
         });
         for (i, stage) in e.active().stages.iter().enumerate() {
-            if let Filter::Biquad {
-                frequency, gain_db, ..
-            } = stage.filter
-            {
-                let x = plot.x
+            if let Filter::Biquad { frequency, .. } = stage.filter {
+                let cx = plot.x
                     + ((frequency.clamp(20., 20000.) / 20.).log10() / 3.
-                        * f64::from(plot.width - 9)) as u16;
-                let y = plot.y
-                    + ((12. - gain_db.clamp(-12., 12.)) / 24. * f64::from(plot.height - 9)) as u16;
-                s.fill(
-                    R::new(x, y, 9, 9),
-                    if i == e.stage { &c.accent } else { &c.dim },
-                    2,
-                );
+                        * f64::from(plot.width - 1)) as u16;
+                let db = e
+                    .compiled
+                    .magnitude_db_at_channel(frequency, e.compiled_rate, channel)
+                    .clamp(-12., 12.);
+                let cy = plot.y + ((12. - db) / 24. * f64::from(plot.height - 1)) as u16;
+                let r = R::new(cx.saturating_sub(8), cy.saturating_sub(8), 16, 16);
+                s.fill(r, if i == e.stage { &c.accent } else { &c.dim }, 8);
+                s.nodes.push(Primitive::Border {
+                    rect: r,
+                    color: c.ink.clone(),
+                    radius: 8,
+                });
                 classic::label(
                     &mut s,
-                    R::new(x.saturating_sub(3), y.saturating_sub(20), 28, 18),
+                    R::new(r.x + 5, r.y, 11, 16),
                     (i + 1).to_string(),
-                    &c.ink,
-                    font.saturating_sub(3),
-                    i == e.stage,
+                    &c.inset,
+                    10,
+                    true,
                 );
                 s.hits.push(HitRegion {
-                    rect: R::new(x.saturating_sub(4), y.saturating_sub(4), 17, 17),
+                    rect: R::new(cx.saturating_sub(12), cy.saturating_sub(12), 24, 24),
                     action: format!("eq-band:{i}"),
                 });
             }
@@ -457,10 +577,10 @@ impl Rack<'_> {
             };
             for (i, (text, action)) in vals.into_iter().enumerate() {
                 let (name, value) = text.split_once("  ").unwrap_or(("Value", &text));
-                let y = 111 + i as u16 * 26;
+                let y = 111 + i as u16 * 24;
                 classic::label(&mut s, R::new(x, y, 108, 24), name, &c.dim, font, false);
-                let r = R::new(x + 113, y, 188, 24);
-                classic::frame(&mut s, r, c, 0, true);
+                let r = R::new(x + 113, y, 188, 22);
+                self.frame(&mut s, r, c, 0, true);
                 classic::label(
                     &mut s,
                     R::new(r.x + 10, y, 168, 24),
@@ -474,76 +594,128 @@ impl Rack<'_> {
                     action: action.into(),
                 });
             }
-            classic::button(
+            let r = R::new(x + 113, 183, 188, 22);
+            self.frame(&mut s, r, c, 0, true);
+            classic::label(
                 &mut s,
-                R::new(x, 204, 150, 26),
-                c,
-                "TYPE",
-                "eq-type",
-                font,
+                R::new(x, 183, 108, 22),
+                "Channels",
+                &c.dim,
+                12,
                 false,
             );
-            classic::button(
+            let channels = if stage.channels == crate::audio::dsp::apo::ChannelMask::ALL {
+                "L + R".to_string()
+            } else {
+                format!("0x{:x}", stage.channels.0)
+            };
+            classic::label(
                 &mut s,
-                R::new(x + 158, 204, 150, 26),
-                c,
-                "CHANNELS",
-                "eq-channels",
-                font,
+                R::new(r.x + 12, r.y, 164, r.height),
+                channels,
+                &c.accent,
+                12,
                 false,
             );
-        }
-        for (i, (text, action)) in [
-            ("+ FILTER", "eq-add"),
-            ("BYPASS", "eq-bypass"),
-            ("DELETE", "eq-remove"),
-            ("MOVE UP", "eq-up"),
-            ("MOVE DOWN", "eq-down"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            classic::button(
+            s.hits.push(HitRegion {
+                rect: r,
+                action: "eq-channels".into(),
+            });
+            s.hits.push(HitRegion {
+                rect: R::new(x, 83, 310, 24),
+                action: "eq-type".into(),
+            });
+            self.button(
                 &mut s,
-                R::new(16 + i as u16 * 112, h - 40, 104, 28),
+                R::new(x, 218, 91, 29),
                 c,
-                text,
-                action,
-                font.saturating_sub(2),
-                false,
+                "BYPASS",
+                "eq-bypass",
+                14,
+                !stage.enabled,
             );
-        }
-        if w >= 720 {
-            classic::button(
+            self.button(
                 &mut s,
-                R::new(w - 140, h - 40, 60, 28),
+                R::new(x + 101, 218, 91, 29),
                 c,
-                "PREV",
-                "eq-stage-prev",
-                font.saturating_sub(2),
-                false,
-            );
-            classic::button(
-                &mut s,
-                R::new(w - 72, h - 40, 60, 28),
-                c,
-                "NEXT",
-                "eq-stage-next",
-                font.saturating_sub(2),
+                "DELETE",
+                "eq-remove",
+                14,
                 false,
             );
         }
+        let summary = e
+            .active()
+            .stages
+            .iter()
+            .enumerate()
+            .map(|(i, stage)| {
+                let text = match stage.filter {
+                    Filter::Biquad {
+                        kind,
+                        frequency,
+                        gain_db,
+                        ..
+                    } => format!(
+                        "{} {:?} · {:.0} Hz · {:+.1} dB",
+                        i + 1,
+                        kind,
+                        frequency,
+                        gain_db
+                    ),
+                    Filter::Preamp { gain_db } => format!("{} Preamp · {:+.1} dB", i + 1, gain_db),
+                    _ => format!("{} Custom filter", i + 1),
+                };
+                if i == e.stage {
+                    format!("[{text}]")
+                } else {
+                    text
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("     ");
+        classic::label(
+            &mut s,
+            R::new(18, h - 48, w - 36, 22),
+            summary,
+            &c.ink,
+            11,
+            false,
+        );
+        for (x, width, text, action) in [
+            (18, 100, "+ Add filter", "eq-add"),
+            (134, 120, "‹ Previous band", "eq-stage-prev"),
+            (270, 110, "Next band ›", "eq-stage-next"),
+        ] {
+            let rect = R::new(x, h - 30, width, 24);
+            classic::label(&mut s, rect, text, &c.accent, 11, false);
+            s.hits.push(HitRegion {
+                rect,
+                action: action.into(),
+            });
+        }
+        if w > 1100 {
+            classic::label(
+                &mut s,
+                R::new(w - 360, h - 30, 342, 24),
+                "Drag: frequency / gain · wheel: Q",
+                &c.dim,
+                11,
+                false,
+            );
+        }
+
         s
     }
     fn album(&self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 292.max(font * 17), c, "ALBUM", font);
+        let mut s = self.window(w, 292, c, "ALBUM", font);
         let a = self
             .app
             .current_uri()
             .and_then(|u| self.app.art.as_ref()?.album_for(&u));
         let item = self.app.player.current_item();
         if w > 600 {
-            classic::frame(&mut s, R::new(16, 46, 180, 180), c, 0, true);
+            self.frame(&mut s, R::new(16, 46, 180, 180), c, 0, true);
             classic::label(
                 &mut s,
                 R::new(42, 114, 128, 30),
@@ -555,6 +727,25 @@ impl Rack<'_> {
         }
         let x = if w > 600 { 214 } else { 16 };
         let detail = a.as_ref().and_then(|a| a.detail.as_ref());
+        let album_items = self
+            .app
+            .queue
+            .items
+            .iter()
+            .filter(|i| {
+                item.as_ref().is_some_and(|current| {
+                    i.album == current.album && i.album_artist == current.album_artist
+                })
+            })
+            .collect::<Vec<_>>();
+        let album_seconds = album_items
+            .iter()
+            .filter_map(|i| i.duration_secs)
+            .map(|v| v.max(0))
+            .sum::<i64>();
+        use std::sync::atomic::Ordering::Relaxed;
+        let rate = self.app.player.state.sample_rate.load(Relaxed);
+        let depth = self.app.player.state.bit_depth.load(Relaxed);
         let lines = vec![
             detail
                 .and_then(|d| d.album.clone())
@@ -568,60 +759,87 @@ impl Rack<'_> {
                 .map(|d| {
                     format!(
                         "{} · {} tracks · {}:{:02}",
-                        d.year.unwrap_or_default(),
+                        d.year.map(|v| v.to_string()).unwrap_or_else(|| "—".into()),
                         d.track_count,
                         d.total_ms / 60000,
                         d.total_ms / 1000 % 60
                     )
                 })
-                .unwrap_or_default(),
-            detail
-                .map(|d| {
-                    format!(
-                        "{} · {}",
-                        d.codec.as_deref().unwrap_or(""),
-                        d.genre.as_deref().unwrap_or("")
-                    )
-                })
-                .unwrap_or_default(),
+                .unwrap_or_else(|| {
+                    if item.is_some() {
+                        format!(
+                            "{} · {} queued tracks · {}:{:02}",
+                            item.as_ref()
+                                .and_then(|i| i.year)
+                                .map(|v| v.to_string())
+                                .unwrap_or_else(|| "—".into()),
+                            album_items.len(),
+                            album_seconds / 60,
+                            album_seconds % 60
+                        )
+                    } else {
+                        String::new()
+                    }
+                }),
+            if rate > 0 {
+                format!(
+                    "{} · {:.1} kHz · {}-bit",
+                    self.app.player.state.codec.load_full(),
+                    rate as f64 / 1000.,
+                    depth
+                )
+            } else {
+                detail.and_then(|d| d.codec.clone()).unwrap_or_default()
+            },
             a.as_ref()
                 .and_then(|a| a.source)
-                .map(|v| v.name().to_string())
+                .map(|v| format!("ARTWORK  {}", v.name()))
                 .unwrap_or_else(|| "No cover available".into()),
             a.as_ref().and_then(|a| a.art.clone()).unwrap_or_default(),
         ];
         for (i, text) in lines.into_iter().enumerate() {
-            let y = 52 + i as u16 * 26;
+            let (y, size, height) = match i {
+                0 => (47, 22, 32),
+                1 => (80, 15, 28),
+                2 => (109, 12, 24),
+                3 => (134, 12, 24),
+                4 => (191, 11, 24),
+                _ => (213, 11, 24),
+            };
             classic::label(
                 &mut s,
-                R::new(x, y, w.saturating_sub(x + 16), 28),
+                R::new(x, y, w.saturating_sub(x + 18), height),
                 text,
                 if i == 0 || i == 4 {
                     &c.accent
-                } else if i == 1 {
+                } else if i == 1 || i == 3 {
                     &c.ink
                 } else {
                     &c.dim
                 },
-                font,
+                size,
                 i == 0,
             );
-            if i == 3 {
-                s.fill(
-                    R::new(x, y + 28, w.saturating_sub(x + 18), 1),
-                    &c.highlight,
-                    0,
-                );
-            }
         }
-        let bottom = s.height - 44;
+        if let Some(genre) = detail.and_then(|d| d.genre.as_deref()) {
+            classic::label(
+                &mut s,
+                R::new(x, 158, w.saturating_sub(x + 18), 22),
+                format!("GENRE  {genre}"),
+                &c.dim,
+                11,
+                false,
+            );
+        }
+        s.fill(R::new(x, 185, w.saturating_sub(x + 18), 1), &c.raised, 0);
+        let bottom = 242;
         for (x, width, text, action) in [
             (16, 29, "‹", "cover-prev"),
             (167, 29, "›", "cover-next"),
             (214, 99, "CHOOSE", "cover-choose"),
             (323, 81, "RETRY", "cover-retry"),
         ] {
-            classic::button(
+            self.button(
                 &mut s,
                 R::new(x, bottom, width, 29),
                 c,
@@ -670,40 +888,62 @@ impl Rack<'_> {
         s
     }
     fn activity(&self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 292.max(font * 17), c, "ACTIVITY", font);
+        let mut s = self.window(w, 292, c, "ACTIVITY", font);
         let snap = self.app.activity.snapshot();
         let n = 3;
-        for (i, p) in snap.providers.iter().enumerate() {
+        for (i, provider) in crate::activity::Provider::ALL.iter().enumerate() {
+            let p = snap.providers.iter().find(|p| p.provider == *provider);
             let r = R::new(14 + i as u16 * (w - 28) / n, 42, (w - 28) / n - 6, 43);
-            classic::frame(&mut s, r, c, 0, true);
+            self.frame(&mut s, r, c, 0, true);
             label(
                 &mut s,
                 c,
                 R::new(r.x + 8, r.y, r.width - 16, 22),
-                p.provider.to_string(),
+                provider.label(),
                 font,
                 true,
             );
             classic::label(
                 &mut s,
                 R::new(r.x + 8, r.y + 22, r.width - 16, 20),
-                if !p.configured {
-                    "Not connected".into()
-                } else {
-                    format!(
+                match p.filter(|p| p.configured) {
+                    Some(p) => format!(
                         "{} · {}",
                         if p.enabled { "Enabled" } else { "Disabled" },
                         p.username
-                    )
+                    ),
+                    None => "Not connected · Set up".into(),
                 },
                 &c.dim,
                 font.saturating_sub(2),
                 false,
             );
         }
+        for i in 0..2 {
+            s.hits.push(HitRegion {
+                rect: R::new(14 + i * (w - 28) / 3, 42, (w - 28) / 3 - 6, 43),
+                action: "settings:activity".into(),
+            });
+        }
+        classic::label(
+            &mut s,
+            R::new(16, 91, w - 150, 20),
+            "RECENT LISTENS",
+            &c.dim,
+            10,
+            true,
+        );
+        classic::label(
+            &mut s,
+            R::new(w - 104, 91, 88, 20),
+            "DELIVERY",
+            &c.dim,
+            10,
+            true,
+        );
         let card_w = (w - 28) / 3;
         let r = R::new(14 + card_w * 2, 42, card_w - 6, 43);
-        classic::frame(&mut s, r, c, 0, true);
+        self.frame(&mut s, r, c, 0, true);
         label(
             &mut s,
             c,
@@ -734,7 +974,7 @@ impl Rack<'_> {
                 false,
             );
         }
-        let count = ((s.height - 150) / 34) as usize;
+        let count = 4;
         for (i, row) in snap
             .recent
             .iter()
@@ -742,31 +982,58 @@ impl Rack<'_> {
             .take(count)
             .enumerate()
         {
-            let y = 100 + i as u16 * 34;
-            label(
+            let y = 111 + i as u16 * 34;
+            if i == 0 {
+                s.fill(
+                    R::new(10, y, w - 20, 33),
+                    &native::hex(self.palette().selected),
+                    1,
+                );
+            }
+            classic::label(
                 &mut s,
-                c,
-                R::new(16, y, w - 32, 18),
-                row.name(),
-                font,
+                R::new(16, y, w - 130, 18),
+                row.title.as_deref().unwrap_or(&row.uri),
+                &c.ink,
+                12,
                 false,
             );
             classic::label(
                 &mut s,
-                R::new(16, y + 18, w - 32, 16),
+                R::new(16, y + 18, w - 130, 16),
                 format!(
-                    "{} · listened {}:{:02} · {}/{} sent · {} errors",
-                    row.state(),
+                    "{} · {:02}:{:02} listened · {}",
+                    row.artist.as_deref().unwrap_or("Unknown artist"),
                     row.listened_ms / 60000,
                     row.listened_ms / 1000 % 60,
-                    row.sent,
-                    row.deliveries,
-                    row.errors
+                    row.outcome
                 ),
                 &c.dim,
-                font.saturating_sub(2),
+                10,
                 false,
             );
+            let state = row.state();
+            classic::label(
+                &mut s,
+                R::new(w - 100, y, 84, 24),
+                state.to_uppercase(),
+                if row.errors > 0 {
+                    "#e09885"
+                } else if state == "playing" {
+                    &c.accent
+                } else {
+                    &c.dim
+                },
+                10,
+                true,
+            );
+            s.hits.push(HitRegion {
+                rect: R::new(10, y, w - 20, 34),
+                action: format!("activity-row:{}", self.app.panels.history_scroll + i),
+            });
+            if i > 0 {
+                s.fill(R::new(14, y + 33, w - 28, 1), &c.raised, 0);
+            }
         }
         let bottom = s.height - 42;
         label(
@@ -777,8 +1044,8 @@ impl Rack<'_> {
             font,
             false,
         );
-        let r = R::new(w.saturating_sub(140), s.height - 42, 124, 28);
-        classic::button(
+        let r = R::new(w.saturating_sub(156), s.height - 35, 140, 29);
+        self.button(
             &mut s,
             r,
             c,
@@ -790,7 +1057,28 @@ impl Rack<'_> {
         s
     }
     fn playlist(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 260.max(font * 16), c, "PLAYLIST", font);
+        let mut s = self.window(w, 260, c, "PLAYLIST", font);
+        classic::label(
+            &mut s,
+            R::new(86, 7, w.saturating_sub(420), 24),
+            format!("· {}", self.app.queue.name),
+            &crate::embed::skin::tone(&self.palette(), "#bbc6d5", true),
+            12,
+            false,
+        );
+        for (x, text, action) in [
+            (w - 276, "sorting", "sorting"),
+            (w - 196, "gravity", "gravity"),
+        ] {
+            let rect = R::new(x, 7, 68, 24);
+            classic::label(&mut s, rect, text, &c.dim, 10, false);
+            s.hits.push(HitRegion {
+                rect,
+                action: action.into(),
+            });
+        }
+        let well_height = s.height - 82;
+        self.frame(&mut s, R::new(10, 38, w - 20, well_height), c, 0, true);
         if self.app.queue.rows.rows().is_empty() {
             classic::label(
                 &mut s,
@@ -800,7 +1088,7 @@ impl Rack<'_> {
                 font,
                 false,
             );
-            classic::button(
+            self.button(
                 &mut s,
                 R::new(22, 98, 140, 30),
                 c,
@@ -809,7 +1097,7 @@ impl Rack<'_> {
                 font,
                 false,
             );
-            classic::button(
+            self.button(
                 &mut s,
                 R::new(170, 98, 140, 30),
                 c,
@@ -819,9 +1107,7 @@ impl Rack<'_> {
                 false,
             );
         }
-        let well_height = s.height - 82;
-        classic::frame(&mut s, R::new(10, 38, w - 20, well_height), c, 0, true);
-        let toolbar_y = s.height - 36;
+        let toolbar_y = s.height - 35;
         for (i, (title, action)) in [
             ("ADD", "library"),
             ("REM", "queue-remove"),
@@ -832,7 +1118,7 @@ impl Rack<'_> {
         .into_iter()
         .enumerate()
         {
-            classic::button(
+            self.button(
                 &mut s,
                 R::new(14 + i as u16 * 63, toolbar_y, 57, 29),
                 c,
@@ -842,7 +1128,31 @@ impl Rack<'_> {
                 false,
             );
         }
-        let row_h = font + 10;
+        let total = self
+            .app
+            .queue
+            .items
+            .iter()
+            .filter_map(|i| i.duration_secs)
+            .map(|seconds| seconds.max(0))
+            .sum::<i64>();
+        let summary = format!(
+            "{} tracks · {}:{:02}",
+            self.app.queue.items.len(),
+            total / 60,
+            total % 60
+        );
+        let width = (summary.chars().count() as u16 * 7).min(w - 350);
+        let summary_y = s.height - 30;
+        classic::label(
+            &mut s,
+            R::new(w - 18 - width, summary_y, width, 24),
+            summary,
+            &c.dim,
+            11,
+            false,
+        );
+        let row_h = 25;
         let selected_row = self
             .app
             .queue
@@ -876,7 +1186,9 @@ impl Rack<'_> {
             let index = self.app.queue.scroll + line;
             let r = R::new(14, 42 + line as u16 * row_h, w - 28, row_h);
             if index == selected_row {
-                s.fill(r, &hex(self.app.look.theme.row_selected_bg), 0);
+                s.fill(r, &native::hex(self.palette().selected), 0);
+            } else if self.skin.hovered.as_deref() == Some(&format!("playlist:{index}")) {
+                s.fill(r, &c.title, 0);
             }
             let text = match row {
                 playlist::Row::Track(i) => self
@@ -1051,9 +1363,15 @@ impl Rack<'_> {
             }
             "playlists" => a.handle(Action::OpenPlaylistPicker),
             "library" => a.open_library(),
+            "sorting" => a.open_filter(),
+            "gravity" => a.open_gravity(),
             "queue-remove" => a.handle(Action::RemoveTagged),
             "queue-tag" => a.handle(Action::TagRow),
             "help" => a.handle(Action::Help),
+            "close:eq" => a.handle(Action::ToggleEqPanel),
+            "close:album" => a.handle(Action::ToggleAlbumPanel),
+            "close:activity" => a.handle(Action::ToggleHistoryPanel),
+            "close:playlist" => a.handle(Action::TogglePlaylistPanel),
             "repeat" => a.handle(Action::CycleRepeat),
             "shuffle" => a.handle(Action::ToggleShuffle),
             "eq-prev" => a.handle(Action::PrevEqPreset),
@@ -1082,6 +1400,17 @@ impl Rack<'_> {
             "catalog-artist" => a.apply_setting(Setting::OpenArtistCatalog),
             "catalog-album" => a.apply_setting(Setting::OpenAlbumCatalog),
             "activity-retry" => a.apply_setting(Setting::RetryScrobbles),
+            "eq-preamp" => {
+                if let Some(i) =
+                    a.eq.active()
+                        .stages
+                        .iter()
+                        .position(|s| matches!(s.filter, Filter::Preamp { .. }))
+                {
+                    a.eq.stage = i;
+                    a.begin_eq_value(EqField::Gain);
+                }
+            }
             _ => {
                 if let Some(i) = name
                     .strip_prefix("eq-band:")
@@ -1089,6 +1418,9 @@ impl Rack<'_> {
                 {
                     a.eq.stage = i;
                     a.panels.focus = Focus::Equalizer;
+                }
+                if name.starts_with("activity-row:") {
+                    a.panels.focus = Focus::History;
                 }
                 if let Some(i) = name
                     .strip_prefix("playlist:")
@@ -1139,10 +1471,32 @@ fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u1
         };
         if matches!(
             node,
-            Primitive::Text { .. } | Primitive::Icon { .. } | Primitive::Sprite { .. }
+            Primitive::Text { .. }
+                | Primitive::Icon { .. }
+                | Primitive::Sprite { insets: None, .. }
         ) && rect.height != original.height
         {
             continue;
+        }
+        if let Primitive::Sprite {
+            source,
+            insets: Some(insets),
+            ..
+        } = node
+        {
+            if rect.height != original.height {
+                let cut_top = rect.y as i32 - (original.y as i32 + y);
+                let cut_bottom = original.height as i32 - cut_top - rect.height as i32;
+                if cut_top > 0 {
+                    source.y += insets[1];
+                    source.height -= insets[1];
+                    insets[1] = 0;
+                }
+                if cut_bottom > 0 {
+                    source.height -= insets[3];
+                    insets[3] = 0;
+                }
+            }
         }
         match node {
             Primitive::Fill { rect: r, .. }
@@ -1223,21 +1577,8 @@ impl Controller for Rack<'_> {
             return Scene::from_buffer(&buffer, v, self.revision);
         }
         let palette = self.palette();
-        let c = Colors::new(
-            palette.bg,
-            palette.fg,
-            palette.muted,
-            palette.accent,
-            palette.border,
-        );
-        let font = starkit::native_surface::Metrics::from_cell(
-            (v.width / u32::from(v.columns.max(1))) as u16,
-            (v.height / u32::from(v.rows.max(1))) as u16,
-        )
-        .font
-        .saturating_mul(3)
-        .saturating_div(4)
-        .max(10);
+        let c = crate::embed::skin::colors(&palette);
+        let font = 12;
         if self.app.over.library.is_some() || self.app.over.files.is_some() {
             self.app.draw(area, &mut buffer);
             let surface = classic::form(
@@ -1253,8 +1594,8 @@ impl Controller for Rack<'_> {
                 v,
                 self.revision,
             );
-            scene.background = hex(self.app.look.theme.bg);
-            scene.foreground = hex(self.app.look.theme.fg);
+            scene.background = native::hex(self.palette().bg);
+            scene.foreground = native::hex(self.palette().fg);
             scene.components.push(Component::Surface {
                 rect: starkit::terminal_graphics::protocol::Rect {
                     x: 0,
@@ -1267,24 +1608,34 @@ impl Controller for Rack<'_> {
             self.surface = None;
             return scene;
         }
-        let w = (v.width as u16).min(4096);
-        let h = (v.height as u16).min(1800);
-        let mut surface = Surface::new(w, h, hex(self.app.look.theme.bg));
-        let density =
-            if self.skins && w >= 1456 && h >= 600 && v.height / u32::from(v.rows.max(1)) >= 32 {
-                2
-            } else {
-                1
-            };
-        let player_h = (230 * density).max(font * 13).min(h - 40);
+        let density = if self.skins
+            && v.width >= 1456
+            && v.height >= 600
+            && v.height / u32::from(v.rows.max(1)) >= 32
+        {
+            2
+        } else {
+            1
+        };
+        self.density = density;
+        let w = (v.width.min(4096) as u16) / density;
+        let h = (v.height.min(1800) as u16) / density;
+        let mut surface = Surface::new(w, h, native::hex(palette.bg));
+        if self.skins {
+            if let Err(error) = self.skin.prepare(&palette, density, self.radius == 0) {
+                tracing::error!(%error,"Cannot prepare rack artwork");
+                self.skins = false;
+            }
+        }
+        let player_h = 230.min(h - 40);
         let graphics = GraphicsConfig {
-            cell_width: (font * 3 / 5).max(1),
-            cell_height: font + 4,
+            cell_width: 8,
+            cell_height: 16,
         };
         let state = self.player();
         let player = if self.skins {
             self.skin
-                .surface_at_density(
+                .logical_surface(
                     w - 16,
                     player_h,
                     graphics,
@@ -1310,14 +1661,14 @@ impl Controller for Rack<'_> {
         append(&mut surface, player, 8, 8, 0, "player");
         classic::label(
             &mut surface,
-            R::new(w - 100, 15, 80, 24),
+            R::new(w - 86, 15, 64, 24),
             "settings",
             &c.dim,
             font.saturating_sub(2),
             false,
         );
         surface.hits.push(HitRegion {
-            rect: R::new(w - 104, 15, 84, 24),
+            rect: R::new(w - 90, 15, 68, 24),
             action: "settings:player".into(),
         });
         let top = player_h + 16;
@@ -1334,22 +1685,47 @@ impl Controller for Rack<'_> {
         }
         let module_w = w - 16;
         let album_y = y;
+        let paired = module_w >= 1280 && self.app.panels.album && self.app.panels.history;
+        let album_w = if paired {
+            (module_w - 32) / 2
+        } else {
+            module_w
+        };
+        let mut album_height = 0;
         if self.app.panels.album {
-            let s = self.album(module_w, &c, font);
+            let s = self.album(album_w, &c, font);
             let s = self.fold_module(s, "album", &c);
-            let row_height = s.height;
+            album_height = s.height;
             self.modules
-                .push((Focus::Album, y + i32::from(self.offset), row_height));
+                .push((Focus::Album, y + i32::from(self.offset), s.height));
             append(&mut surface, s, 8, y, top, "album");
-            y += i32::from(row_height + 8);
+            if !paired {
+                y += i32::from(album_height + 8);
+            }
         }
         if self.app.panels.history {
-            let s = self.activity(module_w, &c, font);
+            let activity_w = if paired {
+                module_w - album_w - 8
+            } else {
+                module_w
+            };
+            let s = self.activity(activity_w, &c, font);
             let s = self.fold_module(s, "activity", &c);
-            let row_height = s.height;
+            let row_height = if paired {
+                s.height.max(album_height)
+            } else {
+                s.height
+            };
             self.modules
                 .push((Focus::History, y + i32::from(self.offset), s.height));
-            append(&mut surface, s, 8, y, top, "activity");
+            append(
+                &mut surface,
+                s,
+                if paired { 16 + album_w } else { 8 },
+                y,
+                top,
+                "activity",
+            );
             y += i32::from(row_height + 8);
         }
         if self.app.panels.playlist {
@@ -1380,7 +1756,7 @@ impl Controller for Rack<'_> {
             });
         surface.fill(
             R::new(0, h - font - 12, w, font + 12),
-            &hex(self.app.look.theme.bg),
+            &native::hex(self.palette().bg),
             0,
         );
         label(
@@ -1422,7 +1798,7 @@ impl Controller for Rack<'_> {
                     ((f64::from(bottom + 1) * ch) as u16)
                         .saturating_sub((f64::from(top) * ch) as u16),
                 );
-                classic::frame(&mut surface, r, &c, self.radius, false);
+                self.frame(&mut surface, r, &c, self.radius, false);
                 for y in top..=bottom {
                     let mut x = left;
                     while x <= right {
@@ -1481,6 +1857,9 @@ impl Controller for Rack<'_> {
                 });
             }
         }
+        if density > 1 {
+            surface = surface.at_density(density).expect("bounded rack density");
+        }
         let mut scene = Scene::from_buffer(
             &starkit::ratatui::buffer::Buffer::empty(area),
             v,
@@ -1497,7 +1876,7 @@ impl Controller for Rack<'_> {
         });
         if !self.overlay
             && self.app.panels.album
-            && module_w > 600
+            && album_w > 600
             && !self.folded.contains("album")
             && album_y + 46 >= i32::from(top)
             && album_y + 226 < i32::from(h - font - 12)
@@ -1524,8 +1903,8 @@ impl Controller for Rack<'_> {
                             .map(|png| (serial, png));
                     }
                     if let Some((_, png)) = &self.cover_cache {
-                        let xx = 24u16;
-                        let yy = (album_y + 46) as u16;
+                        let xx = 24u16 * density;
+                        let yy = (album_y + 46) as u16 * density;
                         let to_cell = |r: R| starkit::terminal_graphics::protocol::Rect {
                             x: (u32::from(r.x) * u32::from(v.columns) / v.width) as u16,
                             y: (u32::from(r.y) * u32::from(v.rows) / v.height) as u16,
@@ -1535,14 +1914,14 @@ impl Controller for Rack<'_> {
                                 as u16,
                         };
                         scene.components.push(Component::Image {
-                            rect: to_cell(R::new(xx, yy, 180, 180)),
+                            rect: to_cell(R::new(xx, yy, 180 * density, 180 * density)),
                             id: format!("album-{serial}"),
                             png: Some(png.clone()),
                             scale: Default::default(),
                             zoom: 100,
                         });
                         surface.hits.push(HitRegion {
-                            rect: R::new(xx, yy, 180, 180),
+                            rect: R::new(xx, yy, 180 * density, 180 * density),
                             action: "cover-open".into(),
                         });
                     }
@@ -1585,10 +1964,10 @@ impl Controller for Rack<'_> {
         )
             .hash(&mut scroll);
         scene.scroll_interaction = Some(scroll.finish());
-        scene.background = hex(self.app.look.theme.bg);
-        scene.foreground = hex(self.app.look.theme.fg);
-        scene.accent = hex(self.app.look.theme.accent);
-        scene.border = hex(self.app.look.theme.border);
+        scene.background = native::hex(self.palette().bg);
+        scene.foreground = native::hex(self.palette().fg);
+        scene.accent = native::hex(self.palette().accent);
+        scene.border = native::hex(self.palette().border);
         self.surface = Some(surface);
         scene
     }
@@ -1614,7 +1993,15 @@ impl Controller for Rack<'_> {
                             return;
                         }
                     }
+                    let theme_before = self.app.look.theme.name.clone();
                     self.app.dispatch_key(KeyEvent::new(code, modifiers));
+                    if theme_before != self.app.look.theme.name {
+                        self.reference_colors = false;
+                        self.app.saving.pending.insert(
+                            ("ui".into(), "graphical_palette".into()),
+                            crate::config::edit::Value::Str("theme".into()),
+                        );
+                    }
                     if before != self.app.panels.focus {
                         self.skin.focused = None;
                         if let Some((_, start, height)) = self
@@ -1631,10 +2018,12 @@ impl Controller for Rack<'_> {
                             if *start - i32::from(self.offset) < i32::from(top) {
                                 self.offset = (*start - i32::from(top)).max(0) as u16;
                             } else if end - i32::from(self.offset)
-                                > self.viewport.height as i32 - 40
+                                > self.viewport.height as i32 / i32::from(self.density) - 40
                             {
-                                self.offset =
-                                    (end - self.viewport.height as i32 + 40).max(0) as u16;
+                                self.offset = (end
+                                    - self.viewport.height as i32 / i32::from(self.density)
+                                    + 40)
+                                    .max(0) as u16;
                             }
                             self.offset = self.offset.min(self.max_offset);
                         } else if self.app.panels.focus == Focus::Player {
@@ -1703,6 +2092,39 @@ impl Controller for Rack<'_> {
                                     .clamp(0.05, 100.);
                                 self.app.finish_eq_edit();
                             }
+                        }
+                        return;
+                    }
+                }
+                if matches!(action.as_str(), "scroll_up" | "scroll_down") {
+                    let target = self
+                        .surface
+                        .as_ref()
+                        .and_then(|s| s.hit(px as u16, py as u16))
+                        .map(|h| h.action.clone());
+                    if target
+                        .as_deref()
+                        .is_some_and(|a| a.starts_with("playlist:"))
+                    {
+                        self.app.panels.focus = Focus::Playlist;
+                        self.app.handle(if action == "scroll_up" {
+                            Action::CursorUp
+                        } else {
+                            Action::CursorDown
+                        });
+                        return;
+                    }
+                    if target
+                        .as_deref()
+                        .is_some_and(|a| a.starts_with("activity-row:"))
+                    {
+                        self.app.panels.focus = Focus::History;
+                        if action == "scroll_up" {
+                            self.app.panels.history_scroll =
+                                self.app.panels.history_scroll.saturating_sub(1);
+                        } else {
+                            self.app.panels.history_scroll = (self.app.panels.history_scroll + 1)
+                                .min(self.app.activity.snapshot().recent.len().saturating_sub(4));
                         }
                         return;
                     }
@@ -1835,11 +2257,66 @@ impl App {
             modules: Vec::new(),
             skin: crate::embed::skin::PlayerSkin::new()?,
             skins: true,
-            folded: ["eq", "album", "activity"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
+            reference_colors: true,
+            density: 1,
+            folded: Default::default(),
         };
+        // Measure the actual shared component against option 01 separately
+        // from the full application's fixture. No alternate drawing path.
+        let mut selected = rack.player();
+        selected.title = "Terra Atlantica — Through the Water and the Waves".into();
+        selected.subtitle = "Oceans".into();
+        selected.tech = "Oceans · FLAC · 1063 kbps · 44.1 kHz · 16-bit".into();
+        selected.position = 69.;
+        selected.duration = 298.;
+        selected.volume = 0.8;
+        selected.repeat = crate::playlist::queue::RepeatMode::All;
+        let selected_palette = Palette {
+            bg: [23, 24, 32],
+            fg: [215, 217, 207],
+            muted: [152, 158, 172],
+            accent: [164, 215, 145],
+            selected: [48, 63, 61],
+            border: [116, 121, 134],
+            error: [240, 60, 60],
+        };
+        let mut renderer =
+            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("JetBrains Mono");
+        for density in [1, 2] {
+            for width in [900, 1352] {
+                let surface = rack.skin.surface_at_density(
+                    width * density,
+                    230 * density,
+                    GraphicsConfig {
+                        cell_width: 8 * density,
+                        cell_height: 16 * density,
+                    },
+                    &selected_palette,
+                    &selected,
+                    8 * density,
+                    density,
+                )?;
+                surface.validate()?;
+                let base = starkit::image::RgbaImage::new(
+                    u32::from(surface.width),
+                    u32::from(surface.height),
+                );
+                renderer
+                    .render(&base, &surface)?
+                    .save(output.join(format!("selected-player-{width}-{density}x.png")))?;
+            }
+        }
+        let selected_view = Viewport {
+            width: 1368,
+            height: 1148,
+            columns: 171,
+            rows: 71,
+            generation: 0,
+        };
+        let selected_scene = rack.scene(selected_view);
+        starkit::terminal_graphics::renderer::render_reference(&selected_scene)?
+            .save(output.join("selected-rack.png"))?;
+        rack.reference_colors = false;
         for id in crate::theme::builtin::ids() {
             rack.app.look.theme = crate::theme::builtin::load(id).unwrap();
             for (name, width, height, columns, rows) in
@@ -1884,6 +2361,83 @@ impl App {
                 rack.offset = 0;
             }
         }
+        let v2 = Viewport {
+            width: 2736,
+            height: 1800,
+            columns: 171,
+            rows: 56,
+            generation: 0,
+        };
+        let high_density = rack.scene(v2);
+        for component in &high_density.components {
+            if let Component::Surface { surface, .. } = component {
+                surface.validate()?;
+            }
+        }
+        assert_eq!(rack.density, 2);
+        assert_eq!(
+            rack.surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .find(|h| h.action == "play")
+                .unwrap()
+                .rect,
+            R::new(118, 390, 58, 58)
+        );
+        rack.reference_colors = true;
+        starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?
+            .save(output.join("selected-rack-2x.png"))?;
+        rack.reference_colors = false;
+        // Wide layouts share a row; narrow layouts stack, with no overlapping
+        // drawing or hit geometry. Closing a module never stops its service.
+        let vwide = Viewport {
+            width: 1368,
+            height: 1148,
+            columns: 171,
+            rows: 71,
+            generation: 0,
+        };
+        rack.scene(vwide);
+        let album_start = rack
+            .modules
+            .iter()
+            .find(|(f, _, _)| *f == Focus::Album)
+            .unwrap()
+            .1;
+        assert_eq!(
+            album_start,
+            rack.modules
+                .iter()
+                .find(|(f, _, _)| *f == Focus::History)
+                .unwrap()
+                .1
+        );
+        rack.action("close:album", 0, 0);
+        assert!(!rack.app.panels.album);
+        assert!(rack.app.panels.history);
+        rack.action("close:album", 0, 0);
+        rack.scene(Viewport {
+            width: 900,
+            height: 1100,
+            columns: 90,
+            rows: 55,
+            generation: 0,
+        });
+        assert!(
+            rack.modules
+                .iter()
+                .find(|(f, _, _)| *f == Focus::History)
+                .unwrap()
+                .1
+                > rack
+                    .modules
+                    .iter()
+                    .find(|(f, _, _)| *f == Focus::Album)
+                    .unwrap()
+                    .1
+        );
         // Exercise native hit routing, modal dismissal, and presentation changes
         // against the same queue owner used for the reference captures.
         let v = Viewport {
@@ -1932,7 +2486,7 @@ impl App {
             .find(|(focus, _, _)| *focus == Focus::Equalizer)
             .unwrap()
             .2;
-        assert_eq!(closed_height, 38);
+        assert_eq!(closed_height, 294);
         rack.action("fold:eq", 0, 0);
         rack.scene(v);
         assert!(
@@ -1941,7 +2495,7 @@ impl App {
                 .find(|(focus, _, _)| *focus == Focus::Equalizer)
                 .unwrap()
                 .2
-                > closed_height
+                == 38
         );
         rack.action("fold:eq", 0, 0);
         rack.scene(v);

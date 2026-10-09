@@ -39,11 +39,11 @@ volume support dragging and arrow keys. `c` switches chrome, `b` label fonts,
 `Alt+T` cycles the existing built-in themes and briefly displays their names.
 Pixel-free PTYs use KIT's measured cell size from terminal negotiation.
 
-The default proof now follows the user's revised direction: a calmer FOLD-like
-rack, flat rounded chrome and continuous analyzer bars without an inactive grid.
-The earlier Classic treatment remains the preserved reference; the calmer proof
-is an experiment awaiting review, not an accepted replacement target.
-Font-size changes await clarification; current sizes are intentionally held.
+The default proof follows Classic Stacked Rack again, with beveled chrome and
+LED analyzer detail. `c` selects the separate flat FOLD-like experiment.
+The user explicitly selected option 01 on October 9. This isolated proof has
+not passed visual review. Compare the actual shared player separately at
+`../treatments/player-comparison.html`; font sizes still need review.
 The proof pins Liberation Mono explicitly for reproducible outline typography.
 
 Linux Kitty interaction and resize checks pass in an isolated Xvfb display.

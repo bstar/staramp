@@ -11,4 +11,17 @@ for asset in ids:
     density, name = asset.split("/")
     lines.extend(["    (", f'        "{asset}",', f'        include_bytes!("../../assets/skins/classic/{density}x/{name}.png"),', "    ),"])
 lines.append("];\n")
+lines.append('pub(super) const GLYPHS: &[(u16, &str, &[u8])] = &[')
+for density in [1, 2]:
+    for name in ['clock-on', 'clock-off', 'transport-glyphs', 'fixed-labels']:
+        lines.extend([
+            '    (', f'        {density},', f'        "{name}",',
+            f'        include_bytes!("../../assets/skins/classic/{density}x/{name}.png"),',
+            '    ),',
+        ])
+lines.append('];\n')
+lines.append('pub(super) const LABELS: &[(&str, u16, u16, u16)] = &[')
+for text,y,width,height in json.loads((root / 'assets/skins/classic/fixed-labels.json').read_text()):
+    lines.append(f'    ({json.dumps(text)}, {y}, {width}, {height}),')
+lines.append('];\n')
 (root / "src/embed/skin_assets.rs").write_text("\n".join(lines))

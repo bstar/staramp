@@ -17,14 +17,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/1x/mask-button-active-3.png"),
     ),
     (
-        "1/mask-button-active-4",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-active-4.png"),
-    ),
-    (
-        "1/mask-button-active-5",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-active-5.png"),
-    ),
-    (
         "1/mask-button-disabled-0",
         include_bytes!("../../assets/skins/classic/1x/mask-button-disabled-0.png"),
     ),
@@ -39,14 +31,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
     (
         "1/mask-button-disabled-3",
         include_bytes!("../../assets/skins/classic/1x/mask-button-disabled-3.png"),
-    ),
-    (
-        "1/mask-button-disabled-4",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-disabled-4.png"),
-    ),
-    (
-        "1/mask-button-disabled-5",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-disabled-5.png"),
     ),
     (
         "1/mask-button-focus-0",
@@ -69,14 +53,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/1x/mask-button-focus-4.png"),
     ),
     (
-        "1/mask-button-focus-5",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-focus-5.png"),
-    ),
-    (
-        "1/mask-button-focus-6",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-focus-6.png"),
-    ),
-    (
         "1/mask-button-hover-0",
         include_bytes!("../../assets/skins/classic/1x/mask-button-hover-0.png"),
     ),
@@ -93,14 +69,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/1x/mask-button-hover-3.png"),
     ),
     (
-        "1/mask-button-hover-4",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-hover-4.png"),
-    ),
-    (
-        "1/mask-button-hover-5",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-hover-5.png"),
-    ),
-    (
         "1/mask-button-normal-0",
         include_bytes!("../../assets/skins/classic/1x/mask-button-normal-0.png"),
     ),
@@ -115,14 +83,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
     (
         "1/mask-button-normal-3",
         include_bytes!("../../assets/skins/classic/1x/mask-button-normal-3.png"),
-    ),
-    (
-        "1/mask-button-normal-4",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-normal-4.png"),
-    ),
-    (
-        "1/mask-button-normal-5",
-        include_bytes!("../../assets/skins/classic/1x/mask-button-normal-5.png"),
     ),
     (
         "1/mask-button-pressed-0",
@@ -229,14 +189,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/2x/mask-button-active-3.png"),
     ),
     (
-        "2/mask-button-active-4",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-active-4.png"),
-    ),
-    (
-        "2/mask-button-active-5",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-active-5.png"),
-    ),
-    (
         "2/mask-button-disabled-0",
         include_bytes!("../../assets/skins/classic/2x/mask-button-disabled-0.png"),
     ),
@@ -251,14 +203,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
     (
         "2/mask-button-disabled-3",
         include_bytes!("../../assets/skins/classic/2x/mask-button-disabled-3.png"),
-    ),
-    (
-        "2/mask-button-disabled-4",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-disabled-4.png"),
-    ),
-    (
-        "2/mask-button-disabled-5",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-disabled-5.png"),
     ),
     (
         "2/mask-button-focus-0",
@@ -281,14 +225,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/2x/mask-button-focus-4.png"),
     ),
     (
-        "2/mask-button-focus-5",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-focus-5.png"),
-    ),
-    (
-        "2/mask-button-focus-6",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-focus-6.png"),
-    ),
-    (
         "2/mask-button-hover-0",
         include_bytes!("../../assets/skins/classic/2x/mask-button-hover-0.png"),
     ),
@@ -305,14 +241,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         include_bytes!("../../assets/skins/classic/2x/mask-button-hover-3.png"),
     ),
     (
-        "2/mask-button-hover-4",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-hover-4.png"),
-    ),
-    (
-        "2/mask-button-hover-5",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-hover-5.png"),
-    ),
-    (
         "2/mask-button-normal-0",
         include_bytes!("../../assets/skins/classic/2x/mask-button-normal-0.png"),
     ),
@@ -327,14 +255,6 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
     (
         "2/mask-button-normal-3",
         include_bytes!("../../assets/skins/classic/2x/mask-button-normal-3.png"),
-    ),
-    (
-        "2/mask-button-normal-4",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-normal-4.png"),
-    ),
-    (
-        "2/mask-button-normal-5",
-        include_bytes!("../../assets/skins/classic/2x/mask-button-normal-5.png"),
     ),
     (
         "2/mask-button-pressed-0",
@@ -424,4 +344,83 @@ pub(super) const PNGS: &[(&str, &[u8])] = &[
         "2/mask-well-3",
         include_bytes!("../../assets/skins/classic/2x/mask-well-3.png"),
     ),
+];
+
+pub(super) const GLYPHS: &[(u16, &str, &[u8])] = &[
+    (
+        1,
+        "clock-on",
+        include_bytes!("../../assets/skins/classic/1x/clock-on.png"),
+    ),
+    (
+        1,
+        "clock-off",
+        include_bytes!("../../assets/skins/classic/1x/clock-off.png"),
+    ),
+    (
+        1,
+        "transport-glyphs",
+        include_bytes!("../../assets/skins/classic/1x/transport-glyphs.png"),
+    ),
+    (
+        1,
+        "fixed-labels",
+        include_bytes!("../../assets/skins/classic/1x/fixed-labels.png"),
+    ),
+    (
+        2,
+        "clock-on",
+        include_bytes!("../../assets/skins/classic/2x/clock-on.png"),
+    ),
+    (
+        2,
+        "clock-off",
+        include_bytes!("../../assets/skins/classic/2x/clock-off.png"),
+    ),
+    (
+        2,
+        "transport-glyphs",
+        include_bytes!("../../assets/skins/classic/2x/transport-glyphs.png"),
+    ),
+    (
+        2,
+        "fixed-labels",
+        include_bytes!("../../assets/skins/classic/2x/fixed-labels.png"),
+    ),
+];
+
+pub(super) const LABELS: &[(&str, u16, u16, u16)] = &[
+    ("S T A R / A M P", 0, 110, 24),
+    ("PARAMETRIC EQUALIZER", 32, 146, 24),
+    ("ALBUM", 64, 38, 24),
+    ("ACTIVITY", 96, 60, 24),
+    ("PLAYLIST", 128, 60, 24),
+    ("SHUFFLE", 160, 61, 29),
+    ("REP ALL", 192, 61, 29),
+    ("REP ONE", 224, 61, 29),
+    ("REP OFF", 256, 61, 29),
+    ("ON", 288, 19, 29),
+    ("OFF", 320, 28, 29),
+    ("IMPORT", 352, 53, 29),
+    ("EXPORT", 384, 53, 29),
+    ("SAVE AS", 416, 61, 29),
+    ("BYPASS", 448, 53, 29),
+    ("DELETE", 480, 53, 29),
+    ("CHOOSE", 512, 53, 29),
+    ("RETRY", 544, 44, 29),
+    ("RETRY FAILED", 576, 103, 29),
+    ("ADD", 608, 28, 29),
+    ("REM", 640, 28, 29),
+    ("SEL", 672, 28, 29),
+    ("MISC", 704, 36, 29),
+    ("LIST", 736, 36, 29),
+    ("TYPE", 768, 36, 29),
+    ("CHANNELS", 800, 70, 29),
+    ("MOVE UP", 832, 61, 29),
+    ("MOVE DOWN", 864, 78, 29),
+    ("PREV", 896, 36, 29),
+    ("NEXT", 928, 36, 29),
+    ("+ FILTER", 960, 70, 29),
+    ("PLAYLISTS", 992, 78, 29),
+    ("LIBRARY", 1024, 61, 29),
 ];

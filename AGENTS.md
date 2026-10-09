@@ -280,8 +280,14 @@ output is the default and does not capture or relay samples.
 The ongoing skin work is in the sibling `staramp-graphical` worktree on
 `feature/skinned-native-ui`, with generic foundation work in `starkit-amp-rack`.
 The full recovered seven-step plan is in `docs/graphical/README.md` under
-"Recovered skin implementation plan". The approved Classic stacked rack is
-`docs/graphical/treatments/winamp-01.svg`, shown by `treatments/approved.html`.
-Keep the approved reference visible and separate from runtime proofs. The flat
-FOLD-style player is an experiment, not an accepted replacement design.
-Complete the player visual gate before migrating the remaining modules.
+"Recovered skin implementation plan". On 2026-10-09 the user explicitly selected
+**01 — Classic stacked rack · parametric EQ** and required precise bitmap artwork
+with fluid layout. `treatments/winamp-01.svg` and `winamp-01.png` are the selected
+assets; their hashes are frozen in `treatments/selected-design.json`. This selects
+the design, not acceptance of the current implementation. Use original 1x/2x
+assets, fixed corners and tiled edges; do not stretch an assembled interface.
+Keep reference and production captures separately labeled. The flat FOLD-style
+proof is an alternative experiment. The full production rack now uses the original
+artwork, bitmap fixed labels, reference palette, and 1x/2x density assets. This is
+implementation progress, not user acceptance. Keep `skin-progress.md` current with
+actual verification. The isolated example is not the production UI.

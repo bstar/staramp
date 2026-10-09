@@ -23,7 +23,8 @@ for state in ['normal','hover','pressed','disabled','focus','active']:
     body=rect(0,0,24,24,'#12141b')+rect(1,1,22,22,fill)
     top,bottom=('#11131a','#9da2af') if pressed else ('#9da2af','#11131a')
     for coords in [(2,2,22,2),(2,2,2,22)]:body+=line(*coords,top)
-    for coords in [(2,22,22,22),(22,2,22,22)]:body+=line(*coords,bottom)
+    if pressed:
+        for coords in [(2,22,22,22),(22,2,22,22)]:body+=line(*coords,bottom)
     if state=='focus':body+='<rect x="4.5" y="4.5" width="15" height="15" fill="none" stroke="#a4d791" stroke-dasharray="1 1"/>'
     export('button-'+state,body)
 # Quieter FOLD-directed chrome; preserve Classic as an alternative treatment.
@@ -93,7 +94,7 @@ roles={
 }
 layers={}
 for source in sorted((OUT/'source').glob('*.svg')):
- if source.stem=='control-font':continue
+ if source.stem in {'control-font', 'clock-on', 'clock-off', 'transport-glyphs', 'fixed-labels'}:continue
  tree=ET.parse(source);original=tree.getroot()
  for density in [1,2]:
   entries=[]

@@ -28,6 +28,10 @@ with tempfile.TemporaryDirectory(prefix='amp-skin-kitty-') as temp:
  def mouse(button,x,y,up=False):rc('send-text',f'\x1b[<{button};{x};{y}{"m" if up else "M"}')
  try:
   first=wait(lambda s:True);rc('screenshot',str(out/'kitty-initial.png'))
+  key('alt+t');wait(lambda s:s['theme']==1 and s['theme_notice']);rc('screenshot',str(out/'kitty-theme.png'))
+  wait(lambda s:not s['theme_notice'])
+  for _ in range(16):key('alt+t')
+  wait(lambda s:s['theme']==0)
   key('b');wait(lambda s:s['bitmap']);key('b');wait(lambda s:not s['bitmap'])
   key('tab');wait(lambda s:s['focus']==0);key('tab');wait(lambda s:s['focus']==1)
   key('enter');wait(lambda s:not s['playing']);key('space');wait(lambda s:s['playing'])
@@ -50,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='amp-skin-kitty-') as temp:
   assert status.read_text()=='0','Showcase did not exit cleanly'
   (out/'trace.jsonl').write_text(trace.read_text())
   states=[json.loads(line) for line in trace.read_text().splitlines()]
-  report={'frames':len(states),'initial_render_ms':states[0]['render_ms'],'max_warm_render_ms':max(s['render_ms'] for s in states[1:]),'bytes_total':sum(s['bytes'] for s in states),'checks':['outline/bitmap','keyboard focus','play state','mouse shuffle','drag seek','rigid corners','2x density','resize','Unicode','clean quit']}
+  report={'frames':len(states),'initial_render_ms':states[0]['render_ms'],'max_warm_render_ms':max(s['render_ms'] for s in states[1:]),'bytes_total':sum(s['bytes'] for s in states),'checks':['theme cycling','temporary theme footer','outline/bitmap','keyboard focus','play state','mouse shuffle','drag seek','rigid corners','2x density','resize','Unicode','clean quit']}
   (out/'report.json').write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report,indent=2))
  finally:
   proc.terminate()

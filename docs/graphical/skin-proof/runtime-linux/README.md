@@ -9,3 +9,8 @@ presentation 16.89 ms in this run, including resize and density transitions.
 
 No claim of macOS, authenticated SSH, audio, all-action parity or final visual
 acceptance is supported by these sample-control checks.
+
+Theme runtime: `themes-report.json` adds all built-in cycling and the expiring
+footer notice to the checks (35 presentations; max subsequent presentation
+16.23 ms in this run). `kitty-theme.png` is the captured themed terminal.
+All sixteen active-control palettes also pass the example's 4.5:1 contrast test.

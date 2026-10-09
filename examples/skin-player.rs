@@ -4,7 +4,10 @@ use starkit::native_surface::HitRegion;
 use starkit::{
     image::{self, Rgba, RgbaImage},
     native_surface::{
-        skin::{BitmapFont, Insets, NineSlice, Repeat},
+        skin::{
+            assets::{AssetCache, Layer, Sprite},
+            BitmapFont,
+        },
         PixelRect, Primitive, Surface,
     },
     terminal_graphics::renderer::SurfaceOverlayRenderer,
@@ -13,6 +16,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 #[derive(Clone)]
 struct State {
+    theme: usize,
     classic: bool,
     bitmap: bool,
     density: u16,
@@ -30,6 +34,7 @@ struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            theme: 0,
             classic: false,
             bitmap: false,
             density: 1,
@@ -46,37 +51,131 @@ impl Default for State {
         }
     }
 }
+#[derive(serde::Deserialize)]
+struct Manifest {
+    sprites: BTreeMap<String, Sprite>,
+    layers: BTreeMap<String, Vec<Layer>>,
+    roles: BTreeMap<String, String>,
+}
 struct Proof {
-    assets: BTreeMap<String, RgbaImage>,
+    cache: AssetCache,
+    manifest: Manifest,
+    themed_assets: BTreeMap<String, RgbaImage>,
+    palette: BTreeMap<String, String>,
+    active_theme: usize,
     font: BitmapFont,
     renderer: SurfaceOverlayRenderer,
 }
 impl Proof {
     fn new() -> Result<Self> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skins/classic");
-        let mut assets = BTreeMap::new();
+        let mut cache = AssetCache::new(8_000_000);
         for density in [1, 2] {
             for entry in std::fs::read_dir(root.join(format!("{density}x")))? {
                 let entry = entry?;
                 if entry.path().extension().is_some_and(|e| e == "png") {
-                    assets.insert(
-                        format!(
-                            "{density}/{}",
-                            entry.path().file_stem().unwrap().to_string_lossy()
-                        ),
-                        image::open(entry.path())?.to_rgba8(),
+                    let id = format!(
+                        "{density}/{}",
+                        entry.path().file_stem().unwrap().to_string_lossy()
                     );
+                    cache.insert_png(&id, &std::fs::read(entry.path())?)?;
                 }
             }
         }
         Ok(Self {
-            assets,
+            cache,
+            manifest: serde_json::from_slice(&std::fs::read(root.join("manifest.json"))?)?,
+            themed_assets: BTreeMap::new(),
+            palette: BTreeMap::new(),
+            active_theme: usize::MAX,
             font: serde_json::from_slice(&std::fs::read(root.join("control-font.json"))?)?,
             renderer: SurfaceOverlayRenderer::new("Liberation Mono"),
         })
     }
+    fn prepare_theme(&mut self, index: usize) -> Result<()> {
+        if self.active_theme == index {
+            return Ok(());
+        }
+        self.palette.clear();
+        self.themed_assets.clear();
+        if index == 0 {
+            self.active_theme = index;
+            return Ok(());
+        }
+        let builtin = starkit::theme::BUILTINS
+            .get(index - 1)
+            .ok_or_else(|| anyhow::anyhow!("Invalid theme index"))?;
+        let theme =
+            starkit::theme::Theme::resolve(&starkit::theme::ThemeFile::parse(builtin.toml)?);
+        let mut colors = BTreeMap::new();
+        for (role, original) in &self.manifest.roles {
+            let c = match role.as_str() {
+                "panel" | "quiet_panel" => theme.panel_bg,
+                "background" => theme.bg,
+                "shadow" | "edge_shadow" | "well_shadow" => {
+                    theme.bg.mix(starkit::theme::BLACK, 0.3)
+                }
+                "highlight" | "control_highlight" => theme.panel_bg.mix(theme.fg, 0.35),
+                "title" => theme.header_bg,
+                "ink" => theme.fg,
+                "accent" | "active" | "quiet_active" => theme.accent,
+                "well" => theme.bg,
+                "well_border" | "control_border" | "border" => theme.border,
+                "well_highlight" => theme.border.mix(theme.fg, 0.2),
+                "control" => theme.panel_bg.mix(theme.fg, 0.08),
+                "hover" | "quiet_hover" => theme.panel_bg.mix(theme.accent, 0.15),
+                "pressed" => theme.panel_bg.mix(theme.accent, 0.25),
+                "disabled" | "quiet_disabled" => theme.panel_bg.mix(theme.bg, 0.5),
+                _ => anyhow::bail!("Unknown artwork theme role {role}"),
+            };
+            colors.insert(role.clone(), [c.r, c.g, c.b]);
+            self.palette.insert(original.clone(), c.to_hex());
+        }
+        for (original, c) in [
+            ("#989eac", theme.dim),
+            ("#bbc6d5", theme.header_fg),
+            ("#a5aaba", theme.dim),
+            ("#e0e2d5", theme.fg),
+            ("#10161a", {
+                let candidate =
+                    if theme.accent.contrast(theme.bg) >= theme.accent.contrast(theme.fg) {
+                        theme.bg
+                    } else {
+                        theme.fg
+                    };
+                if theme.accent.contrast(candidate) >= 4.5 {
+                    candidate
+                } else if theme.accent.contrast(starkit::theme::BLACK)
+                    >= theme.accent.contrast(starkit::theme::WHITE)
+                {
+                    starkit::theme::BLACK
+                } else {
+                    starkit::theme::WHITE
+                }
+            }),
+            ("#151920", theme.border),
+            ("#203226", theme.bg.mix(theme.accent, 0.14)),
+            ("#1c2a20", theme.bg.mix(theme.accent, 0.10)),
+        ] {
+            self.palette.insert(original.into(), c.to_hex());
+        }
+        for (id, layers) in &self.manifest.layers {
+            let d = layers
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("Empty artwork layers"))?
+                .sprite
+                .density;
+            self.themed_assets.insert(
+                id.clone(),
+                self.cache.compose(24 * d, 24 * d, layers, &colors)?,
+            );
+        }
+        self.active_theme = index;
+        Ok(())
+    }
 }
 struct Raster {
+    palette: BTreeMap<String, String>,
     pixels: RgbaImage,
     density: u16,
 }
@@ -140,24 +239,27 @@ fn color(s: &str) -> Rgba<u8> {
 fn rect(im: &mut Raster, x: u16, y: u16, w: u16, h: u16, c: &str) {
     for yy in y * im.density..(y + h) * im.density {
         for xx in x * im.density..(x + w) * im.density {
-            im.pixels.put_pixel(xx.into(), yy.into(), color(c));
+            im.pixels.put_pixel(
+                xx.into(),
+                yy.into(),
+                color(im.palette.get(c).map(String::as_str).unwrap_or(c)),
+            );
         }
     }
 }
 fn slice(im: &mut Raster, proof: &Proof, name: &str, r: PixelRect, n: u16) -> Result<()> {
     let d = im.density;
-    NineSlice {
-        insets: Insets {
-            left: n * d,
-            top: n * d,
-            right: n * d,
-            bottom: n * d,
+    let id = format!("{d}/{name}");
+    let nine = proof.manifest.sprites[&id]
+        .nine_slice
+        .ok_or_else(|| anyhow::anyhow!("Missing slice metadata"))?;
+    anyhow::ensure!(nine.insets.left == n * d, "Skin slice metadata mismatch");
+    nine.paint(
+        if proof.active_theme == 0 {
+            proof.cache.image(&id)?
+        } else {
+            &proof.themed_assets[&format!("{d}/{name}")]
         },
-        horizontal: Repeat::Tile,
-        vertical: Repeat::Tile,
-    }
-    .paint(
-        &proof.assets[&format!("{d}/{name}")],
         &mut im.pixels,
         PixelRect::new(r.x * d, r.y * d, r.width * d, r.height * d),
     )
@@ -178,9 +280,21 @@ fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
         (720..=3600).contains(&width) && (1..=2).contains(&state.density),
         "Invalid player geometry"
     );
+    proof.prepare_theme(state.theme)?;
     let d = state.density;
     let mut im = Raster {
-        pixels: RgbaImage::from_pixel(u32::from(width * d), u32::from(230 * d), color("#171820")),
+        palette: proof.palette.clone(),
+        pixels: RgbaImage::from_pixel(
+            u32::from(width * d),
+            u32::from(230 * d),
+            color(
+                proof
+                    .palette
+                    .get("#171820")
+                    .map(String::as_str)
+                    .unwrap_or("#171820"),
+            ),
+        ),
         density: d,
     };
     slice(
@@ -375,7 +489,7 @@ fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
         }
     }
     let font = &proof.font;
-    let atlas = &proof.assets["1/control-font"];
+    let atlas = proof.cache.image("1/control-font")?;
     for (index, (x, label, on)) in [
         (237, "SHUFFLE", state.shuffle),
         (346, "REP ALL", state.repeat),
@@ -393,13 +507,17 @@ fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
         if state.bitmap {
             let mut labelim = RgbaImage::new(font.measure(label)?, 7);
             let lw = labelim.width() as u16;
-            font.paint(
-                atlas,
-                &mut labelim,
-                PixelRect::new(0, 0, lw, 7),
-                label,
-                if on { [16, 22, 26] } else { [224, 226, 213] },
-            )?;
+            font.paint(atlas, &mut labelim, PixelRect::new(0, 0, lw, 7), label, {
+                let original = if on { "#10161a" } else { "#e0e2d5" };
+                let c = color(
+                    proof
+                        .palette
+                        .get(original)
+                        .map(String::as_str)
+                        .unwrap_or(original),
+                );
+                [c[0], c[1], c[2]]
+            })?;
             let scaled = image::imageops::resize(
                 &labelim,
                 lw as u32 * 2 * u32::from(d),
@@ -446,6 +564,13 @@ fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
         false,
     );
     s.hits = regions(width);
+    for node in &mut s.nodes {
+        if let Primitive::Text { color, .. } = node {
+            if let Some(mapped) = proof.palette.get(color) {
+                *color = mapped.clone();
+            }
+        }
+    }
     if d != 1 {
         s.width *= d;
         s.height *= d;
@@ -472,7 +597,7 @@ fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
 }
 fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--help" || a == "-h") {
-        println!("STAR/AMP skin proof (isolated sample; no audio)\nUsage: staramp-skin-proof --kitty\n       staramp-skin-proof [output-directory]\nKeys: q quit, Tab focus, Enter activate, arrows seek/volume, c chrome, b labels, r corners, d density, u Unicode");
+        println!("STAR/AMP skin proof (isolated sample; no audio)\nUsage: staramp-skin-proof --kitty\n       staramp-skin-proof [output-directory]\nKeys: q quit, Tab focus, Enter activate, arrows seek/volume, Alt+t theme, c chrome, b labels, r corners, d density, u Unicode");
         return Ok(());
     }
     let mut proof = Proof::new()?;
@@ -553,6 +678,17 @@ fn main() -> Result<()> {
         player(&mut proof, 1352, &state)?.save(out.join(format!("player-{name}.png")))?;
     }
     player(&mut proof, 1352, &State::default())?.save(out.join("player-fold-rack.png"))?;
+    for (i, theme) in starkit::theme::BUILTINS.iter().enumerate() {
+        player(
+            &mut proof,
+            1352,
+            &State {
+                theme: i + 1,
+                ..Default::default()
+            },
+        )?
+        .save(out.join(format!("theme-{}.png", theme.id)))?;
+    }
     let reference = image::open(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/graphical/skin-proof/approved-player.png"),
     )?
@@ -650,9 +786,14 @@ fn live(proof: &mut Proof) -> Result<()> {
     let mut presenter = KittyPresenter::default();
     let mut state = State::default();
     let mut dirty = true;
+    let mut theme_notice: Option<std::time::Instant> = None;
     let mut generation = 1;
     let result = (|| -> Result<()> {
         loop {
+            if theme_notice.is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(2)) {
+                theme_notice = None;
+                dirty = true;
+            }
             let size = terminal::window_size()?;
             let physical_width = if size.width == 0 {
                 size.columns.saturating_mul(cell.0)
@@ -671,13 +812,36 @@ fn live(proof: &mut Proof) -> Result<()> {
                 let mut frame = RgbaImage::from_pixel(
                     physical_width.into(),
                     physical_height.into(),
-                    color("#171820"),
+                    color(
+                        proof
+                            .palette
+                            .get("#171820")
+                            .map(String::as_str)
+                            .unwrap_or("#171820"),
+                    ),
                 );
                 image::imageops::overlay(&mut frame, &player, 0, 0);
                 if physical_width >= 720 && physical_height > 270 {
                     let mut caption =
                         Surface::new(physical_width, physical_height, "#171820".into());
-                    text(&mut caption,16,250,physical_width-32,"SKIN PROOF · sample data, no audio · Tab focus · Enter activate · c chrome · b labels · r corners · d density · u Unicode · q quit",11,"#989eac",false);
+                    let notice = theme_notice.map(|_| {
+                        format!(
+                            "Theme: {}",
+                            if state.theme == 0 {
+                                "reference"
+                            } else {
+                                starkit::theme::BUILTINS[state.theme - 1].id
+                            }
+                        )
+                    });
+                    text(&mut caption,16,250,physical_width-32,notice.as_deref().unwrap_or("SKIN PROOF · sample data, no audio · Tab focus · Enter activate · Alt+t theme · c chrome · b labels · r corners · d density · u Unicode · q quit"),11,"#989eac",false);
+                    for node in &mut caption.nodes {
+                        if let Primitive::Text { color, .. } = node {
+                            if let Some(mapped) = proof.palette.get(color) {
+                                *color = mapped.clone();
+                            }
+                        }
+                    }
                     frame = proof.renderer.render(&frame, &caption)?;
                 }
                 execute!(out, MoveTo(0, 0))?;
@@ -706,7 +870,7 @@ fn live(proof: &mut Proof) -> Result<()> {
                     writeln!(
                         trace,
                         "{}",
-                        serde_json::json!({"width":physical_width,"height":physical_height,"columns":size.columns,"rows":size.rows,"density":state.density,"classic":state.classic,"bitmap":state.bitmap,"rigid":state.rigid,"playing":state.playing,"shuffle":state.shuffle,"position":state.position,"volume":state.volume,"hover":state.hover,"focus":state.focus,"bytes":bytes,"render_ms":started.elapsed().as_secs_f64()*1000.})
+                        serde_json::json!({"width":physical_width,"height":physical_height,"columns":size.columns,"rows":size.rows,"density":state.density,"theme":state.theme,"theme_notice":theme_notice.is_some(),"classic":state.classic,"bitmap":state.bitmap,"rigid":state.rigid,"playing":state.playing,"shuffle":state.shuffle,"position":state.position,"volume":state.volume,"hover":state.hover,"focus":state.focus,"bytes":bytes,"render_ms":started.elapsed().as_secs_f64()*1000.})
                     )?;
                     trace.flush()?;
                 }
@@ -718,6 +882,15 @@ fn live(proof: &mut Proof) -> Result<()> {
             match event::read()? {
                 Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('t')
+                        if key
+                            .modifiers
+                            .contains(starkit::crossterm::event::KeyModifiers::ALT) =>
+                    {
+                        state.theme = (state.theme + 1) % (starkit::theme::BUILTINS.len() + 1);
+                        theme_notice = Some(std::time::Instant::now());
+                        dirty = true;
+                    }
                     KeyCode::Char('c') => {
                         state.classic = !state.classic;
                         dirty = true;
@@ -833,6 +1006,22 @@ fn live(proof: &mut Proof) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn all_builtin_themes_preserve_readable_active_controls() {
+        let mut proof = Proof::new().unwrap();
+        for i in 1..=starkit::theme::BUILTINS.len() {
+            proof.prepare_theme(i).unwrap();
+            let ink = starkit::theme::color::Rgb::parse_hex(&proof.palette["#10161a"]).unwrap();
+            let background =
+                starkit::theme::color::Rgb::parse_hex(&proof.palette["#6b7282"]).unwrap();
+            assert!(
+                ink.contrast(background) >= 4.5,
+                "{} has unreadable active controls",
+                starkit::theme::BUILTINS[i - 1].id
+            );
+        }
+    }
+
     #[test]
     fn control_geometry_is_shared_and_scrub_is_bounded() {
         for width in [720, 900, 1352, 1800] {

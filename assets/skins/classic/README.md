@@ -6,5 +6,11 @@ using `rsvg-convert`. No Winamp artwork or proprietary fonts are included.
 
 The 1x/2x panel/button masters are density variants, not whole-player screenshots.
 The bitmap lettering is a trial; Unicode track/artist text uses KIT's shaped
-native font renderer. Theme recoloring and complete 2x text rendering remain
-follow-up work. Assets are not used by the installed player yet.
+native font renderer. Theme mask recoloring and 2x outline rendering are exercised in the showcase. Assets are not used by the installed player yet.
+
+`manifest.json` now supplies density-specific sprites, content/slice insets,
+ordered mask layers and default palette roles. `mask-*` PNGs are coverage only;
+KIT applies selected theme colors before compositing them. Artwork is generated
+from the editable SVG masters, not recolored from flattened screenshots.
+The showcase exercises all sixteen existing built-in themes; production theme
+integration and user-theme discovery are still part of the migration gate.

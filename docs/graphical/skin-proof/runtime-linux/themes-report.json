@@ -1,0 +1,20 @@
+{
+  "frames": 35,
+  "initial_render_ms": 14.288452,
+  "max_warm_render_ms": 16.234846,
+  "bytes_total": 1564432,
+  "checks": [
+    "theme cycling",
+    "temporary theme footer",
+    "outline/bitmap",
+    "keyboard focus",
+    "play state",
+    "mouse shuffle",
+    "drag seek",
+    "rigid corners",
+    "2x density",
+    "resize",
+    "Unicode",
+    "clean quit"
+  ]
+}

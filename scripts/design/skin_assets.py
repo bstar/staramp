@@ -77,3 +77,45 @@ p=OUT/'source/control-font.svg';p.write_text(f'<svg xmlns="http://www.w3.org/200
 subprocess.run(['rsvg-convert',str(p),'-o',str(OUT/'1x/control-font.png')],check=True)
 (OUT/'control-font.json').write_text(json.dumps(dict(height=7,baseline=7,glyphs=glyphs),indent=2)+'\n')
 (OUT/'manifest.json').write_text(json.dumps(dict(version=1,author='STAR/AMP',license='MIT',palette=PALETTE,insets=dict(panel=[6,6,6,6],well=[3,3,3,3],button=[4,4,4,4]),densities=[1,2]),indent=2)+'\n')
+
+# Separate coverage masks from palette colors. Runtime uses KIT's layer compositor;
+# it never edits an already composited player screenshot to change themes.
+import xml.etree.ElementTree as ET
+roles={
+ '#303340':'panel','#101117':'shadow','#7c8294':'highlight','#242733':'title',
+ '#d7d9cf':'ink','#a4d791':'accent','#101813':'well','#474d5d':'control',
+ '#1d2027':'well_border','#080b0a':'well_shadow','#606575':'well_highlight',
+ '#12141b':'control_border','#596172':'hover','#3a4050':'pressed',
+ '#373b48':'disabled','#6b7282':'active','#11131a':'edge_shadow',
+ '#9da2af':'control_highlight','#747986':'border','#20212a':'quiet_panel',
+ '#171820':'background','#3d4250':'quiet_hover','#444958':'quiet_active',
+ '#262832':'quiet_disabled',
+}
+layers={}
+for source in sorted((OUT/'source').glob('*.svg')):
+ if source.stem=='control-font':continue
+ tree=ET.parse(source);original=tree.getroot()
+ for density in [1,2]:
+  entries=[]
+  for i,node in enumerate(list(original)):
+   paints=[node.get(a) for a in ['fill','stroke'] if node.get(a) not in [None,'none']]
+   if not paints:continue
+   assert len(set(paints))==1,(source,paints)
+   role=roles[paints[0]]
+   root=ET.Element(original.tag,original.attrib)
+   copy=ET.fromstring(ET.tostring(node))
+   for attr in ['fill','stroke']:
+    if copy.get(attr) not in [None,'none']:copy.set(attr,'#ffffff')
+   root.append(copy)
+   mask_id=f'{density}/mask-{source.stem}-{i}'
+   subprocess.run(['rsvg-convert','-w',str(24*density),'-h',str(24*density),'-o',str(OUT/f'{density}x'/f'mask-{source.stem}-{i}.png')],input=ET.tostring(root),check=True)
+   entries.append(dict(sprite=dict(asset=mask_id,rect=dict(x=0,y=0,width=24*density,height=24*density),density=density,content=dict(left=0,top=0,right=0,bottom=0),nine_slice=None),tint=role))
+  layers[f'{density}/{source.stem}']=entries
+manifest=json.loads((OUT/'manifest.json').read_text())
+sprites={}
+for id in layers:
+ density=int(id.split('/')[0]);name=id.split('/')[1]
+ inset=(6 if name.startswith('panel') else 3 if name.startswith('well') else 4)*density
+ sprites[id]=dict(asset=id,rect=dict(x=0,y=0,width=24*density,height=24*density),density=density,content=dict(left=inset,top=inset,right=inset,bottom=inset),nine_slice=dict(insets=dict(left=inset,top=inset,right=inset,bottom=inset),horizontal='tile',vertical='tile'))
+manifest.update(layers=layers,sprites=sprites,roles={v:k for k,v in roles.items()})
+(OUT/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

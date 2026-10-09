@@ -440,7 +440,15 @@ pub(super) fn player_surface(
             },
             color: artwork
                 .map(|art| art.button_ink(name, active))
-                .unwrap_or_else(|| if active { accent.clone() } else { fg.clone() }),
+                .unwrap_or_else(|| {
+                    if !state.control_enabled(name) {
+                        c.dim.clone()
+                    } else if active {
+                        accent.clone()
+                    } else {
+                        fg.clone()
+                    }
+                }),
         });
         s.hits.push(HitRegion {
             rect,
@@ -520,6 +528,7 @@ pub(super) fn player_surface(
             action: "volume".into(),
         });
     }
+    s.hits.retain(|hit| state.control_enabled(&hit.action));
     s
 }
 
@@ -1046,5 +1055,6 @@ fn compact_surface(
         state.volume,
         false,
     );
+    s.hits.retain(|hit| state.control_enabled(&hit.action));
     s
 }

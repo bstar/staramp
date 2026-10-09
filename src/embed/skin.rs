@@ -31,6 +31,7 @@ pub(crate) struct PlayerSkin {
     pub hovered: Option<String>,
     pub pressed: Option<String>,
     pub focused: Option<String>,
+    disabled: std::collections::BTreeSet<&'static str>,
 }
 impl PlayerSkin {
     pub fn new() -> Result<Self> {
@@ -50,6 +51,7 @@ impl PlayerSkin {
             hovered: None,
             pressed: None,
             focused: None,
+            disabled: Default::default(),
         })
     }
     fn prepare(&mut self, palette: &Palette, density: u16, rigid: bool) -> Result<()> {
@@ -150,7 +152,9 @@ impl PlayerSkin {
         Ok(())
     }
     fn button_kind(&self, action: &str, active: bool) -> &'static str {
-        if self.pressed.as_deref() == Some(action) {
+        if self.disabled.contains(action) {
+            "button-disabled"
+        } else if self.pressed.as_deref() == Some(action) {
             "button-pressed"
         } else if self.focused.as_deref() == Some(action) {
             "button-focus"
@@ -205,6 +209,10 @@ impl PlayerSkin {
         density: u16,
     ) -> Result<Surface> {
         anyhow::ensure!((1..=2).contains(&density), "Unsupported player density");
+        self.disabled = ["previous", "play", "pause", "stop", "next", "seek"]
+            .into_iter()
+            .filter(|action| !state.control_enabled(action))
+            .collect();
         if width / density < 720 || height / density < 230 {
             // Defined compatibility presentation for hosts too short for the
             // full player. Its controls remain the ordinary AMP controls.
@@ -272,6 +280,11 @@ impl native::PlayerArtwork for PlayerSkin {
         let p = self.palette.expect("prepared skin palette");
         let c = Colors::new(p.bg, p.fg, p.muted, p.accent, p.border);
         let kind = self.button_kind(action, active);
+        if kind == "button-disabled" {
+            // Disabled controls are intentionally subdued, not promoted to
+            // bright active ink by the enabled-control contrast correction.
+            return native::hex(p.muted);
+        }
         let color = if kind == "button-pressed" {
             c.title
         } else if kind == "button-hover" {
@@ -310,6 +323,7 @@ mod tests {
     };
     fn state() -> PlayerRenderState {
         PlayerRenderState {
+            has_items: true,
             title: "Björk · Jóga — 東京".into(),
             subtitle: "Homogenic".into(),
             tech: "FLAC · 44.1 kHz · 16-bit".into(),
@@ -460,7 +474,14 @@ mod tests {
         assert_eq!(first.hits, advanced.hits);
         state.state = PlayState::Paused;
         let paused = skin.surface(1352, 230, g, &palette(), &state, 8).unwrap();
-        assert_eq!(first.hits, paused.hits);
+        let enabled = first
+            .hits
+            .iter()
+            .filter(|h| h.action != "pause")
+            .cloned()
+            .collect::<Vec<_>>();
+        assert_eq!(enabled, paused.hits);
+        assert_eq!(skin.button_kind("pause", true), "button-disabled");
         assert_ne!(first.nodes, paused.nodes);
         // The host and standalone do not get independent implementations.
         let embedded = PlayerSkin::new()
@@ -468,6 +489,97 @@ mod tests {
             .surface(1352, 230, g, &palette(), &state, 8)
             .unwrap();
         assert_eq!(paused, embedded);
+    }
+    #[test]
+    fn empty_idle_clears_stale_decoder_and_meter_data_but_keeps_active_playback() {
+        let mut idle = state();
+        idle.has_items = false;
+        idle.state = PlayState::Stopped;
+        let idle = idle.clear_empty_idle();
+        assert_eq!(idle.duration, 0.);
+        assert_eq!(idle.position, 0.);
+        assert!(idle.tech.is_empty());
+        assert!(!idle.bit_perfect);
+        assert!(idle
+            .bands
+            .iter()
+            .chain(&idle.peaks)
+            .chain(&idle.wave)
+            .all(|v| *v == 0.));
+        let mut active = state();
+        active.has_items = false;
+        let active = active.clear_empty_idle();
+        assert_eq!(active.duration, 120.);
+        assert!(!active.tech.is_empty());
+        assert!(active.bit_perfect);
+        assert!(active.control_enabled("stop"));
+    }
+    #[test]
+    fn unavailable_controls_have_disabled_art_and_no_pointer_targets() {
+        let g = GraphicsConfig {
+            cell_width: 8,
+            cell_height: 16,
+        };
+        for (has_items, playback, duration, disabled) in [
+            (
+                false,
+                PlayState::Stopped,
+                0.,
+                vec!["previous", "play", "pause", "stop", "next", "seek"],
+            ),
+            (true, PlayState::Stopped, 0., vec!["pause", "stop", "seek"]),
+            (true, PlayState::Paused, 120., vec!["pause"]),
+            (true, PlayState::Playing, 0., vec!["seek"]),
+            (
+                false,
+                PlayState::Playing,
+                120.,
+                vec!["previous", "play", "next", "seek"],
+            ),
+        ] {
+            let mut state = state();
+            state.has_items = has_items;
+            state.state = playback;
+            state.duration = duration;
+            let mut skin = PlayerSkin::new().unwrap();
+            skin.focused = Some("pause".into());
+            skin.hovered = Some("pause".into());
+            skin.pressed = Some("pause".into());
+            for (width, height) in [(1352, 230), (640, 180)] {
+                let surface = skin
+                    .surface(width, height, g, &palette(), &state, 8)
+                    .unwrap();
+                surface.validate().unwrap();
+                for action in &disabled {
+                    assert!(
+                        !surface.hits.iter().any(|h| &h.action == action),
+                        "{action}"
+                    );
+                    assert_eq!(skin.button_kind(action, true), "button-disabled");
+                    if width == 1352 {
+                        assert_eq!(
+                            native::PlayerArtwork::button_ink(&skin, action, true),
+                            native::hex(palette().muted)
+                        );
+                    }
+                }
+                assert!(surface.hits.iter().any(|h| h.action == "volume"));
+                if playback == PlayState::Playing {
+                    for action in ["pause", "stop"] {
+                        assert!(surface.hits.iter().any(|h| h.action == action));
+                    }
+                }
+                if width == 1352 {
+                    for action in ["shuffle", "repeat", "visualizer"] {
+                        assert!(surface.hits.iter().any(|h| h.action == action));
+                    }
+                    if !has_items {
+                        let disabled_id = &skin.prepared["button-disabled"].id;
+                        assert!(surface.nodes.iter().any(|node| matches!(node, Primitive::Sprite { asset, .. } if asset == disabled_id)));
+                    }
+                }
+            }
+        }
     }
     #[test]
     fn density_theme_corners_and_pointer_states_use_original_assets() {

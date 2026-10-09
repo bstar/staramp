@@ -141,11 +141,12 @@ impl Rack<'_> {
         let a = &self.app;
         let st = &a.player.state;
         let item = a.player.current_item();
-        let (repeat, shuffled) = {
+        let (repeat, shuffled, has_items) = {
             let q = a.player.queue.lock().unwrap();
-            (q.repeat(), q.shuffled())
+            (q.repeat(), q.shuffled(), !q.is_empty())
         };
         PlayerRenderState {
+            has_items,
             title: item
                 .as_ref()
                 .and_then(|i| {
@@ -156,13 +157,17 @@ impl Rack<'_> {
                 .as_ref()
                 .and_then(|i| i.album.clone())
                 .unwrap_or_default(),
-            tech: format!(
-                "{} · {:.1} kHz · {} bit · {} channels",
-                st.codec.load_full(),
-                st.sample_rate.load(Relaxed) as f64 / 1000.,
-                st.bit_depth.load(Relaxed),
-                st.channels.load(Relaxed)
-            ),
+            tech: if st.sample_rate.load(Relaxed) == 0 {
+                String::new()
+            } else {
+                format!(
+                    "{} · {:.1} kHz · {} bit · {} channels",
+                    st.codec.load_full(),
+                    st.sample_rate.load(Relaxed) as f64 / 1000.,
+                    st.bit_depth.load(Relaxed),
+                    st.channels.load(Relaxed)
+                )
+            },
             state: st.state(),
             position: st.position_secs(),
             duration: st.duration_secs(),
@@ -180,6 +185,7 @@ impl Rack<'_> {
             bars: a.vis.bars,
             seek_phase: a.look.seek_phase,
         }
+        .clear_empty_idle()
     }
     fn window(&self, w: u16, h: u16, c: &Colors, title: &str, font: u16) -> Surface {
         let mut s = Surface::new(w, h, hex(self.app.look.theme.bg));
@@ -1977,6 +1983,25 @@ impl App {
         });
         rack.scene(v);
         assert!(!rack.overlay);
+        // Empty is rendered from real queue membership, not inferred from a
+        // zero duration (which is also normal during decoder startup).
+        rack.app.player.queue.lock().unwrap().set_tracks(Vec::new());
+        rack.app.player.state.playing.store(false, Relaxed);
+        rack.app.player.state.paused.store(false, Relaxed);
+        rack.app.player.state.duration_frames.store(0, Relaxed);
+        rack.app.player.state.position_frames.store(0, Relaxed);
+        rack.app.player.state.sample_rate.store(0, Relaxed);
+        rack.app.look.theme = crate::theme::builtin::load("catppuccin-mocha").unwrap();
+        let empty = rack.scene(v);
+        let hits = &rack.surface.as_ref().unwrap().hits;
+        for action in ["previous", "play", "pause", "stop", "next", "seek"] {
+            assert!(
+                !hits.iter().any(|h| h.action == action),
+                "empty queue target: {action}"
+            );
+        }
+        starkit::terminal_graphics::renderer::render_reference(&empty)?
+            .save(output.join("empty-rack.png"))?;
         rack.app.shutdown();
         Ok(())
     }

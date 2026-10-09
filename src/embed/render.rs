@@ -179,6 +179,8 @@ fn transport_images(
 /// The playback fields needed to paint one frame. Captured by the embed
 /// service, away from the audio callback.
 pub struct PlayerRenderState {
+    /// Queue membership, independent of decoder startup and known duration.
+    pub has_items: bool,
     pub title: String,
     pub subtitle: String,
     pub tech: String,
@@ -198,6 +200,34 @@ pub struct PlayerRenderState {
     pub seek_style: SeekStyle,
     pub bars: BarLayout,
     pub seek_phase: f32,
+}
+
+impl PlayerRenderState {
+    /// Decoder and meter fields can outlive a cleared queue. Never advertise
+    /// the previous track's format, clock, or spectrum in an empty idle player.
+    pub fn clear_empty_idle(mut self) -> Self {
+        if !self.has_items && self.state == PlayState::Stopped {
+            self.position = 0.;
+            self.duration = 0.;
+            self.tech.clear();
+            self.subtitle.clear();
+            self.bit_perfect = false;
+            self.bands.fill(0.);
+            self.peaks.fill(0.);
+            self.wave.fill(0.);
+        }
+        self
+    }
+
+    pub fn control_enabled(&self, action: &str) -> bool {
+        match action {
+            "previous" | "play" | "next" => self.has_items,
+            "pause" => self.state == PlayState::Playing,
+            "stop" => self.state != PlayState::Stopped,
+            "seek" => self.has_items && self.duration.is_finite() && self.duration > 0.,
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -441,6 +471,7 @@ mod tests {
 
     fn playing() -> PlayerRenderState {
         PlayerRenderState {
+            has_items: true,
             title: "The Track".into(),
             subtitle: "The Album".into(),
             tech: "FLAC".into(),

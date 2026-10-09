@@ -907,11 +907,12 @@ fn render_state(
             if channels == 1 { "mono" } else { "stereo" }
         )
     };
-    let (repeat, shuffled) = {
+    let (repeat, shuffled, has_items) = {
         let q = player.queue.lock().unwrap();
-        (q.repeat(), q.shuffled())
+        (q.repeat(), q.shuffled(), !q.is_empty())
     };
     PlayerRenderState {
+        has_items,
         title,
         subtitle,
         tech,
@@ -935,6 +936,7 @@ fn render_state(
         ),
         seek_phase: look.seek_phase,
     }
+    .clear_empty_idle()
 }
 
 fn send_error(output: &mut impl Write, message: String) -> Result<()> {

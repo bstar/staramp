@@ -62,3 +62,16 @@ Dialogs and cell mode keep their existing routing. Narrow compatibility surfaces
 receive an accent outline rather than losing the focus indication. Graphical
 fixture checks cover activation, seek-shortcut preservation and overlay isolation;
 this does not establish embedded-host keyboard parity or physical-terminal testing.
+
+### Playback control availability
+
+The shared native player now takes queue membership explicitly, independently of
+loading metadata or a zero duration. Empty idle queues have disabled transport artwork
+and no transport/seek hit regions. If audio is still active after a queue change,
+Pause and Stop remain available. Pause is unavailable outside Playing, Stop
+outside active playback, and seeking requires a finite positive duration.
+Volume, shuffle, repeat and the visualizer retain their ordinary availability.
+Disabled state takes precedence over stale hover, press or keyboard focus.
+The production reference command also emits `empty-rack.png` from an emptied
+fixture queue. Loading/error visual references and actual decoder-failure
+interaction remain separate unfinished checks.

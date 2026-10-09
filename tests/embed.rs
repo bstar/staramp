@@ -409,7 +409,11 @@ fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
         serde_json::from_value(frame["surface"].clone()).unwrap();
     surface.validate().unwrap();
     assert_eq!(surface.width, 640);
-    assert!(surface.hits.iter().any(|h| h.action == "seek"));
+    // This child has no queue: it must not offer a seek or transport target.
+    for action in ["seek", "previous", "play", "pause", "stop", "next"] {
+        assert!(!surface.hits.iter().any(|h| h.action == action));
+    }
+    assert!(surface.hits.iter().any(|h| h.action == "volume"));
     child.send(json!({"type":"control", "action":"next_seek_style"}));
     let styled = child.until("frame");
     assert_eq!(styled["generation"], 20);
@@ -463,6 +467,9 @@ fn skin_negotiation_density_pointer_and_legacy_fallback() {
         serde_json::from_value(frame["surface"].clone()).unwrap();
     surface.validate().unwrap();
     assert!(!surface.assets.is_empty());
+    for action in ["seek", "previous", "play", "pause", "stop", "next"] {
+        assert!(!surface.hits.iter().any(|h| h.action == action));
+    }
     assert!(surface
         .assets
         .iter()

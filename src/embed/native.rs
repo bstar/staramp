@@ -184,12 +184,27 @@ pub fn classic_surface(
                     break;
                 }
                 if matches!(state.vis_mode, VisMode::Leds | VisMode::Dots) {
-                    let size = if state.vis_mode == VisMode::Dots {
-                        2
-                    } else {
-                        4
-                    };
-                    for dy in (0..bar_h).step_by(6.max(usize::from(bar_h) / 32)) {
+                    let size = 2;
+                    let pitch = 3.max(usize::from(analyzer_height) / 32);
+                    for dy in (0..analyzer_height).step_by(pitch) {
+                        s.fill(
+                            R::new(
+                                bx,
+                                analyzer_top + analyzer_height
+                                    - dy
+                                    - size.min(analyzer_height - dy),
+                                if state.vis_mode == VisMode::Dots {
+                                    2.min(step)
+                                } else {
+                                    step.saturating_sub(3).max(1)
+                                },
+                                size.min(analyzer_height - dy),
+                            ),
+                            &c.title,
+                            0,
+                        );
+                    }
+                    for dy in (0..bar_h).step_by(pitch) {
                         s.fill(
                             R::new(
                                 bx,
@@ -197,7 +212,7 @@ pub fn classic_surface(
                                 if state.vis_mode == VisMode::Dots {
                                     2.min(step)
                                 } else {
-                                    step.saturating_sub(2).max(1)
+                                    step.saturating_sub(3).max(1)
                                 },
                                 size.min(bar_h - dy),
                             ),
@@ -379,9 +394,25 @@ pub fn classic_surface(
             );
         }
     }
-    let volume_w = 120.min(w / 5);
-    let volume = R::new(w - pad - volume_w, controls_y, volume_w, button);
+    let volume_w = 130.min(w / 5);
+    let volume = R::new(w - 50 - volume_w, controls_y, volume_w, button);
     if volume.x > pad + 5 * (button + 6) + 24 {
+        classic::label(
+            &mut s,
+            R::new(volume.x.saturating_sub(40), controls_y, 34, button),
+            "VOL",
+            &c.dim,
+            m.font.saturating_sub(2),
+            false,
+        );
+        classic::label(
+            &mut s,
+            R::new(w - 40, controls_y, 28, button),
+            format!("{:.0}", state.volume * 100.),
+            &c.ink,
+            m.font.saturating_sub(2),
+            false,
+        );
         s.fill(
             R::new(volume.x, volume.y + button / 2, volume.width, 3),
             &c.shadow,

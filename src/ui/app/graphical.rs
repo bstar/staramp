@@ -1642,6 +1642,7 @@ impl App {
     /// Deterministic production rendering for review; callers use an isolated
     /// STARAMP_DIR so no real listening history or player settings are touched.
     pub fn render_rack_references(output: &std::path::Path) -> Result<()> {
+        use std::sync::atomic::Ordering::Relaxed;
         anyhow::ensure!(
             std::env::var_os("STARAMP_DIR").is_some(),
             "reference rendering requires an isolated STARAMP_DIR"
@@ -1663,9 +1664,25 @@ impl App {
             item.artist = Some("Visions of Atlantis".into());
             item.album = Some("Armada · An Orchestral Voyage".into());
             item.year = Some(2026);
+            item.duration_secs = Some(298);
             items.push(item);
         }
         let mut app = Self::with_player(player, items, &cfg)?;
+        // Deterministic presentation data only: no device or playback worker is
+        // started. These samples exercise the same state consumed during playback.
+        app.player.state.sample_rate.store(44100, Relaxed);
+        app.player.state.bit_depth.store(16, Relaxed);
+        app.player.state.duration_frames.store(298 * 44100, Relaxed);
+        app.player.state.position_frames.store(69 * 44100, Relaxed);
+        app.player.state.codec.store(Arc::new("FLAC".into()));
+        app.player.state.playing.store(true, Relaxed);
+        app.player.state.bit_perfect.store(true, Relaxed);
+        app.vis.mode = VisMode::Leds;
+        let bands = (0..56)
+            .map(|i| 0.15 + 0.75 * (i as f32 * 0.11 + 1.).sin().abs())
+            .collect::<Vec<_>>();
+        app.vis.meters.update(&bands, 0.016);
+
         app.panels.eq = true;
         app.panels.album = true;
         app.panels.history = true;

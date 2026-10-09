@@ -26,6 +26,15 @@ for state in ['normal','hover','pressed','disabled','focus','active']:
     for coords in [(2,22,22,22),(22,2,22,22)]:body+=line(*coords,bottom)
     if state=='focus':body+='<rect x="4.5" y="4.5" width="15" height="15" fill="none" stroke="#a4d791" stroke-dasharray="1 1"/>'
     export('button-'+state,body)
+# Quieter FOLD-directed chrome; preserve Classic as an alternative treatment.
+export('panel-fold',rect(0,0,24,24,'#747986',6)+rect(2,2,20,20,'#20212a',4))
+export('panel-fold-rigid',rect(0,0,24,24,'#747986')+rect(2,2,20,20,'#20212a'))
+export('well-fold',rect(0,0,24,24,'#171820',4))
+for state in ['normal','hover','pressed','disabled','focus','active']:
+    fill={'normal':'#303340','hover':'#3d4250','pressed':'#444958','disabled':'#262832','focus':'#303340','active':'#444958'}[state]
+    body=rect(0,0,24,24,fill,3)
+    if state=='focus':body=rect(0,0,24,24,'#a4d791',3)+rect(2,2,20,20,fill,1)
+    export('button-fold-'+state,body)
 # Original 5x7 control lettering. User content uses shaped outline text.
 patterns={
 'A':['01110','10001','10001','11111','10001','10001','10001'],

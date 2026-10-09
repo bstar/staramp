@@ -1,0 +1,18 @@
+{
+  "frames": 17,
+  "initial_render_ms": 14.330384,
+  "max_warm_render_ms": 16.885351,
+  "bytes_total": 510444,
+  "checks": [
+    "outline/bitmap",
+    "keyboard focus",
+    "play state",
+    "mouse shuffle",
+    "drag seek",
+    "rigid corners",
+    "2x density",
+    "resize",
+    "Unicode",
+    "clean quit"
+  ]
+}

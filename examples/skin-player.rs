@@ -1,14 +1,134 @@
 //! Offline visual proof. Does not change the installed AMP interface.
 use anyhow::Result;
+use starkit::native_surface::HitRegion;
 use starkit::{
     image::{self, Rgba, RgbaImage},
     native_surface::{
         skin::{BitmapFont, Insets, NineSlice, Repeat},
         PixelRect, Primitive, Surface,
     },
-    terminal_graphics::renderer::render_surface_overlay,
+    terminal_graphics::renderer::SurfaceOverlayRenderer,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
+#[derive(Clone)]
+struct State {
+    classic: bool,
+    bitmap: bool,
+    density: u16,
+    rigid: bool,
+    hover: Option<usize>,
+    pressed: Option<usize>,
+    focus: Option<usize>,
+    playing: bool,
+    shuffle: bool,
+    repeat: bool,
+    volume: u16,
+    position: u16,
+    unicode: bool,
+}
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            classic: false,
+            bitmap: false,
+            density: 1,
+            rigid: false,
+            hover: None,
+            pressed: None,
+            focus: None,
+            playing: true,
+            shuffle: false,
+            repeat: true,
+            volume: 80,
+            position: 23,
+            unicode: false,
+        }
+    }
+}
+struct Proof {
+    assets: BTreeMap<String, RgbaImage>,
+    font: BitmapFont,
+    renderer: SurfaceOverlayRenderer,
+}
+impl Proof {
+    fn new() -> Result<Self> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skins/classic");
+        let mut assets = BTreeMap::new();
+        for density in [1, 2] {
+            for entry in std::fs::read_dir(root.join(format!("{density}x")))? {
+                let entry = entry?;
+                if entry.path().extension().is_some_and(|e| e == "png") {
+                    assets.insert(
+                        format!(
+                            "{density}/{}",
+                            entry.path().file_stem().unwrap().to_string_lossy()
+                        ),
+                        image::open(entry.path())?.to_rgba8(),
+                    );
+                }
+            }
+        }
+        Ok(Self {
+            assets,
+            font: serde_json::from_slice(&std::fs::read(root.join("control-font.json"))?)?,
+            renderer: SurfaceOverlayRenderer::new("Liberation Mono"),
+        })
+    }
+}
+struct Raster {
+    pixels: RgbaImage,
+    density: u16,
+}
+fn regions(width: u16) -> Vec<HitRegion> {
+    let mut hits: Vec<_> = ["previous", "play", "pause", "stop", "next"]
+        .iter()
+        .enumerate()
+        .map(|(i, a)| HitRegion {
+            rect: PixelRect::new(16 + i as u16 * 35, 187, 29, 29),
+            action: (*a).into(),
+        })
+        .collect();
+    hits.extend(
+        [
+            (237, 187, 100, 29, "shuffle"),
+            (346, 187, 100, 29, "repeat"),
+            (78, 160, width - 156, 18, "seek"),
+            (width - 180, 192, 130, 22, "volume"),
+        ]
+        .map(|(x, y, w, h, a)| HitRegion {
+            rect: PixelRect::new(x, y, w, h),
+            action: a.into(),
+        }),
+    );
+    hits
+}
+fn button_state(state: &State, index: usize, on: bool) -> &'static str {
+    if !state.classic {
+        return if state.pressed == Some(index) {
+            "button-fold-pressed"
+        } else if state.focus == Some(index) {
+            "button-fold-focus"
+        } else if state.hover == Some(index) {
+            "button-fold-hover"
+        } else if on {
+            "button-fold-active"
+        } else {
+            "button-fold-normal"
+        };
+    }
+    if state.pressed == Some(index) {
+        "button-pressed"
+    } else if state.focus == Some(index) {
+        "button-focus"
+    } else if state.hover == Some(index) {
+        "button-hover"
+    } else if on {
+        "button-active"
+    } else {
+        "button-normal"
+    }
+}
 fn color(s: &str) -> Rgba<u8> {
     Rgba([
         u8::from_str_radix(&s[1..3], 16).unwrap(),
@@ -17,27 +137,32 @@ fn color(s: &str) -> Rgba<u8> {
         255,
     ])
 }
-fn rect(im: &mut RgbaImage, x: u16, y: u16, w: u16, h: u16, c: &str) {
-    for yy in y..y + h {
-        for xx in x..x + w {
-            im.put_pixel(xx.into(), yy.into(), color(c));
+fn rect(im: &mut Raster, x: u16, y: u16, w: u16, h: u16, c: &str) {
+    for yy in y * im.density..(y + h) * im.density {
+        for xx in x * im.density..(x + w) * im.density {
+            im.pixels.put_pixel(xx.into(), yy.into(), color(c));
         }
     }
 }
-fn slice(im: &mut RgbaImage, root: &Path, name: &str, r: PixelRect, n: u16) -> Result<()> {
-    let source = image::open(root.join(format!("1x/{name}.png")))?.to_rgba8();
+fn slice(im: &mut Raster, proof: &Proof, name: &str, r: PixelRect, n: u16) -> Result<()> {
+    let d = im.density;
     NineSlice {
         insets: Insets {
-            left: n,
-            top: n,
-            right: n,
-            bottom: n,
+            left: n * d,
+            top: n * d,
+            right: n * d,
+            bottom: n * d,
         },
         horizontal: Repeat::Tile,
         vertical: Repeat::Tile,
     }
-    .paint(&source, im, r)
+    .paint(
+        &proof.assets[&format!("{d}/{name}")],
+        &mut im.pixels,
+        PixelRect::new(r.x * d, r.y * d, r.width * d, r.height * d),
+    )
 }
+
 fn text(s: &mut Surface, x: u16, baseline: u16, w: u16, t: &str, size: u16, c: &str, bold: bool) {
     s.nodes.push(Primitive::Text {
         rect: PixelRect::new(x, baseline - size, w, size + 4),
@@ -48,20 +173,43 @@ fn text(s: &mut Surface, x: u16, baseline: u16, w: u16, t: &str, size: u16, c: &
         mono: true,
     });
 }
-fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/skins/classic");
-    let mut im = RgbaImage::from_pixel(width.into(), 230, color("#171820"));
-    slice(&mut im, &root, "panel", PixelRect::new(0, 0, width, 230), 6)?;
-    rect(&mut im, 7, 7, width - 14, 24, "#242733");
+fn player(proof: &mut Proof, width: u16, state: &State) -> Result<RgbaImage> {
+    anyhow::ensure!(
+        (720..=3600).contains(&width) && (1..=2).contains(&state.density),
+        "Invalid player geometry"
+    );
+    let d = state.density;
+    let mut im = Raster {
+        pixels: RgbaImage::from_pixel(u32::from(width * d), u32::from(230 * d), color("#171820")),
+        density: d,
+    };
     slice(
         &mut im,
-        &root,
-        "well",
+        proof,
+        if state.rigid && !state.classic {
+            "panel-fold-rigid"
+        } else if state.rigid {
+            "panel-rigid"
+        } else if state.classic {
+            "panel"
+        } else {
+            "panel-fold"
+        },
+        PixelRect::new(0, 0, width, 230),
+        6,
+    )?;
+    if state.classic {
+        rect(&mut im, 7, 7, width - 14, 24, "#242733");
+    }
+    slice(
+        &mut im,
+        proof,
+        if state.classic { "well" } else { "well-fold" },
         PixelRect::new(14, 43, width - 28, 110),
         3,
     )?;
     let mut s = Surface::new(width, 230, "#171820".into());
-    text(&mut s, 16, 24, 250, "S T A R / A M P", 12, "#d7d9cf", true);
+    text(&mut s, 18, 24, 250, "S T A R / A M P", 12, "#bbc6d5", true);
     text(
         &mut s,
         width - 225,
@@ -118,11 +266,36 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
         }
         x += 34.1;
     }
-    text(&mut s, 28, 138, 145, "PLAY · STEREO", 11, "#a4d791", false);
+    text(
+        &mut s,
+        28,
+        138,
+        145,
+        if state.playing {
+            "PLAY · STEREO"
+        } else {
+            "PAUSED · STEREO"
+        },
+        11,
+        "#a4d791",
+        false,
+    );
     for i in 0..56 {
         let count = (3.
             + 12. * (i as f32 * 0.11 + 1.).sin().abs() * (0.7 + 0.3 * (i as f32 * 0.37).cos()))
             as u16;
+        if !state.classic {
+            let step = (width - 220) as f32 / 56.;
+            rect(
+                &mut im,
+                190 + (i as f32 * step) as u16,
+                100 - count * 2,
+                (step - 5.).max(1.) as u16,
+                count * 2,
+                "#a4d791",
+            );
+            continue;
+        }
         for j in 0..16 {
             let step = (width - 220) as f32 / 56.;
             rect(
@@ -140,7 +313,11 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
         190,
         122,
         width - 220,
-        "Terra Atlantica — Through the Water and the Waves",
+        if state.unicode {
+            "Björk · Jóga — 東京 / Ελληνικά"
+        } else {
+            "Terra Atlantica — Through the Water and the Waves"
+        },
         13,
         "#a4d791",
         false,
@@ -162,7 +339,7 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
         &mut im,
         78,
         168,
-        ((width - 156) as f32 * 0.23) as u16,
+        ((width - 156) as u32 * u32::from(state.position) / 100) as u16,
         3,
         "#a4d791",
     );
@@ -170,12 +347,8 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
         let x = 16 + i * 35;
         slice(
             &mut im,
-            &root,
-            if i == 1 {
-                "button-active"
-            } else {
-                "button-normal"
-            },
+            proof,
+            button_state(state, i as usize, i == 1 && state.playing),
             PixelRect::new(x, 187, 29, 29),
             4,
         )?;
@@ -201,21 +374,27 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
             }
         }
     }
-    let font: BitmapFont = serde_json::from_slice(&std::fs::read(root.join("control-font.json"))?)?;
-    let atlas = image::open(root.join("1x/control-font.png"))?.to_rgba8();
-    for (x, label, on) in [(237, "SHUFFLE", false), (346, "REP ALL", true)] {
+    let font = &proof.font;
+    let atlas = &proof.assets["1/control-font"];
+    for (index, (x, label, on)) in [
+        (237, "SHUFFLE", state.shuffle),
+        (346, "REP ALL", state.repeat),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         slice(
             &mut im,
-            &root,
-            if on { "button-active" } else { "button-normal" },
+            proof,
+            button_state(state, index + 5, on),
             PixelRect::new(x, 187, 100, 29),
             4,
         )?;
-        if bitmap {
+        if state.bitmap {
             let mut labelim = RgbaImage::new(font.measure(label)?, 7);
             let lw = labelim.width() as u16;
             font.paint(
-                &atlas,
+                atlas,
                 &mut labelim,
                 PixelRect::new(0, 0, lw, 7),
                 label,
@@ -223,11 +402,16 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
             )?;
             let scaled = image::imageops::resize(
                 &labelim,
-                lw as u32 * 2,
-                14,
+                lw as u32 * 2 * u32::from(d),
+                14 * u32::from(d),
                 image::imageops::FilterType::Nearest,
             );
-            image::imageops::overlay(&mut im, &scaled, i64::from(x + (100 - lw * 2) / 2), 195);
+            image::imageops::overlay(
+                &mut im.pixels,
+                &scaled,
+                i64::from((x + (100 - lw * 2) / 2) * d),
+                i64::from(195 * d),
+            );
         } else {
             text(
                 &mut s,
@@ -243,11 +427,59 @@ fn player(width: u16, bitmap: bool) -> Result<RgbaImage> {
     }
     text(&mut s, width - 220, 207, 35, "VOL", 11, "#989eac", false);
     rect(&mut im, width - 180, 199, 130, 6, "#151920");
-    rect(&mut im, width - 180, 200, 104, 4, "#a4d791");
-    text(&mut s, width - 31, 207, 25, "80", 11, "#d7d9cf", false);
-    render_surface_overlay(&im, &s)
+    rect(
+        &mut im,
+        width - 180,
+        200,
+        130 * state.volume / 100,
+        4,
+        "#a4d791",
+    );
+    text(
+        &mut s,
+        width - 31,
+        207,
+        25,
+        &state.volume.to_string(),
+        11,
+        "#d7d9cf",
+        false,
+    );
+    s.hits = regions(width);
+    if d != 1 {
+        s.width *= d;
+        s.height *= d;
+        for node in &mut s.nodes {
+            match node {
+                Primitive::Text { rect, size, .. } => {
+                    rect.x *= d;
+                    rect.y *= d;
+                    rect.width *= d;
+                    rect.height *= d;
+                    *size *= d;
+                }
+                _ => unreachable!(),
+            }
+        }
+        for hit in &mut s.hits {
+            hit.rect.x *= d;
+            hit.rect.y *= d;
+            hit.rect.width *= d;
+            hit.rect.height *= d;
+        }
+    }
+    proof.renderer.render(&im.pixels, &s)
 }
 fn main() -> Result<()> {
+    if std::env::args().any(|a| a == "--help" || a == "-h") {
+        println!("STAR/AMP skin proof (isolated sample; no audio)\nUsage: staramp-skin-proof --kitty\n       staramp-skin-proof [output-directory]\nKeys: q quit, Tab focus, Enter activate, arrows seek/volume, c chrome, b labels, r corners, d density, u Unicode");
+        return Ok(());
+    }
+    let mut proof = Proof::new()?;
+    if std::env::args().any(|a| a == "--kitty") {
+        return live(&mut proof);
+    }
+
     let out = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "/tmp/staramp-skin-proof".into());
@@ -255,14 +487,84 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(out)?;
     for w in [900, 1352, 1800] {
         for bitmap in [false, true] {
-            player(w, bitmap)?.save(out.join(format!(
+            player(
+                &mut proof,
+                w,
+                &State {
+                    classic: true,
+                    bitmap,
+                    ..Default::default()
+                },
+            )?
+            .save(out.join(format!(
                 "player-{w}-{}.png",
                 if bitmap { "bitmap" } else { "outline" }
             )))?;
         }
     }
-    let reference = image::open(out.join("approved-player.png"))?.to_rgba8();
-    let rendered = player(1352, false)?;
+    for density in [1, 2] {
+        player(
+            &mut proof,
+            1352,
+            &State {
+                density,
+                ..Default::default()
+            },
+        )?
+        .save(out.join(format!("player-1352-{density}x.png")))?;
+    }
+    for (name, state) in [
+        (
+            "hover",
+            State {
+                hover: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            "pressed",
+            State {
+                pressed: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            "focus",
+            State {
+                focus: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            "rigid",
+            State {
+                rigid: true,
+                ..Default::default()
+            },
+        ),
+        (
+            "unicode",
+            State {
+                unicode: true,
+                ..Default::default()
+            },
+        ),
+    ] {
+        player(&mut proof, 1352, &state)?.save(out.join(format!("player-{name}.png")))?;
+    }
+    player(&mut proof, 1352, &State::default())?.save(out.join("player-fold-rack.png"))?;
+    let reference = image::open(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/graphical/skin-proof/approved-player.png"),
+    )?
+    .to_rgba8();
+    let rendered = player(
+        &mut proof,
+        1352,
+        &State {
+            classic: true,
+            ..Default::default()
+        },
+    )?;
     let mut overlay = rendered.clone();
     let mut difference = rendered.clone();
     for ((o, d), (a, b)) in overlay
@@ -281,4 +583,273 @@ fn main() -> Result<()> {
     difference.save(out.join("difference.png"))?;
     println!("Proof images: {}", out.display());
     Ok(())
+}
+
+fn activate(state: &mut State, index: usize) {
+    match index {
+        1 => state.playing = !state.playing,
+        2 | 3 => state.playing = false,
+        5 => state.shuffle = !state.shuffle,
+        6 => state.repeat = !state.repeat,
+        _ => {}
+    }
+}
+fn adjust(state: &mut State, index: usize, x: u16, width: u16) {
+    let hits = regions(width);
+    let r = hits[index].rect;
+    let value = ((u32::from(x.saturating_sub(r.x)) * 100 / u32::from(r.width)).min(100)) as u16;
+    match index {
+        7 => state.position = value,
+        8 => state.volume = value,
+        _ => {}
+    }
+}
+fn live(proof: &mut Proof) -> Result<()> {
+    use starkit::crossterm::{
+        cursor::{Hide, MoveTo, Show},
+        event::{
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+            MouseButton, MouseEventKind,
+        },
+        execute,
+        terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
+    };
+    use starkit::terminal_graphics::{protocol::Viewport, renderer::KittyPresenter};
+    use std::{
+        io::{self, IsTerminal, Write},
+        sync::Arc,
+        time::Duration,
+    };
+    anyhow::ensure!(
+        io::stdout().is_terminal(),
+        "Run --kitty in a Kitty terminal (including through SSH)"
+    );
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = terminal::disable_raw_mode();
+            let _ = execute!(
+                io::stdout(),
+                DisableMouseCapture,
+                Show,
+                LeaveAlternateScreen
+            );
+            let _ = write!(io::stdout(), "\x1b]22;default\x1b\\");
+        }
+    }
+    // Probe before raw input ownership; SSH PTYs often omit pixel dimensions.
+    let graphics = starkit::graphics::Graphics::probe(starkit::graphics::Mode::Kitty);
+    let cell = graphics.cell_size().unwrap_or((8, 16));
+    terminal::enable_raw_mode()?;
+    let _restore = Restore;
+    let mut out = io::stdout();
+    execute!(out, EnterAlternateScreen, EnableMouseCapture, Hide)?;
+    let mut trace = std::env::var_os("STAR_SKIN_PROOF_TRACE")
+        .map(std::fs::File::create)
+        .transpose()?;
+    let mut presenter = KittyPresenter::default();
+    let mut state = State::default();
+    let mut dirty = true;
+    let mut generation = 1;
+    let result = (|| -> Result<()> {
+        loop {
+            let size = terminal::window_size()?;
+            let physical_width = if size.width == 0 {
+                size.columns.saturating_mul(cell.0)
+            } else {
+                size.width
+            };
+            let physical_height = if size.height == 0 {
+                size.rows.saturating_mul(cell.1)
+            } else {
+                size.height
+            };
+            let width = (physical_width / state.density).clamp(720, 3600);
+            if dirty {
+                let started = std::time::Instant::now();
+                let player = player(proof, width, &state)?;
+                let mut frame = RgbaImage::from_pixel(
+                    physical_width.into(),
+                    physical_height.into(),
+                    color("#171820"),
+                );
+                image::imageops::overlay(&mut frame, &player, 0, 0);
+                if physical_width >= 720 && physical_height > 270 {
+                    let mut caption =
+                        Surface::new(physical_width, physical_height, "#171820".into());
+                    text(&mut caption,16,250,physical_width-32,"SKIN PROOF · sample data, no audio · Tab focus · Enter activate · c chrome · b labels · r corners · d density · u Unicode · q quit",11,"#989eac",false);
+                    frame = proof.renderer.render(&frame, &caption)?;
+                }
+                execute!(out, MoveTo(0, 0))?;
+                let bytes = presenter.present_pixels(
+                    Arc::new(frame),
+                    Viewport {
+                        columns: size.columns,
+                        rows: size.rows,
+                        width: physical_width.into(),
+                        height: physical_height.into(),
+                        generation,
+                    },
+                    &mut out,
+                )?;
+                write!(
+                    out,
+                    "\x1b]22;{}\x1b\\",
+                    if state.hover.is_some() {
+                        "pointer"
+                    } else {
+                        "default"
+                    }
+                )?;
+                out.flush()?;
+                if let Some(trace) = &mut trace {
+                    writeln!(
+                        trace,
+                        "{}",
+                        serde_json::json!({"width":physical_width,"height":physical_height,"columns":size.columns,"rows":size.rows,"density":state.density,"classic":state.classic,"bitmap":state.bitmap,"rigid":state.rigid,"playing":state.playing,"shuffle":state.shuffle,"position":state.position,"volume":state.volume,"hover":state.hover,"focus":state.focus,"bytes":bytes,"render_ms":started.elapsed().as_secs_f64()*1000.})
+                    )?;
+                    trace.flush()?;
+                }
+                dirty = false;
+            }
+            if !event::poll(Duration::from_millis(100))? {
+                continue;
+            }
+            match event::read()? {
+                Event::Key(key) if key.kind != KeyEventKind::Release => match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char('c') => {
+                        state.classic = !state.classic;
+                        dirty = true;
+                    }
+                    KeyCode::Char('b') => {
+                        state.bitmap = !state.bitmap;
+                        dirty = true;
+                    }
+                    KeyCode::Char('r') => {
+                        state.rigid = !state.rigid;
+                        dirty = true;
+                    }
+                    KeyCode::Char('d') => {
+                        state.density = 3 - state.density;
+                        state.hover = None;
+                        state.pressed = None;
+                        generation += 1;
+                        dirty = true;
+                    }
+                    KeyCode::Char('u') => {
+                        state.unicode = !state.unicode;
+                        dirty = true;
+                    }
+                    KeyCode::Char(' ') => {
+                        state.playing = !state.playing;
+                        dirty = true;
+                    }
+                    KeyCode::Tab => {
+                        state.focus = Some(state.focus.map_or(0, |i| (i + 1) % 9));
+                        dirty = true;
+                    }
+                    KeyCode::BackTab => {
+                        state.focus = Some(state.focus.map_or(8, |i| (i + 8) % 9));
+                        dirty = true;
+                    }
+                    KeyCode::Enter => {
+                        if let Some(i) = state.focus {
+                            activate(&mut state, i);
+                            dirty = true;
+                        }
+                    }
+                    KeyCode::Left | KeyCode::Right => {
+                        let value = if state.focus == Some(8) {
+                            &mut state.volume
+                        } else {
+                            &mut state.position
+                        };
+                        *value = if key.code == KeyCode::Left {
+                            value.saturating_sub(2)
+                        } else {
+                            (*value + 2).min(100)
+                        };
+                        dirty = true;
+                    }
+                    _ => {}
+                },
+                Event::Resize(..) => {
+                    state.hover = None;
+                    state.pressed = None;
+                    generation += 1;
+                    dirty = true;
+                }
+                Event::Mouse(mouse) => {
+                    let x = (u32::from(mouse.column) * u32::from(physical_width)
+                        / u32::from(size.columns)
+                        / u32::from(state.density)) as u16;
+                    let y = (u32::from(mouse.row) * u32::from(physical_height)
+                        / u32::from(size.rows)
+                        / u32::from(state.density)) as u16;
+                    let hit = regions(width).iter().position(|h| h.rect.contains(x, y));
+                    if state.hover != hit {
+                        state.hover = hit;
+                        dirty = true;
+                    }
+                    match mouse.kind {
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            state.pressed = hit;
+                            state.focus = hit;
+                            if let Some(i) = hit {
+                                adjust(&mut state, i, x, width);
+                            }
+                            dirty = true;
+                        }
+                        MouseEventKind::Drag(MouseButton::Left) => {
+                            if let Some(i) = state.pressed {
+                                if i >= 7 {
+                                    adjust(&mut state, i, x, width);
+                                    dirty = true;
+                                }
+                            }
+                        }
+                        MouseEventKind::Up(MouseButton::Left) => {
+                            if let Some(i) = state.pressed {
+                                if Some(i) == hit {
+                                    activate(&mut state, i);
+                                }
+                            }
+                            state.pressed = None;
+                            dirty = true;
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    })();
+    presenter.clear(&mut out)?;
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn control_geometry_is_shared_and_scrub_is_bounded() {
+        for width in [720, 900, 1352, 1800] {
+            let hits = regions(width);
+            assert_eq!(hits.len(), 9);
+            for hit in &hits {
+                assert!(u32::from(hit.rect.x) + u32::from(hit.rect.width) <= u32::from(width));
+            }
+            let mut state = State::default();
+            adjust(&mut state, 7, 0, width);
+            assert_eq!(state.position, 0);
+            adjust(&mut state, 7, u16::MAX, width);
+            assert_eq!(state.position, 100);
+            activate(&mut state, 5);
+            assert!(state.shuffle);
+            activate(&mut state, 1);
+            assert!(!state.playing);
+        }
+    }
 }

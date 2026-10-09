@@ -265,6 +265,7 @@ fn slice(im: &mut Raster, proof: &Proof, name: &str, r: PixelRect, n: u16) -> Re
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn text(s: &mut Surface, x: u16, baseline: u16, w: u16, t: &str, size: u16, c: &str, bold: bool) {
     s.nodes.push(Primitive::Text {
         rect: PixelRect::new(x, baseline - size, w, size + 4),

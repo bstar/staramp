@@ -6,6 +6,10 @@
 mod metadata;
 pub(crate) mod native;
 pub(crate) mod render;
+#[cfg(feature = "terminal-graphics")]
+pub(crate) mod skin;
+#[cfg(feature = "terminal-graphics")]
+mod skin_assets;
 mod styles;
 mod transport;
 pub use transport::run as run_transport_stdio;
@@ -45,6 +49,8 @@ const CAPABILITIES: &[&str] = &[
     "transport_images",
     "player_styles",
     "native_surface_v1",
+    #[cfg(feature = "terminal-graphics")]
+    "native_skin_v1",
     "audio_relay_v1",
 ];
 
@@ -108,6 +114,8 @@ enum Request {
         profile: Option<String>,
         #[serde(default)]
         native_surface: bool,
+        #[serde(default)]
+        native_skins: bool,
         #[serde(default = "visible_default")]
         visible: bool,
     },
@@ -182,6 +190,8 @@ struct View {
     palette: Palette,
     graphics: Option<GraphicsConfig>,
     native_surface: bool,
+    native_skins: bool,
+    last_surface: std::cell::RefCell<Option<starkit::native_surface::Surface>>,
     visible: bool,
 }
 
@@ -288,6 +298,8 @@ pub fn run_stdio() -> Result<()> {
     let mut current_metadata: Option<MetadataResult> = None;
     let mut image_cache = render::TransportImageCache::default();
     let mut last_native: Option<(u64, starkit::native_surface::Surface)> = None;
+    #[cfg(feature = "terminal-graphics")]
+    let mut player_skin = skin::PlayerSkin::new()?;
 
     loop {
         match rx.recv_timeout(if view.as_ref().is_some_and(|v| !v.visible) {
@@ -470,6 +482,20 @@ pub fn run_stdio() -> Result<()> {
                 continue;
             }
             let surface = v.graphics.filter(|_| v.native_surface).map(|g| {
+                #[cfg(feature = "terminal-graphics")]
+                if v.native_skins {
+                    match player_skin.surface(
+                        v.width.saturating_mul(g.cell_width),
+                        v.height.saturating_mul(g.cell_height),
+                        g,
+                        &v.palette,
+                        &state,
+                        if cfg.ui.corners == "rigid" { 0 } else { 8 },
+                    ) {
+                        Ok(surface) => return surface,
+                        Err(error) => tracing::error!(%error,"Cannot compose embedded player skin"),
+                    }
+                }
                 native::surface_with_radius(
                     v.width,
                     v.height,
@@ -480,6 +506,7 @@ pub fn run_stdio() -> Result<()> {
                 )
             });
             if let Some(surface) = &surface {
+                *v.last_surface.borrow_mut() = Some(surface.clone());
                 if last_native.as_ref().is_some_and(|(generation, previous)| {
                     *generation == v.generation && previous == surface
                 }) {
@@ -533,6 +560,7 @@ fn handle_request(
             graphics,
             profile,
             native_surface,
+            native_skins,
             visible,
         } => {
             if width == 0 || height == 0 || width > MAX_WIDTH || height > MAX_HEIGHT {
@@ -567,6 +595,11 @@ fn handle_request(
                 palette: theme,
                 graphics,
                 native_surface,
+                native_skins: native_skins
+                    && native_surface
+                    && graphics.is_some()
+                    && cfg!(feature = "terminal-graphics"),
+                last_surface: Default::default(),
                 visible,
             });
         }
@@ -639,9 +672,16 @@ fn handle_request(
                 },
             );
             let target = if let Some(g) = v.graphics.filter(|_| v.native_surface) {
-                let surface = native::surface(v.width, v.height, g, &v.palette, &state);
+                let fallback;
+                let cached = v.last_surface.borrow();
+                let surface = if let Some(surface) = cached.as_ref() {
+                    surface
+                } else {
+                    fallback = native::surface(v.width, v.height, g, &v.palette, &state);
+                    &fallback
+                };
                 native::hit_test(
-                    &surface,
+                    surface,
                     x.saturating_mul(g.cell_width) + g.cell_width / 2,
                     y.saturating_mul(g.cell_height) + g.cell_height / 2,
                     state.duration,

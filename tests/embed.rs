@@ -440,3 +440,63 @@ fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
     child.send(json!({"type": "shutdown"}));
     child.finish();
 }
+
+#[cfg(feature = "terminal-graphics")]
+#[test]
+fn skin_negotiation_density_pointer_and_legacy_fallback() {
+    let mut child = Session::start();
+    let hello = child.until("hello");
+    assert!(hello["capabilities"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("native_skin_v1")));
+    let configure = |generation, density, skins| {
+        json!({
+            "type":"configure","generation":generation,"width":169,"height":15,"focused":true,
+            "theme":theme(),"graphics":{"cell_width":8*density,"cell_height":16*density},
+            "native_surface":true,"native_skins":skins,
+        })
+    };
+    child.send(configure(50, 1, true));
+    let frame = child.until("frame");
+    let surface: starkit::native_surface::Surface =
+        serde_json::from_value(frame["surface"].clone()).unwrap();
+    surface.validate().unwrap();
+    assert!(!surface.assets.is_empty());
+    assert!(surface
+        .assets
+        .iter()
+        .all(|(id, png)| id.starts_with("skin/") && png.is_some()));
+    let volume = surface
+        .hits
+        .iter()
+        .find(|hit| hit.action == "volume")
+        .unwrap()
+        .rect;
+    child.send(json!({"type":"pointer","x":(volume.x+volume.width/2)/8,"y":(volume.y+volume.height/2)/16,"button":"left"}));
+    let changed = child.until("frame");
+    assert_ne!(changed["surface"]["nodes"], frame["surface"]["nodes"]);
+    assert_eq!(changed["surface"]["hits"], frame["surface"]["hits"]);
+    child.send(configure(51, 2, true));
+    let double = loop {
+        let f = child.until("frame");
+        if f["generation"] == 51 {
+            break f;
+        }
+    };
+    let double: starkit::native_surface::Surface =
+        serde_json::from_value(double["surface"].clone()).unwrap();
+    double.validate().unwrap();
+    assert_eq!(double.width, surface.width * 2);
+    assert!(double.nodes.iter().any(|node|matches!(node,starkit::native_surface::Primitive::Sprite{source,..} if source.width==48)));
+    child.send(configure(52, 1, false));
+    let old = loop {
+        let f = child.until("frame");
+        if f["generation"] == 52 {
+            break f;
+        }
+    };
+    assert!(old["surface"].get("assets").is_none());
+    child.send(json!({"type":"shutdown"}));
+    child.finish();
+}

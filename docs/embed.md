@@ -204,3 +204,21 @@ pointer response contains `action` and an optional normalized volume `value`.
 Actions are `previous`, `play`, `pause`, `stop`, `next`, and `volume`. The host
 assigns previous/next semantics (FOLD seeks five seconds). EOF shuts it down.
 AMP owns both transport geometry and pointer hit testing.
+
+### Cached native player skin
+
+A helper built with terminal graphics advertises `native_skin_v1`. A supporting
+host may add `native_skins: true` to Configure only when its own frontend
+advertises KIT's `native_skins` capability and `native_surface` is also enabled.
+The helper returns the same AMP-owned player component as standalone playback,
+with content-addressed PNG assets and Sprite primitives inside its Surface.
+Hosts validate/place that surface and forward pointer input; they do not draw
+AMP controls. KIT transfers artwork reliably and caches it locally over SSH.
+
+The helper includes payloads in its latest-frame protocol so discarding an
+obsolete helper frame cannot lose an asset. KIT strips repeated payloads at the
+network session boundary. Old hosts omit the flag and receive ordinary native
+primitives. Text is shaped at the chosen physical density; finished frames and
+text are not resampled. Short/narrow embedding regions use the existing compact
+presentation. Configuration changes clear the cached input surface, and pointer
+hit testing uses the last surface actually emitted by the helper.

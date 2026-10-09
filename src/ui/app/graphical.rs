@@ -36,6 +36,9 @@ pub struct Rack<'a> {
     overlay: bool,
     cover_cache: Option<(u64, String)>,
     modules: Vec<(Focus, i32, u16)>,
+    folded: std::collections::HashSet<String>,
+    skin: crate::embed::skin::PlayerSkin,
+    skins: bool,
 }
 fn color(c: crate::theme::color::Rgb) -> [u8; 3] {
     [c.r, c.g, c.b]
@@ -106,6 +109,12 @@ impl App {
                 overlay: false,
                 cover_cache: None,
                 modules: Vec::new(),
+                skin: crate::embed::skin::PlayerSkin::new()?,
+                skins: false,
+                folded: ["eq", "album", "activity"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
             },
         )
     }
@@ -196,7 +205,7 @@ impl Rack<'_> {
         label(
             &mut s,
             c,
-            R::new(18, 7, w.saturating_sub(140), 24),
+            R::new(26, 7, w.saturating_sub(148), 24),
             title,
             font,
             true,
@@ -212,6 +221,27 @@ impl Rack<'_> {
         s.hits.push(HitRegion {
             rect: R::new(w.saturating_sub(100), 7, 82, 24),
             action: "settings".into(),
+        });
+        s
+    }
+    fn fold_module(&self, mut s: Surface, name: &str, c: &Colors) -> Surface {
+        let folded = self.folded.contains(name);
+        if folded {
+            s.height = 38;
+            s.nodes.retain(|node| node.rect().y < 32);
+            // The frame spans the original height; replace it with a compact header frame.
+            s.nodes.retain(|node| node.rect().height <= 32);
+            s.hits.retain(|hit| hit.rect.y < 32);
+            let header = std::mem::take(&mut s.nodes);
+            let width = s.width;
+            classic::frame(&mut s, R::new(0, 0, width, 38), c, self.radius, false);
+            s.nodes.extend(header);
+        }
+        let glyph = if folded { "▸" } else { "▾" };
+        classic::label(&mut s, R::new(8, 7, 12, 24), glyph, &c.dim, 11, false);
+        s.hits.push(HitRegion {
+            rect: R::new(7, 7, s.width.saturating_sub(115), 24),
+            action: format!("fold:{name}"),
         });
         s
     }
@@ -567,13 +597,7 @@ impl Rack<'_> {
                 } else {
                     &c.dim
                 },
-                if i == 0 {
-                    font + 8
-                } else if i == 1 {
-                    font + 2
-                } else {
-                    font
-                },
+                font,
                 i == 0,
             );
             if i == 3 {
@@ -928,6 +952,12 @@ impl Rack<'_> {
         }
     }
     fn action(&mut self, name: &str, x: u16, y: u16) {
+        if let Some(module) = name.strip_prefix("fold:") {
+            if !self.folded.remove(module) {
+                self.folded.insert(module.to_owned());
+            }
+            return;
+        }
         let a = &mut self.app;
         match name {
             "previous" => a.handle(Action::Prev),
@@ -1030,6 +1060,7 @@ impl Rack<'_> {
 }
 fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u16, name: &str) {
     // Clip offscreen modules without shrinking their font or altering rack geometry.
+    target.assets.append(&mut source.assets);
     let limit = target.height;
     let translate = |r: R| -> Option<R> {
         let yy = i32::from(r.y) + y;
@@ -1045,8 +1076,10 @@ fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u1
         let Some(rect) = translate(original) else {
             continue;
         };
-        if matches!(node, Primitive::Text { .. } | Primitive::Icon { .. })
-            && rect.height != original.height
+        if matches!(
+            node,
+            Primitive::Text { .. } | Primitive::Icon { .. } | Primitive::Sprite { .. }
+        ) && rect.height != original.height
         {
             continue;
         }
@@ -1054,7 +1087,8 @@ fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u1
             Primitive::Fill { rect: r, .. }
             | Primitive::Border { rect: r, .. }
             | Primitive::Text { rect: r, .. }
-            | Primitive::Icon { rect: r, .. } => *r = rect,
+            | Primitive::Icon { rect: r, .. }
+            | Primitive::Sprite { rect: r, .. } => *r = rect,
             Primitive::Path {
                 rect: r, points, ..
             } => {
@@ -1099,6 +1133,7 @@ impl Controller for Rack<'_> {
     }
     fn capabilities(&mut self, c: starkit::terminal_graphics::capabilities::Capabilities) {
         self.paths = c.native_paths;
+        self.skins = c.native_skins && c.native_surfaces;
         self.cells = c.cell_presentation.unwrap_or(false);
     }
     fn supports_presentation_switch(&self) -> bool {
@@ -1174,18 +1209,43 @@ impl Controller for Rack<'_> {
         let w = (v.width as u16).min(4096);
         let h = (v.height as u16).min(1800);
         let mut surface = Surface::new(w, h, hex(self.app.look.theme.bg));
-        let player_h = 230.max(font * 13).min(h - 40);
-        let player = native::classic_surface(
-            w - 16,
-            player_h,
-            GraphicsConfig {
-                cell_width: (font * 3 / 5).max(1),
-                cell_height: font + 4,
-            },
-            &palette,
-            &self.player(),
-            self.radius,
-        );
+        let density =
+            if self.skins && w >= 1456 && h >= 600 && v.height / u32::from(v.rows.max(1)) >= 32 {
+                2
+            } else {
+                1
+            };
+        let player_h = (230 * density).max(font * 13).min(h - 40);
+        let graphics = GraphicsConfig {
+            cell_width: (font * 3 / 5).max(1),
+            cell_height: font + 4,
+        };
+        let state = self.player();
+        let player = if self.skins {
+            self.skin
+                .surface_at_density(
+                    w - 16,
+                    player_h,
+                    graphics,
+                    &palette,
+                    &state,
+                    self.radius,
+                    density,
+                )
+                .unwrap_or_else(|error| {
+                    tracing::error!(%error,"Cannot compose player skin");
+                    native::classic_surface(
+                        w - 16,
+                        player_h,
+                        graphics,
+                        &palette,
+                        &state,
+                        self.radius,
+                    )
+                })
+        } else {
+            native::classic_surface(w - 16, player_h, graphics, &palette, &state, self.radius)
+        };
         append(&mut surface, player, 8, 8, 0, "player");
         classic::label(
             &mut surface,
@@ -1204,43 +1264,36 @@ impl Controller for Rack<'_> {
         let mut y = i32::from(top) - i32::from(self.offset);
         if self.app.panels.eq {
             let s = self.eq(w - 16, &c, font);
+            let s = self.fold_module(s, "eq", &c);
             let hh = s.height;
             self.modules
                 .push((Focus::Equalizer, y + i32::from(self.offset), hh));
             append(&mut surface, s, 8, y, top, "eq");
             y += i32::from(hh + 8);
         }
-        let split = self.app.panels.album && self.app.panels.history && w >= 1100;
-        let module_w = if split { (w - 24) / 2 } else { w - 16 };
-        let mut row_height = 0;
+        let module_w = w - 16;
         let album_y = y;
         if self.app.panels.album {
             let s = self.album(module_w, &c, font);
-            row_height = s.height;
+            let s = self.fold_module(s, "album", &c);
+            let row_height = s.height;
             self.modules
                 .push((Focus::Album, y + i32::from(self.offset), row_height));
             append(&mut surface, s, 8, y, top, "album");
-            if !split {
-                y += i32::from(row_height + 8);
-            }
+            y += i32::from(row_height + 8);
         }
         if self.app.panels.history {
             let s = self.activity(module_w, &c, font);
-            row_height = row_height.max(s.height);
+            let s = self.fold_module(s, "activity", &c);
+            let row_height = s.height;
             self.modules
                 .push((Focus::History, y + i32::from(self.offset), s.height));
-            append(
-                &mut surface,
-                s,
-                if split { 16 + module_w } else { 8 },
-                y,
-                top,
-                "activity",
-            );
+            append(&mut surface, s, 8, y, top, "activity");
             y += i32::from(row_height + 8);
         }
         if self.app.panels.playlist {
             let s = self.playlist(w - 16, &c, font);
+            let s = self.fold_module(s, "playlist", &c);
             let hh = s.height;
             self.modules
                 .push((Focus::Playlist, y + i32::from(self.offset), hh));
@@ -1384,6 +1437,7 @@ impl Controller for Rack<'_> {
         if !self.overlay
             && self.app.panels.album
             && module_w > 600
+            && !self.folded.contains("album")
             && album_y + 46 >= i32::from(top)
             && album_y + 226 < i32::from(h - font - 12)
         {
@@ -1482,6 +1536,19 @@ impl Controller for Rack<'_> {
             Input::Key { code, modifiers } => {
                 if let Some(code) = key(&code) {
                     let before = self.app.panels.focus;
+                    let module = match before {
+                        Focus::Equalizer => Some("eq"),
+                        Focus::Album => Some("album"),
+                        Focus::History => Some("activity"),
+                        Focus::Playlist => Some("playlist"),
+                        _ => None,
+                    };
+                    if !self.overlay && code == KeyCode::Enter {
+                        if let Some(name) = module.filter(|name| self.folded.contains(*name)) {
+                            self.action(&format!("fold:{name}"), 0, 0);
+                            return;
+                        }
+                    }
                     self.app.dispatch_key(KeyEvent::new(
                         code,
                         KeyModifiers::from_bits_truncate(modifiers),
@@ -1492,16 +1559,11 @@ impl Controller for Rack<'_> {
                             .iter()
                             .find(|(focus, _, _)| *focus == self.app.panels.focus)
                         {
-                            let top = 230.max(
-                                starkit::native_surface::Metrics::from_cell(
-                                    (self.viewport.width / u32::from(self.viewport.columns.max(1)))
-                                        as u16,
-                                    (self.viewport.height / u32::from(self.viewport.rows.max(1)))
-                                        as u16,
-                                )
-                                .font
-                                    * 13,
-                            ) + 16;
+                            let top = self
+                                .modules
+                                .first()
+                                .map(|(_, start, _)| *start as u16)
+                                .unwrap_or(246);
                             let end = *start + i32::from(*height);
                             if *start - i32::from(self.offset) < i32::from(top) {
                                 self.offset = (*start - i32::from(top)).max(0) as u16;
@@ -1595,7 +1657,9 @@ impl Controller for Rack<'_> {
                     .as_ref()
                     .and_then(|s| s.hit(px as u16, py as u16))
                     .map(|h| h.action.clone());
+                self.skin.hovered = hit.clone();
                 if action == "down" && button == 1 {
+                    self.skin.pressed = hit.clone();
                     self.drag = hit.clone();
                     if let Some(name) = hit {
                         self.action(&name, px as u16, py as u16);
@@ -1612,6 +1676,7 @@ impl Controller for Rack<'_> {
                     }
                 }
                 if action == "up" {
+                    self.skin.pressed = None;
                     if self.eq_dirty {
                         self.app.finish_eq_edit();
                         self.eq_dirty = false;
@@ -1621,6 +1686,8 @@ impl Controller for Rack<'_> {
             }
             Input::Detach => self.app.quit = true,
             Input::CancelPointer => {
+                self.skin.pressed = None;
+                self.skin.hovered = None;
                 if self.eq_dirty {
                     self.app.finish_eq_edit();
                     self.eq_dirty = false;
@@ -1703,6 +1770,12 @@ impl App {
             overlay: false,
             cover_cache: None,
             modules: Vec::new(),
+            skin: crate::embed::skin::PlayerSkin::new()?,
+            skins: true,
+            folded: ["eq", "album", "activity"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
         };
         for id in crate::theme::builtin::ids() {
             rack.app.look.theme = crate::theme::builtin::load(id).unwrap();
@@ -1757,6 +1830,25 @@ impl App {
             rows: 60,
             generation: 0,
         };
+        rack.scene(v);
+        let closed_height = rack
+            .modules
+            .iter()
+            .find(|(focus, _, _)| *focus == Focus::Equalizer)
+            .unwrap()
+            .2;
+        assert_eq!(closed_height, 38);
+        rack.action("fold:eq", 0, 0);
+        rack.scene(v);
+        assert!(
+            rack.modules
+                .iter()
+                .find(|(focus, _, _)| *focus == Focus::Equalizer)
+                .unwrap()
+                .2
+                > closed_height
+        );
+        rack.action("fold:eq", 0, 0);
         rack.scene(v);
         let hit = rack
             .surface

@@ -8,7 +8,7 @@ use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
 use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
-fn hex(c: [u8; 3]) -> String {
+pub(super) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 fn clock(seconds: f64) -> String {
@@ -61,6 +61,79 @@ pub fn classic_surface(
     state: &PlayerRenderState,
     radius: u16,
 ) -> Surface {
+    player_surface(w, h, graphics, palette, state, radius, None)
+}
+
+fn player_frame(
+    art: Option<&dyn PlayerArtwork>,
+    s: &mut Surface,
+    r: R,
+    c: &starkit::native_surface::classic::Colors,
+    radius: u16,
+    inset: bool,
+) {
+    if let Some(art) = art {
+        art.frame(s, r, inset);
+    } else {
+        starkit::native_surface::classic::frame(s, r, c, radius, inset);
+    }
+}
+#[allow(clippy::too_many_arguments)]
+fn player_button(
+    art: Option<&dyn PlayerArtwork>,
+    s: &mut Surface,
+    r: R,
+    c: &starkit::native_surface::classic::Colors,
+    text: &str,
+    action: &str,
+    size: u16,
+    active: bool,
+) {
+    if let Some(art) = art {
+        art.button(s, r, action, active);
+        let text_width = (text.chars().count() as u16)
+            .saturating_mul(size)
+            .saturating_mul(3)
+            / 5;
+        let pad = r
+            .width
+            .saturating_sub(text_width)
+            .saturating_div(2)
+            .max(3)
+            .min(r.width / 4);
+        starkit::native_surface::classic::label(
+            s,
+            R::new(r.x + pad, r.y, r.width.saturating_sub(pad * 2), r.height),
+            text,
+            &art.button_ink(action, active),
+            size,
+            active,
+        );
+        s.hits.push(HitRegion {
+            rect: r,
+            action: action.into(),
+        });
+    } else {
+        starkit::native_surface::classic::button(s, r, c, text, action, size, active);
+    }
+}
+
+pub(super) trait PlayerArtwork {
+    fn frame(&self, s: &mut Surface, rect: R, inset: bool);
+    fn button(&self, s: &mut Surface, rect: R, action: &str, active: bool);
+    fn button_ink(&self, action: &str, active: bool) -> String;
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn player_surface(
+    w: u16,
+    h: u16,
+    graphics: GraphicsConfig,
+    palette: &Palette,
+    state: &PlayerRenderState,
+    radius: u16,
+    artwork: Option<&dyn PlayerArtwork>,
+) -> Surface {
     use starkit::native_surface::classic::{self, Colors};
     let m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
     let c = Colors::new(
@@ -78,8 +151,8 @@ pub fn classic_surface(
         classic::label(&mut s, R::new(0, 0, w, h), &state.title, &fg, m.font, true);
         return s;
     }
-    let pad = 12;
-    classic::frame(&mut s, R::new(0, 0, w, h), &c, radius, false);
+    let pad = if artwork.is_some() { 14 } else { 12 };
+    player_frame(artwork, &mut s, R::new(0, 0, w, h), &c, radius, false);
     s.fill(R::new(7, 7, w - 14, 24), &c.title, 2);
     let header = 24;
     classic::label(
@@ -94,8 +167,9 @@ pub fn classic_surface(
     let controls_y = h - button - pad;
     let seek_y = controls_y - header - 4;
     let display_y = 43;
-    let display_h = seek_y.saturating_sub(display_y + 8);
-    classic::frame(
+    let display_h = seek_y.saturating_sub(display_y + if artwork.is_some() { 6 } else { 8 });
+    player_frame(
+        artwork,
         &mut s,
         R::new(pad, display_y, w - pad * 2, display_h),
         &c,
@@ -106,7 +180,12 @@ pub fn classic_surface(
     let clock_h = 54.min(display_h.saturating_sub(30));
     classic::clock(
         &mut s,
-        R::new(pad + 12, display_y + 12, clock_w - 24, clock_h),
+        R::new(
+            pad + if artwork.is_some() { 14 } else { 12 },
+            display_y + if artwork.is_some() { 15 } else { 12 },
+            clock_w - 24,
+            clock_h,
+        ),
         &clock(state.position),
         &accent,
     );
@@ -122,7 +201,7 @@ pub fn classic_surface(
         m.font.saturating_sub(2).max(1),
         true,
     );
-    let x = pad + clock_w;
+    let x = pad + clock_w + if artwork.is_some() { 2 } else { 0 };
     let width = w.saturating_sub(pad * 2 + x);
     let analyzer_top = display_y + 8;
     let analyzer_height = display_h.saturating_sub(header * 2 + 16);
@@ -279,7 +358,7 @@ pub fn classic_surface(
         m.font.saturating_sub(2).max(1),
         false,
     );
-    let pad = 12;
+    let pad = if artwork.is_some() { 16 } else { 12 };
     let time_w = (m.font * 5).min(w / 5);
     classic::label(
         &mut s,
@@ -351,7 +430,7 @@ pub fn classic_surface(
         let rect = R::new(pad + i as u16 * (button + 6), controls_y, button, button);
         let active = (*name == "play" && state.state == PlayState::Playing)
             || (*name == "pause" && state.state == PlayState::Paused);
-        classic::button(&mut s, rect, &c, "", name, m.font, active);
+        player_button(artwork, &mut s, rect, &c, "", name, m.font, active);
         let icon = button.saturating_sub(8);
         s.nodes.push(Primitive::Icon {
             rect: R::new(rect.x + 4, rect.y + 4, icon, icon),
@@ -359,15 +438,17 @@ pub fn classic_surface(
                 "previous" | "next" => format!("media-{name}"),
                 _ => format!("media-{name}"),
             },
-            color: if active { accent.clone() } else { fg.clone() },
+            color: artwork
+                .map(|art| art.button_ink(name, active))
+                .unwrap_or_else(|| if active { accent.clone() } else { fg.clone() }),
         });
         s.hits.push(HitRegion {
             rect,
             action: (*name).into(),
         });
     }
-    let toggle_x = pad + 5 * (button + 6) + 24;
-    if w > 800 {
+    let toggle_x = pad + 5 * (button + 6) + if artwork.is_some() { 46 } else { 24 };
+    if w > if artwork.is_some() { 719 } else { 800 } {
         for (i, (text, action, active)) in [
             ("SHUFFLE", "shuffle", state.shuffled),
             (
@@ -383,9 +464,15 @@ pub fn classic_surface(
         .into_iter()
         .enumerate()
         {
-            classic::button(
+            player_button(
+                artwork,
                 &mut s,
-                R::new(toggle_x + i as u16 * 108, controls_y, 100, button),
+                R::new(
+                    toggle_x + i as u16 * if artwork.is_some() { 109 } else { 108 },
+                    controls_y,
+                    100,
+                    button,
+                ),
                 &c,
                 text,
                 action,

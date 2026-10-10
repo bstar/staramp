@@ -28,10 +28,13 @@ pub struct MirrorState {
     pub volume: f32,
     pub shuffle: bool,
     pub crossfade: bool,
-    /// Whether the leader has the queue in album order, so a mirror knows to
-    /// draw the dividers. It cannot work them out for itself: the leader sends
-    /// tags, and none of them is a year.
+    /// Whether the owner's current order has album dividers.
     pub group: bool,
+    /// Configured album grouping, including while shuffle overrides it.
+    pub grouping: bool,
+    /// Absent when grouping is off or the owner predates this field.
+    pub group_desc: Option<bool>,
+    pub arranged: bool,
     /// The shared view's revision, so a follower knows when to ask for it.
     pub view_revision: u64,
     pub repeat: String,
@@ -79,6 +82,11 @@ impl Mirror {
     /// failing to connect is the same as there being no leader.
     pub fn connect() -> Option<Self> {
         let path = crate::ipc::socket_path().ok()?;
+        Self::connect_at(path)
+    }
+
+    /// Connect to an explicit playback owner, including isolated sessions.
+    pub fn connect_at(path: std::path::PathBuf) -> Option<Self> {
         crate::ipc::connect(&path).ok()?;
         Some(Self {
             path,
@@ -153,7 +161,7 @@ impl Mirror {
     }
 
     pub fn queue(&self) -> Option<Vec<QueueItem>> {
-        Some(parse_queue(&self.request("queue").ok()?))
+        serde_json::from_str(&self.request("queue").ok()?).ok()
     }
 
     /// Is the leader still there?
@@ -226,6 +234,13 @@ pub fn parse_state(src: &str) -> Option<MirrorState> {
         shuffle: field(src, "shuffle") == Some("true"),
         crossfade: field(src, "crossfade") == Some("true"),
         group: field(src, "group") == Some("true"),
+        grouping: field(src, "grouping").or_else(|| field(src, "group")) == Some("true"),
+        group_desc: field(src, "group_desc").and_then(|v| match v {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }),
+        arranged: field(src, "arranged") == Some("true"),
         view_revision: num("view").unwrap_or(0.0) as u64,
         repeat: field(src, "repeat").unwrap_or("Off").to_string(),
         index: num("index").unwrap_or(-1.0) as i64,

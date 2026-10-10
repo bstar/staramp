@@ -9,8 +9,8 @@ use starkit::native_surface::{
 };
 use std::collections::BTreeMap;
 
-/// Theme adaptation is calibrated against the selected study, rather than
-/// replacing every independently designed surface with one generic blend.
+/// The original study keeps its artwork colors; theme mode uses the selected
+/// palette directly so Classic's surface hues do not bleed into other themes.
 pub(crate) const REFERENCE_PALETTE: Palette = Palette {
     bg: [23, 24, 32],
     fg: [215, 217, 207],
@@ -21,6 +21,9 @@ pub(crate) const REFERENCE_PALETTE: Palette = Palette {
     error: [224, 152, 133],
 };
 pub(crate) fn tone(p: &Palette, original: &str, ink: bool) -> String {
+    if *p != REFERENCE_PALETTE {
+        return native::hex(if ink { p.fg } else { p.bg });
+    }
     calibrated(
         original,
         &native::hex(if ink {
@@ -48,11 +51,31 @@ fn calibrated(original: &str, reference: &str, actual: &str) -> String {
     .to_hex()
 }
 pub(crate) fn colors(p: &Palette) -> Colors {
+    if *p != REFERENCE_PALETTE {
+        use starkit::theme::color::Rgb;
+        let bg = Rgb::new(p.bg[0], p.bg[1], p.bg[2]);
+        let fg = Rgb::new(p.fg[0], p.fg[1], p.fg[2]);
+        return Colors {
+            panel: bg.to_hex(),
+            inset: bg.mix(Rgb::new(0, 0, 0), 0.06).to_hex(),
+            ink: fg.to_hex(),
+            dim: native::hex(p.muted),
+            accent: native::hex(p.accent),
+            highlight: bg.mix(fg, 0.16).to_hex(),
+            shadow: bg.mix(Rgb::new(0, 0, 0), 0.25).to_hex(),
+            raised: bg.mix(fg, 0.09).to_hex(),
+            title: bg.mix(fg, 0.04).to_hex(),
+        };
+    }
     let a = generic(p);
     let r = generic(&REFERENCE_PALETTE);
     Colors {
         panel: calibrated("#303340", &r.panel, &a.panel),
-        inset: calibrated("#101813", &r.inset, &a.inset),
+        inset: if *p == REFERENCE_PALETTE {
+            "#101813".into()
+        } else {
+            a.inset.clone()
+        },
         ink: native::hex(p.fg),
         dim: native::hex(p.muted),
         accent: native::hex(p.accent),
@@ -62,6 +85,51 @@ pub(crate) fn colors(p: &Palette) -> Colors {
         title: calibrated("#242733", &r.title, &a.title),
     }
 }
+pub(crate) fn inactive_led(p: &Palette) -> String {
+    if *p == REFERENCE_PALETTE {
+        return "#1c2a20".into();
+    }
+    // Unlit segments follow the background hue, not Classic's green phosphor.
+    use starkit::theme::color::Rgb;
+    Rgb::parse_hex(&colors(p).inset)
+        .unwrap()
+        .mix(Rgb::new(p.fg[0], p.fg[1], p.fg[2]), 0.06)
+        .to_hex()
+}
+fn role_color(role: &str, original: &str, palette: &Palette) -> String {
+    if *palette != REFERENCE_PALETTE {
+        use starkit::theme::color::Rgb;
+        let c = colors(palette);
+        let blend = |a: &str, b: &str, amount| {
+            Rgb::parse_hex(a)
+                .unwrap()
+                .mix(Rgb::parse_hex(b).unwrap(), amount)
+                .to_hex()
+        };
+        return match role {
+            "panel" | "quiet_panel" | "disabled" | "quiet_disabled" => c.panel,
+            "background" => native::hex(palette.bg),
+            "well" => c.inset,
+            "shadow" | "edge_shadow" | "well_shadow" | "control_border" => c.shadow,
+            "highlight" | "control_highlight" | "well_highlight" => c.highlight,
+            "active" | "quiet_active" => blend(&c.panel, &c.accent, 0.16),
+            "title" => c.title,
+            "pressed" => blend(&c.panel, &c.accent, 0.08),
+            "ink" => c.ink,
+            "accent" => c.accent,
+            "control" => c.raised,
+            "hover" | "quiet_hover" => blend(&c.raised, &c.accent, 0.06),
+            "well_border" | "border" => native::hex(palette.border),
+            _ => unreachable!("unknown skin role {role}"),
+        };
+    }
+    calibrated(
+        original,
+        &role_base(role, &REFERENCE_PALETTE),
+        &role_base(role, palette),
+    )
+}
+
 fn role_base(role: &str, p: &Palette) -> String {
     let c = generic(p);
     match role {
@@ -150,11 +218,7 @@ impl PlayerSkin {
         }
         let mut roles = BTreeMap::new();
         for (role, original) in &self.manifest.roles {
-            let value = calibrated(
-                original,
-                &role_base(role, &REFERENCE_PALETTE),
-                &role_base(role, palette),
-            );
+            let value = role_color(role, original, palette);
             roles.insert(
                 role.clone(),
                 [
@@ -435,7 +499,11 @@ impl native::PlayerArtwork for PlayerSkin {
                 0.14,
             )
             .to_hex();
-        let inactive = calibrated("#203226", &reference, &inactive);
+        let inactive = if p == REFERENCE_PALETTE {
+            calibrated("#203226", &reference, &inactive)
+        } else {
+            inactive_led(&p)
+        };
         let mut offset = 0u16;
         for character in value.chars() {
             let (index, width, advance) = match character {
@@ -499,22 +567,13 @@ impl native::PlayerArtwork for PlayerSkin {
             "button-active" => "active",
             _ => "control",
         };
-        let color = calibrated(
-            &self.manifest.roles[role],
-            &role_base(role, &REFERENCE_PALETTE),
-            &role_base(role, &p),
-        );
+        let color = role_color(role, &self.manifest.roles[role], &p);
         let background = Rgb::parse_hex(&color).expect("derived skin color");
-        let ink = Rgb::parse_hex(&calibrated(
-            if active { "#10161a" } else { "#e0e2d5" },
-            &native::hex(if active {
-                REFERENCE_PALETTE.bg
-            } else {
-                REFERENCE_PALETTE.fg
-            }),
-            &native::hex(if active { p.bg } else { p.fg }),
-        ))
-        .unwrap();
+        let ink = if p != REFERENCE_PALETTE {
+            Rgb::new(p.fg[0], p.fg[1], p.fg[2])
+        } else {
+            Rgb::parse_hex(if active { "#10161a" } else { "#e0e2d5" }).unwrap()
+        };
         if background.contrast(ink) >= 4.5 {
             ink.to_hex()
         } else {
@@ -601,6 +660,113 @@ mod tests {
         ] {
             assert_eq!(image.get_pixel(x, y).0, color, "reference color at {x},{y}");
         }
+    }
+    #[test]
+    fn led_segments_stay_fixed_as_levels_change_at_both_densities() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut state = state();
+        state.vis_mode = VisMode::Leds;
+        let accent = native::hex(REFERENCE_PALETTE.accent);
+        let off = inactive_led(&REFERENCE_PALETTE);
+        for density in [1, 2] {
+            let mut fixed_rects = None;
+            let mut previous_lit = 0;
+            for level in [0., 0.17, 0.38, 0.71, 1.] {
+                state.bands.fill(level);
+                let surface = skin
+                    .surface_at_density(
+                        1352 * density,
+                        230 * density,
+                        GraphicsConfig {
+                            cell_width: 8 * density,
+                            cell_height: 16 * density,
+                        },
+                        &REFERENCE_PALETTE,
+                        &state,
+                        8,
+                        density,
+                    )
+                    .unwrap();
+                let cells = surface
+                    .nodes
+                    .iter()
+                    .filter_map(|node| match node {
+                        Primitive::Fill { rect, color, .. }
+                            if color == &accent || color == &off =>
+                        {
+                            Some((*rect, color == &accent))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let rects = cells.iter().map(|(rect, _)| *rect).collect::<Vec<_>>();
+                if let Some(fixed) = &fixed_rects {
+                    assert_eq!(&rects, fixed, "LED cells moved at level {level}");
+                } else {
+                    fixed_rects = Some(rects);
+                }
+                let lit = cells.iter().filter(|(_, lit)| *lit).count();
+                assert!(lit >= previous_lit);
+                if level == 1. {
+                    assert!(lit > previous_lit);
+                }
+                previous_lit = lit;
+            }
+        }
+    }
+    #[test]
+    fn kanagawa_displays_and_inactive_leds_follow_the_theme_background() {
+        let t = crate::theme::builtin::load("kanagawa").unwrap();
+        let rgb = |c: starkit::theme::color::Rgb| [c.r, c.g, c.b];
+        let p = Palette {
+            bg: rgb(t.bg),
+            fg: rgb(t.fg),
+            muted: rgb(t.dim),
+            accent: rgb(t.accent),
+            selected: rgb(t.row_selected_bg),
+            border: rgb(t.border),
+            error: rgb(t.error),
+        };
+        let c = colors(&p);
+        assert_eq!(c.panel, t.bg.to_hex());
+        assert_eq!(
+            c.inset,
+            t.bg.mix(starkit::theme::color::Rgb::new(0, 0, 0), 0.06)
+                .to_hex()
+        );
+        assert_eq!(c.accent, t.accent.to_hex());
+        assert_eq!(role_color("panel", "#303340", &p), c.panel);
+        assert_eq!(role_color("quiet_panel", "#20212a", &p), c.panel);
+        assert_eq!(role_color("well", "#101813", &p), c.inset);
+        assert_eq!(role_color("background", "#171820", &p), native::hex(p.bg));
+        let off = starkit::theme::color::Rgb::parse_hex(&inactive_led(&p)).unwrap();
+        assert!(
+            off.b > off.g && off.b > off.r,
+            "Kanagawa's unlit LEDs retain its blue background hue"
+        );
+        let mut skin = PlayerSkin::new().unwrap();
+        let surface = skin
+            .surface_at_density(
+                1352,
+                230,
+                GraphicsConfig {
+                    cell_width: 8,
+                    cell_height: 16,
+                },
+                &p,
+                &state(),
+                8,
+                1,
+            )
+            .unwrap();
+        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+            .render(&starkit::image::RgbaImage::new(1352, 230), &surface)
+            .unwrap();
+        let expected = starkit::theme::color::Rgb::parse_hex(&c.inset).unwrap();
+        assert_eq!(
+            image.get_pixel(700, 104).0,
+            [expected.r, expected.g, expected.b, 255]
+        );
     }
     #[test]
     fn bitmap_clock_and_transport_preserve_reference_geometry_at_both_densities() {

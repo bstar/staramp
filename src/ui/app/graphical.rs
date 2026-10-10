@@ -1,6 +1,8 @@
 //! Classic Rack composition. This adapter shares the ordinary application's
 //! playback owner, state, actions, services and modal key dispatch.
 use super::*;
+use unicode_width::UnicodeWidthStr;
+mod popup;
 use crate::audio::dsp::apo::{Filter, Width};
 use crate::embed::{native, render::PlayerRenderState, GraphicsConfig, Palette};
 use starkit::native_surface::{
@@ -34,6 +36,10 @@ pub struct Rack<'a> {
     drag: Option<String>,
     max_offset: u16,
     overlay: bool,
+    context_anchor: Option<[u32; 2]>,
+    playlist_bars: Scrollbars<()>,
+    playlist_visible: usize,
+    playlist_scrolled: Option<usize>,
     cover_cache: Option<(u64, String)>,
     modules: Vec<(Focus, i32, u16)>,
     folded: std::collections::HashSet<String>,
@@ -125,6 +131,10 @@ impl App {
                 drag: None,
                 max_offset: 0,
                 overlay: false,
+                context_anchor: None,
+                playlist_bars: Scrollbars::new(),
+                playlist_visible: 0,
+                playlist_scrolled: None,
                 cover_cache: None,
                 modules: Vec::new(),
                 skin: crate::embed::skin::PlayerSkin::new()?,
@@ -146,7 +156,13 @@ impl Rack<'_> {
         }
         let t = &self.app.look.theme;
         Palette {
-            bg: color(t.bg),
+            // Kanagawa's raised background gives large graphical panes more
+            // separation than its terminal base without washing out the hue.
+            bg: color(if t.name == "Kanagawa" {
+                t.header_bg
+            } else {
+                t.bg
+            }),
             fg: color(t.fg),
             muted: color(t.dim),
             accent: color(t.accent),
@@ -258,7 +274,11 @@ impl Rack<'_> {
         };
         let mut frame_colors = c.clone();
         if self.app.panels.focus == focus {
-            frame_colors.title = c.inset.clone();
+            use starkit::theme::color::Rgb;
+            frame_colors.title = Rgb::parse_hex(&c.title)
+                .unwrap()
+                .mix(Rgb::parse_hex(&c.accent).unwrap(), 0.10)
+                .to_hex();
         }
         self.frame(
             &mut s,
@@ -268,6 +288,12 @@ impl Rack<'_> {
             false,
         );
         s.fill(R::new(7, 7, w - 14, 24), &frame_colors.title, 2);
+        native::heading_depth(
+            &mut s,
+            R::new(7, 7, w - 14, 24),
+            &frame_colors.title,
+            &c.ink,
+        );
         let title_rect = R::new(18, 7, w.saturating_sub(166), 24);
         if !self.skins
             || !self.skin.label(
@@ -292,20 +318,22 @@ impl Rack<'_> {
             rect: R::new(w.saturating_sub(118), 7, 82, 24),
             action: "settings".into(),
         });
-        let close = R::new(w - 32, 7, 18, 24);
-        classic::label(&mut s, close, "×", &c.dim, 12, false);
-        s.hits.push(HitRegion {
-            rect: close,
-            action: format!(
-                "close:{}",
-                match focus {
-                    Focus::Equalizer => "eq",
-                    Focus::Album => "album",
-                    Focus::History => "activity",
-                    _ => "playlist",
-                }
-            ),
-        });
+        let action = format!(
+            "close:{}",
+            match focus {
+                Focus::Equalizer => "eq",
+                Focus::Album => "album",
+                Focus::History => "activity",
+                _ => "playlist",
+            }
+        );
+        native::close_button(
+            &mut s,
+            R::new(w - 40, 7, 30, 24),
+            c,
+            &action,
+            self.skin.hovered.as_deref() == Some(&action),
+        );
         s
     }
     fn fold_module(&self, mut s: Surface, name: &str, c: &Colors) -> Surface {
@@ -325,10 +353,31 @@ impl Rack<'_> {
         if folded {
             classic::label(&mut s, R::new(8, 7, 9, 24), glyph, &c.dim, 9, false);
         }
-        s.hits.push(HitRegion {
-            rect: R::new(7, 7, s.width.saturating_sub(140), 24),
-            action: format!("fold:{name}"),
-        });
+        // Header controls sit on top of the foldable title strip. Hits are
+        // resolved back to front, just like the painted controls.
+        s.hits.insert(
+            0,
+            HitRegion {
+                rect: R::new(7, 7, s.width.saturating_sub(140), 24),
+                action: format!("fold:{name}"),
+            },
+        );
+        let focus = match name {
+            "eq" => Focus::Equalizer,
+            "album" => Focus::Album,
+            "activity" => Focus::History,
+            _ => Focus::Playlist,
+        };
+        s.hits.insert(
+            0,
+            HitRegion {
+                rect: R::new(0, 0, s.width, s.height),
+                action: format!("focus:{name}"),
+            },
+        );
+        if self.app.panels.focus == focus {
+            native::focus_outline(&mut s, &c.accent, self.radius);
+        }
         s
     }
     fn eq(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
@@ -714,18 +763,17 @@ impl Rack<'_> {
             .current_uri()
             .and_then(|u| self.app.art.as_ref()?.album_for(&u));
         let item = self.app.player.current_item();
-        if w > 600 {
-            self.frame(&mut s, R::new(16, 46, 180, 180), c, 0, true);
-            classic::label(
-                &mut s,
-                R::new(42, 114, 128, 30),
-                "NO COVER",
-                &c.dim,
-                font,
-                false,
-            );
-        }
-        let x = if w > 600 { 214 } else { 16 };
+        let cover = if w > 600 { 180 } else { 128 };
+        self.frame(&mut s, R::new(16, 46, cover, cover), c, 0, true);
+        classic::label(
+            &mut s,
+            R::new(24, 46 + cover / 2 - 12, cover - 16, 24),
+            "NO COVER",
+            &c.dim,
+            font,
+            false,
+        );
+        let x = cover + 34;
         let detail = a.as_ref().and_then(|a| a.detail.as_ref());
         let album_items = self
             .app
@@ -799,7 +847,7 @@ impl Rack<'_> {
         ];
         for (i, text) in lines.into_iter().enumerate() {
             let (y, size, height) = match i {
-                0 => (47, 22, 32),
+                0 => (47, 14, 32),
                 1 => (80, 15, 28),
                 2 => (109, 12, 24),
                 3 => (134, 12, 24),
@@ -835,9 +883,9 @@ impl Rack<'_> {
         let bottom = 242;
         for (x, width, text, action) in [
             (16, 29, "‹", "cover-prev"),
-            (167, 29, "›", "cover-next"),
-            (214, 99, "CHOOSE", "cover-choose"),
-            (323, 81, "RETRY", "cover-retry"),
+            (cover + 16 - 29, 29, "›", "cover-next"),
+            (x, 99, "CHOOSE", "cover-choose"),
+            (x + 109, 81, "RETRY", "cover-retry"),
         ] {
             self.button(
                 &mut s,
@@ -851,7 +899,7 @@ impl Rack<'_> {
         }
         classic::label(
             &mut s,
-            R::new(78, bottom, 74, 29),
+            R::new(51, bottom, cover - 70, 29),
             a.as_ref()
                 .map(|a| format!("{} / {}", a.choice + 1, a.choices))
                 .unwrap_or_else(|| "— / —".into()),
@@ -890,44 +938,9 @@ impl Rack<'_> {
     fn activity(&self, w: u16, c: &Colors, font: u16) -> Surface {
         let mut s = self.window(w, 292, c, "ACTIVITY", font);
         let snap = self.app.activity.snapshot();
-        let n = 3;
-        for (i, provider) in crate::activity::Provider::ALL.iter().enumerate() {
-            let p = snap.providers.iter().find(|p| p.provider == *provider);
-            let r = R::new(14 + i as u16 * (w - 28) / n, 42, (w - 28) / n - 6, 43);
-            self.frame(&mut s, r, c, 0, true);
-            label(
-                &mut s,
-                c,
-                R::new(r.x + 8, r.y, r.width - 16, 22),
-                provider.label(),
-                font,
-                true,
-            );
-            classic::label(
-                &mut s,
-                R::new(r.x + 8, r.y + 22, r.width - 16, 20),
-                match p.filter(|p| p.configured) {
-                    Some(p) => format!(
-                        "{} · {}",
-                        if p.enabled { "Enabled" } else { "Disabled" },
-                        p.username
-                    ),
-                    None => "Not connected · Set up".into(),
-                },
-                &c.dim,
-                font.saturating_sub(2),
-                false,
-            );
-        }
-        for i in 0..2 {
-            s.hits.push(HitRegion {
-                rect: R::new(14 + i * (w - 28) / 3, 42, (w - 28) / 3 - 6, 43),
-                action: "settings:activity".into(),
-            });
-        }
         classic::label(
             &mut s,
-            R::new(16, 91, w - 150, 20),
+            R::new(16, 42, w - 150, 20),
             "RECENT LISTENS",
             &c.dim,
             10,
@@ -935,46 +948,23 @@ impl Rack<'_> {
         );
         classic::label(
             &mut s,
-            R::new(w - 104, 91, 88, 20),
+            R::new(w - 104, 42, 88, 20),
             "DELIVERY",
             &c.dim,
             10,
             true,
         );
-        let card_w = (w - 28) / 3;
-        let r = R::new(14 + card_w * 2, 42, card_w - 6, 43);
-        self.frame(&mut s, r, c, 0, true);
-        label(
-            &mut s,
-            c,
-            R::new(r.x + 8, r.y, r.width - 16, 22),
-            "LOCAL HISTORY",
-            font,
-            true,
-        );
-        classic::label(
-            &mut s,
-            R::new(r.x + 8, r.y + 22, r.width - 16, 20),
-            if self.app.is_mirror() {
-                "Following playback owner"
-            } else {
-                "Recording listens"
-            },
-            &c.dim,
-            font.saturating_sub(2),
-            false,
-        );
         if snap.recent.is_empty() {
             classic::label(
                 &mut s,
-                R::new(16, 108, w - 32, 26),
+                R::new(16, 65, w - 32, 26),
                 "No listening activity yet",
                 &c.dim,
                 font,
                 false,
             );
         }
-        let count = 4;
+        let count = 5;
         for (i, row) in snap
             .recent
             .iter()
@@ -982,7 +972,7 @@ impl Rack<'_> {
             .take(count)
             .enumerate()
         {
-            let y = 111 + i as u16 * 34;
+            let y = 65 + i as u16 * 34;
             if i == 0 {
                 s.fill(
                     R::new(10, y, w - 20, 33),
@@ -1056,12 +1046,21 @@ impl Rack<'_> {
         );
         s
     }
-    fn playlist(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 260, c, "PLAYLIST", font);
+    fn playlist(&mut self, w: u16, h: u16, c: &Colors, font: u16) -> Surface {
+        let mut s = self.window(w, h, c, "PLAYLIST", font);
+        let heading = if self.app.filter_query().trim().is_empty() {
+            format!("· {}", self.app.queue.name)
+        } else {
+            format!(
+                "· {} · /{}",
+                self.app.queue.name,
+                self.app.filter_query().trim()
+            )
+        };
         classic::label(
             &mut s,
             R::new(86, 7, w.saturating_sub(420), 24),
-            format!("· {}", self.app.queue.name),
+            crate::ui::panels::player::truncate(&heading, usize::from(w.saturating_sub(420) / 8)),
             &crate::embed::skin::tone(&self.palette(), "#bbc6d5", true),
             12,
             false,
@@ -1078,8 +1077,19 @@ impl Rack<'_> {
             });
         }
         let well_height = s.height - 82;
-        self.frame(&mut s, R::new(10, 38, w - 20, well_height), c, 0, true);
-        if self.app.queue.rows.rows().is_empty() {
+        // Theme queues sit close to the other pane interiors, rather than
+        // inheriting the much darker analyzer display well.
+        let queue_bg = if self.reference_colors {
+            c.inset.clone()
+        } else {
+            use starkit::theme::color::Rgb;
+            Rgb::parse_hex(&c.panel)
+                .unwrap()
+                .mix(Rgb::new(0, 0, 0), 0.06)
+                .to_hex()
+        };
+        s.fill(R::new(10, 38, w - 20, well_height), &queue_bg, 0);
+        if self.app.queue.items.is_empty() {
             classic::label(
                 &mut s,
                 R::new(22, 54, w - 44, 30),
@@ -1136,12 +1146,20 @@ impl Rack<'_> {
             .filter_map(|i| i.duration_secs)
             .map(|seconds| seconds.max(0))
             .sum::<i64>();
-        let summary = format!(
-            "{} tracks · {}:{:02}",
-            self.app.queue.items.len(),
-            total / 60,
-            total % 60
-        );
+        let summary = if self.app.filter_query().trim().is_empty() {
+            format!(
+                "{} tracks · {}:{:02}",
+                self.app.queue.items.len(),
+                total / 60,
+                total % 60
+            )
+        } else {
+            format!(
+                "{} of {} tracks",
+                self.app.queue.matched_count,
+                self.app.queue.items.len()
+            )
+        };
         let width = (summary.chars().count() as u16 * 7).min(w - 350);
         let summary_y = s.height - 30;
         classic::label(
@@ -1152,27 +1170,51 @@ impl Rack<'_> {
             11,
             false,
         );
-        let row_h = 25;
-        let selected_row = self
+        let row_font = font.saturating_sub(1);
+        let row_h = 22;
+        let visible = ((s.height - 86) / row_h) as usize;
+        self.playlist_visible = visible;
+        let rows = &self.app.queue.rows;
+        let selected_row = rows
+            .row_of_track(self.app.queue.cursor)
+            .unwrap_or_else(|| rows.anchor_row(self.app.queue.cursor));
+        self.app.queue.scroll = self
             .app
             .queue
-            .rows
-            .row_of_track(self.app.queue.cursor)
-            .unwrap_or(0);
-        self.app.queue.scroll = PlaylistView::clamp_scroll(
-            selected_row,
-            self.app.queue.scroll,
-            ((s.height - 86) / row_h) as usize,
-        );
-        let marked = {
+            .scroll
+            .min(rows.len().saturating_sub(visible));
+        // A grabbed scrollbar owns the viewport. Keep its position after
+        // release too, including a viewport containing only folded headings.
+        if self.playlist_scrolled != Some(self.app.queue.cursor) {
+            self.playlist_scrolled = None;
+            self.app.queue.scroll =
+                PlaylistView::clamp_scroll(selected_row, self.app.queue.scroll, visible);
+            if visible > 1 {
+                let anchor = rows.anchor_row(self.app.queue.cursor);
+                self.app.queue.scroll =
+                    PlaylistView::clamp_scroll(anchor, self.app.queue.scroll, visible)
+                        .min(self.app.queue.scroll);
+            }
+        }
+        let (marked, playing) = {
             let q = self.app.player.queue.lock().unwrap();
-            q.view()
-                .iter()
-                .enumerate()
-                .filter(|(_, i)| self.app.queue.tagged.contains(i))
-                .map(|(slot, _)| slot)
-                .collect::<std::collections::HashSet<_>>()
+            (
+                q.view()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, i)| self.app.queue.tagged.contains(i))
+                    .map(|(slot, _)| slot)
+                    .collect::<std::collections::HashSet<_>>(),
+                q.current_index().map(|_| q.view_cursor()),
+            )
         };
+        let grouped = self.app.session_grouped();
+        let index_width = self.app.queue.items.len().to_string().len().max(4) as u16 * 7 + 7;
+        let body = R::new(14, 42, w - 44, visible as u16 * row_h);
+        s.hits.push(HitRegion {
+            rect: body,
+            action: "playlist:body".into(),
+        });
         for (line, row) in self
             .app
             .queue
@@ -1180,68 +1222,201 @@ impl Rack<'_> {
             .rows()
             .iter()
             .skip(self.app.queue.scroll)
-            .take(((s.height - 86) / row_h) as usize)
+            .take(visible)
             .enumerate()
         {
             let index = self.app.queue.scroll + line;
-            let r = R::new(14, 42 + line as u16 * row_h, w - 28, row_h);
-            if index == selected_row {
-                s.fill(r, &native::hex(self.palette().selected), 0);
-            } else if self.skin.hovered.as_deref() == Some(&format!("playlist:{index}")) {
-                s.fill(r, &c.title, 0);
-            }
-            let text = match row {
-                playlist::Row::Track(i) => self
-                    .app
-                    .queue
-                    .items
-                    .get(*i)
-                    .map(|item| {
-                        format!(
-                            "{:02}. {}{}",
-                            i + 1,
-                            if marked.contains(i) { "● " } else { "" },
-                            item.title.as_deref().unwrap_or("Untitled")
-                        )
-                    })
-                    .unwrap_or_default(),
-                playlist::Row::Section { label, tracks, .. } => {
-                    format!("{label} · {tracks} tracks")
+            let r = R::new(body.x, body.y + line as u16 * row_h, body.width, row_h);
+            let action = format!("playlist:{index}");
+            let hovered = self.skin.hovered.as_deref() == Some(&action);
+            if let playlist::Row::Section {
+                label: title,
+                tracks,
+                folded,
+                playing,
+                ..
+            } = row
+            {
+                // Same seam as ASCII: fold control, year/album label, an
+                // uninterrupted rule across the spare space, then track count.
+                if hovered {
+                    s.fill(r, &c.title, 0);
                 }
-            };
-            label(
-                &mut s,
-                c,
-                R::new(r.x + 8, r.y, r.width.saturating_sub(90), r.height),
-                text,
-                font,
-                false,
-            );
-            if let playlist::Row::Track(i) = row {
-                if let Some(seconds) = self
-                    .app
-                    .queue
-                    .items
-                    .get(*i)
-                    .and_then(|item| item.duration_secs)
-                {
-                    classic::label(
-                        &mut s,
-                        R::new(w - 82, r.y, 58, r.height),
-                        format!("{:02}:{:02}", seconds / 60, seconds % 60),
-                        &c.dim,
-                        font,
-                        false,
+                native::heading_depth(
+                    &mut s,
+                    r,
+                    if hovered { &c.title } else { &queue_bg },
+                    &c.ink,
+                );
+                let count = playlist::section_count(*tracks, *folded);
+                let count_w = count.width() as u16 * 7;
+                let count_x = r.x + r.width - count_w - 6;
+                let title_x = r.x + 32;
+                let title_w = count_x.saturating_sub(title_x + 24);
+                let title = crate::ui::panels::player::truncate(title, usize::from(title_w / 7));
+                let rule_x = title_x + title.width() as u16 * 7 + 10;
+                s.fill(R::new(r.x, r.y + row_h / 2, 5, 1), &c.raised, 0);
+                if rule_x + 8 < count_x {
+                    s.fill(
+                        R::new(rule_x, r.y + row_h / 2, count_x - rule_x - 8, 1),
+                        &c.raised,
+                        0,
                     );
                 }
+                classic::label(
+                    &mut s,
+                    R::new(title_x, r.y, title_w, row_h),
+                    title,
+                    if *playing { &c.accent } else { &c.ink },
+                    row_font,
+                    true,
+                );
+                classic::label(
+                    &mut s,
+                    R::new(count_x, r.y, count_w, row_h),
+                    count,
+                    &c.dim,
+                    row_font,
+                    false,
+                );
+                // Pixel geometry keeps both signs centered on the same axis;
+                // font bearings made the minus sit above the section's seam.
+                let fold = R::new(r.x + 7, r.y + 2, 18, 18);
+                s.fill(fold, &c.title, 1);
+                s.nodes.push(Primitive::Border {
+                    rect: fold,
+                    color: c.dim.clone(),
+                    radius: 1,
+                });
+                s.fill(R::new(fold.x + 5, fold.y + 8, 8, 2), &c.ink, 0);
+                if *folded {
+                    s.fill(R::new(fold.x + 8, fold.y + 5, 2, 8), &c.ink, 0);
+                }
+                s.hits.push(HitRegion {
+                    rect: fold,
+                    action: action.clone(),
+                });
+            } else if let playlist::Row::Track(i) = row {
+                let Some(item) = self.app.queue.items.get(*i) else {
+                    continue;
+                };
+                let selected = index == selected_row;
+                let active = playing == Some(*i);
+                if selected {
+                    s.fill(r, &native::hex(self.palette().selected), 0);
+                } else if hovered {
+                    s.fill(r, &c.title, 0);
+                }
+                let ink = if item.unplayable {
+                    &c.dim
+                } else if active {
+                    &c.accent
+                } else {
+                    &c.ink
+                };
+                let x = r.x + 6;
+                classic::label(
+                    &mut s,
+                    R::new(x, r.y, 12, row_h),
+                    if active {
+                        ">"
+                    } else if item.unplayable {
+                        "!"
+                    } else {
+                        ""
+                    },
+                    ink,
+                    row_font,
+                    active,
+                );
+                classic::label(
+                    &mut s,
+                    R::new(x + 14, r.y, index_width, row_h),
+                    format!("{:>4}{}", i + 1, if marked.contains(i) { '+' } else { '.' }),
+                    if selected || active { ink } else { &c.dim },
+                    row_font,
+                    active,
+                );
+                let mut name_x = x + 14 + index_width + 8;
+                if grouped {
+                    s.fill(R::new(name_x, r.y, 1, row_h), &c.raised, 0);
+                    name_x += 10;
+                    classic::label(
+                        &mut s,
+                        R::new(name_x, r.y, 42, row_h),
+                        format!("{:>5}", rows.album_index(*i, item)),
+                        if selected || active { ink } else { &c.dim },
+                        row_font,
+                        active,
+                    );
+                    name_x += 52;
+                }
+                let duration_x = r.x + r.width - 62;
+                classic::label(
+                    &mut s,
+                    R::new(name_x, r.y, duration_x.saturating_sub(name_x + 10), row_h),
+                    playlist::track_name(item),
+                    ink,
+                    row_font,
+                    active,
+                );
+                classic::label(
+                    &mut s,
+                    R::new(duration_x, r.y, 58, row_h),
+                    item.duration_secs
+                        .map(|seconds| crate::ui::digits::clock(seconds as f64))
+                        .unwrap_or_else(|| "-:--".into()),
+                    if selected || active { ink } else { &c.dim },
+                    row_font,
+                    active,
+                );
             }
+            s.hits.push(HitRegion { rect: r, action });
+        }
+        if rows.is_empty() && !self.app.queue.items.is_empty() {
+            classic::label(
+                &mut s,
+                R::new(body.x + 12, body.y + 8, body.width - 24, 28),
+                "No tracks match this filter. Press / to change or clear it.",
+                &c.dim,
+                row_font,
+                false,
+            );
+        }
+        // Shared KIT geometry measures rendered rows (headings and folds
+        // included). Only the thumb is painted, inside the well's border.
+        let track = Rect::new(w - 28, body.y, 16, body.height);
+        let mut bars = Scrollbars::new();
+        bars.record_viewport_with_minimum(
+            (),
+            track,
+            rows.len() as u32,
+            self.app.queue.scroll as u32,
+            visible as u32,
+            24,
+        );
+        if bars.visible().next().is_some() {
             s.hits.push(HitRegion {
-                rect: r,
-                action: format!("playlist:{index}"),
+                rect: R::new(track.x, track.y, track.width, track.height),
+                action: "playlist:scroll-track".into(),
             });
         }
+
         s
     }
+    fn scroll_playlist_to(&mut self, above: u32) {
+        self.app.panels.focus = Focus::Playlist;
+        let rows = &self.app.queue.rows;
+        self.app.queue.scroll =
+            (above as usize).min(rows.len().saturating_sub(self.playlist_visible));
+        self.app.queue.cursor = rows.cursor_after_scroll(
+            self.app.queue.cursor,
+            self.app.queue.scroll,
+            self.playlist_visible,
+        );
+        self.playlist_scrolled = Some(self.app.queue.cursor);
+    }
+
     fn drag_eq(&mut self, x: u16, y: u16) {
         let Some(plot) = self
             .surface
@@ -1325,6 +1500,7 @@ impl Rack<'_> {
         false
     }
     fn action(&mut self, name: &str, x: u16, y: u16) {
+        tracing::debug!(action = name, x, y, "Graphical control activated");
         if let Some(module) = name.strip_prefix("fold:") {
             if !self.folded.remove(module) {
                 self.folded.insert(module.to_owned());
@@ -1560,12 +1736,17 @@ impl Controller for Rack<'_> {
             self.eq_dirty = false;
         }
         self.cells = cells;
+        self.playlist_bars.release();
         self.drag = None;
     }
     fn scene(&mut self, v: Viewport) -> Scene {
         self.viewport = v;
         self.revision += 1;
         self.overlay = false;
+        self.playlist_bars.begin_frame();
+        if self.app.over.playlist_add.is_none() {
+            self.context_anchor = None;
+        }
         self.app.sync_view();
         self.app.prepare_playlist_rows();
         self.app.panels.last_area = Rect::new(0, 0, v.columns, v.rows);
@@ -1620,7 +1801,7 @@ impl Controller for Rack<'_> {
         self.density = density;
         let w = v.width as u16 / density;
         let h = v.height as u16 / density;
-        let mut surface = Surface::new(w, h, native::hex(palette.bg));
+        let mut surface = Surface::new(w, h, "transparent".into());
         if self.skins {
             if let Err(error) = self.skin.prepare(&palette, density, self.radius == 0) {
                 tracing::error!(%error,"Cannot prepare rack artwork");
@@ -1633,10 +1814,10 @@ impl Controller for Rack<'_> {
             cell_height: 16,
         };
         let state = self.player();
-        let player = if self.skins {
+        let mut player = if self.skins {
             self.skin
                 .logical_surface(
-                    w - 16,
+                    w,
                     player_h,
                     graphics,
                     &palette,
@@ -1646,59 +1827,57 @@ impl Controller for Rack<'_> {
                 )
                 .unwrap_or_else(|error| {
                     tracing::error!(%error,"Cannot compose player skin");
-                    native::classic_surface(
-                        w - 16,
-                        player_h,
-                        graphics,
-                        &palette,
-                        &state,
-                        self.radius,
-                    )
+                    native::classic_surface(w, player_h, graphics, &palette, &state, self.radius)
                 })
         } else {
-            native::classic_surface(w - 16, player_h, graphics, &palette, &state, self.radius)
+            native::classic_surface(w, player_h, graphics, &palette, &state, self.radius)
         };
-        append(&mut surface, player, 8, 8, 0, "player");
+        player.hits.insert(
+            0,
+            HitRegion {
+                rect: R::new(0, 0, w, player_h),
+                action: "focus:player".into(),
+            },
+        );
+        if self.app.panels.focus == Focus::Player {
+            native::focus_outline(&mut player, &c.accent, self.radius);
+        }
+        append(&mut surface, player, 0, 0, 0, "player");
         classic::label(
             &mut surface,
-            R::new(w - 86, 15, 64, 24),
+            R::new(w - 78, 7, 64, 24),
             "settings",
             &c.dim,
             font.saturating_sub(2),
             false,
         );
         surface.hits.push(HitRegion {
-            rect: R::new(w - 90, 15, 68, 24),
+            rect: R::new(w - 82, 7, 68, 24),
             action: "settings:player".into(),
         });
-        let top = player_h + 16;
+        let top = player_h + 8;
         self.modules.clear();
-        let mut y = i32::from(top) - i32::from(self.offset);
+        let mut modules = Vec::new();
+        let mut y = i32::from(top);
         if self.app.panels.eq {
-            let s = self.eq(w - 16, &c, font);
+            let s = self.eq(w, &c, font);
             let s = self.fold_module(s, "eq", &c);
             let hh = s.height;
-            self.modules
-                .push((Focus::Equalizer, y + i32::from(self.offset), hh));
-            append(&mut surface, s, 8, y, top, "eq");
+            self.modules.push((Focus::Equalizer, y, hh));
+            modules.push((s, 0, y, "eq"));
             y += i32::from(hh + 8);
         }
-        let module_w = w - 16;
+        let module_w = w;
         let album_y = y;
-        let paired = module_w >= 1280 && self.app.panels.album && self.app.panels.history;
-        let album_w = if paired {
-            (module_w - 32) / 2
-        } else {
-            module_w
-        };
+        let paired = module_w >= 1040 && self.app.panels.album && self.app.panels.history;
+        let album_w = if paired { (module_w - 8) / 2 } else { module_w };
         let mut album_height = 0;
         if self.app.panels.album {
             let s = self.album(album_w, &c, font);
             let s = self.fold_module(s, "album", &c);
             album_height = s.height;
-            self.modules
-                .push((Focus::Album, y + i32::from(self.offset), s.height));
-            append(&mut surface, s, 8, y, top, "album");
+            self.modules.push((Focus::Album, y, s.height));
+            modules.push((s, 0, y, "album"));
             if !paired {
                 y += i32::from(album_height + 8);
             }
@@ -1716,65 +1895,143 @@ impl Controller for Rack<'_> {
             } else {
                 s.height
             };
-            self.modules
-                .push((Focus::History, y + i32::from(self.offset), s.height));
-            append(
-                &mut surface,
-                s,
-                if paired { 16 + album_w } else { 8 },
-                y,
-                top,
-                "activity",
-            );
+            self.modules.push((Focus::History, y, s.height));
+            modules.push((s, if paired { 8 + album_w } else { 0 }, y, "activity"));
             y += i32::from(row_height + 8);
         }
         if self.app.panels.playlist {
-            let s = self.playlist(w - 16, &c, font);
+            // Fill the remaining rack space above the status footer. Use the
+            // unscrolled position so scrolling never changes the module size.
+            let playlist_height = (i32::from(h) - i32::from(font + 20) - y).max(260) as u16;
+            let s = self.playlist(w, playlist_height, &c, font);
             let s = self.fold_module(s, "playlist", &c);
             let hh = s.height;
-            self.modules
-                .push((Focus::Playlist, y + i32::from(self.offset), hh));
-            append(&mut surface, s, 8, y, top, "playlist");
+            self.modules.push((Focus::Playlist, y, hh));
+            modules.push((s, 0, y, "playlist"));
             y += i32::from(hh + 8);
         }
-        self.max_offset =
-            (y + i32::from(self.offset) - i32::from(h) + i32::from(font + 24)).max(0) as u16;
+        self.max_offset = (y - i32::from(h) + i32::from(font + 12)).max(0) as u16;
         self.offset = self.offset.min(self.max_offset);
-        // Footer always stays visible; it uses the same status text as ASCII.
-        self.app
-            .draw_status(Rect::new(0, 0, area.width, 1), &mut buffer);
-        let status = self
+        // Clamp against the new layout before painting, so resizing or closing
+        // a module cannot leave a frame at the previous scroll offset.
+        for (module, x, y, name) in modules {
+            append(
+                &mut surface,
+                module,
+                x,
+                y - i32::from(self.offset),
+                top,
+                name,
+            );
+        }
+        let album_y = album_y - i32::from(self.offset);
+        // Use the ASCII status model, but lay out native segments in pixels.
+        // A flattened terminal row can clip away the right-hand indicators
+        // when the native and terminal font advances differ.
+        let footer_y = h - font - 12;
+        let (shuffled, repeat) = {
+            let queue = self.app.player.queue.lock().unwrap();
+            (queue.shuffled(), queue.repeat())
+        };
+        let segments = status_indicators(
+            self.app.vis.mode,
+            shuffled,
+            repeat,
+            self.app.player.crossfade(),
+        );
+        let advance = 8;
+        let status_width = indicator_width(&segments) * advance;
+        let status_x = w.saturating_sub(status_width + 8);
+        classic::label(
+            &mut surface,
+            R::new(8, footer_y, 64, font + 12),
+            "? help",
+            &c.accent,
+            font,
+            false,
+        );
+        let theme = format!(
+            "Theme: {}",
+            if self.reference_colors {
+                "Classic"
+            } else {
+                &self.app.look.theme.name
+            }
+        );
+        let theme_width = (theme.width() as u16 * advance).min(status_x.saturating_sub(104));
+        classic::label(
+            &mut surface,
+            R::new(88, footer_y, theme_width, font + 12),
+            theme,
+            &c.ink,
+            font,
+            false,
+        );
+        let message_x = 88 + theme_width + 24;
+        let mut x = status_x;
+        for (index, (text, lit)) in segments.iter().enumerate() {
+            if index > 0 {
+                let width = SEPARATOR.width() as u16 * advance;
+                classic::label(
+                    &mut surface,
+                    R::new(x, footer_y, width, font + 12),
+                    SEPARATOR,
+                    &c.dim,
+                    font,
+                    false,
+                );
+                x += width;
+            }
+            let width = text.width() as u16 * advance;
+            let ink = hex(if *lit {
+                self.app.look.theme.transport_toggle_on_fg
+            } else {
+                self.app.look.theme.transport_toggle_off_fg
+            });
+            classic::label(
+                &mut surface,
+                R::new(x, footer_y, width, font + 12),
+                text,
+                &ink,
+                font,
+                false,
+            );
+            x += width;
+        }
+        if let Some((status, _)) = self
             .app
             .status
             .as_ref()
             .filter(|(_, t)| t.elapsed() < Duration::from_secs(4))
-            .map(|(msg, _)| msg.clone())
-            .unwrap_or_else(|| {
-                (0..area.width)
-                    .map(|x| buffer[(x, 0)].symbol())
-                    .collect::<String>()
-            });
-        surface.fill(
-            R::new(0, h - font - 12, w, font + 12),
-            &native::hex(self.palette().bg),
-            0,
-        );
-        label(
-            &mut surface,
-            &c,
-            R::new(12, h - font - 12, w - 24, font + 12),
-            status,
-            font,
-            false,
-        );
+        {
+            classic::label(
+                &mut surface,
+                R::new(
+                    message_x,
+                    footer_y,
+                    status_x.saturating_sub(message_x + 16),
+                    font + 12,
+                ),
+                status,
+                &c.dim,
+                font,
+                false,
+            );
+        }
         surface.hits.push(HitRegion {
-            rect: R::new(12, h - font - 12, font * 6, font + 12),
+            rect: R::new(0, footer_y, 72, font + 12),
             action: "help".into(),
         });
-        if self.app.overlay_open() {
+        if self.app.overlay_open()
+            && !self.filter_popup(&mut surface, &c)
+            && !self.list_popup(&mut surface, &c)
+        {
             self.overlay = true;
             let mut modal = starkit::ratatui::buffer::Buffer::empty(area);
-            self.app.draw_overlays(area, &mut modal);
+            // Ordinary mouse dispatch uses the padded application area.
+            // Render the source cells there too, including at 2x density.
+            let modal_area = self.app.regions(area).map_or(area, |regions| regions.area);
+            self.app.draw_overlays(modal_area, &mut modal);
             let cw = f64::from(w) / f64::from(v.columns.max(1));
             let ch = f64::from(h) / f64::from(v.rows.max(1));
             let meaningful = |cell: &starkit::ratatui::buffer::Cell| {
@@ -1860,6 +2117,33 @@ impl Controller for Rack<'_> {
         if density > 1 {
             surface = surface.at_density(density).expect("bounded rack density");
         }
+        if let Some(hit) = surface
+            .hits
+            .iter()
+            .find(|h| h.action == "playlist:scroll-track")
+        {
+            let r = hit.rect;
+            self.playlist_bars.record_viewport_with_minimum(
+                (),
+                Rect::new(r.x, r.y, r.width, r.height),
+                self.app.queue.rows.len() as u32,
+                self.app.queue.scroll as u32,
+                self.playlist_visible as u32,
+                24 * density,
+            );
+            if let Some((track, thumb)) = self.playlist_bars.visible().next() {
+                surface.fill(
+                    R::new(
+                        track.x + 6 * density,
+                        track.y + thumb.start,
+                        4 * density,
+                        thumb.len,
+                    ),
+                    &c.accent,
+                    2 * density,
+                );
+            }
+        }
         // Odd viewport dimensions leave a one-pixel gutter at 2x density.
         // Pad the canvas instead of scaling every fixed atlas crop to fit it.
         surface.width = v.width as u16;
@@ -1880,10 +2164,9 @@ impl Controller for Rack<'_> {
         });
         if !self.overlay
             && self.app.panels.album
-            && album_w > 600
             && !self.folded.contains("album")
             && album_y + 46 >= i32::from(top)
-            && album_y + 226 < i32::from(h - font - 12)
+            && album_y + 46 + if album_w > 600 { 180 } else { 128 } < i32::from(h - font - 12)
         {
             if let Some(album) = self
                 .app
@@ -1907,7 +2190,8 @@ impl Controller for Rack<'_> {
                             .map(|png| (serial, png));
                     }
                     if let Some((_, png)) = &self.cover_cache {
-                        let xx = 24u16 * density;
+                        let cover = if album_w > 600 { 180 } else { 128 };
+                        let xx = 16u16 * density;
                         let yy = (album_y + 46) as u16 * density;
                         let to_cell = |r: R| starkit::terminal_graphics::protocol::Rect {
                             x: (u32::from(r.x) * u32::from(v.columns) / v.width) as u16,
@@ -1918,14 +2202,14 @@ impl Controller for Rack<'_> {
                                 as u16,
                         };
                         scene.components.push(Component::Image {
-                            rect: to_cell(R::new(xx, yy, 180 * density, 180 * density)),
+                            rect: to_cell(R::new(xx, yy, cover * density, cover * density)),
                             id: format!("album-{serial}"),
                             png: Some(png.clone()),
                             scale: Default::default(),
                             zoom: 100,
                         });
                         surface.hits.push(HitRegion {
-                            rect: R::new(xx, yy, 180 * density, 180 * density),
+                            rect: R::new(xx, yy, cover * density, cover * density),
                             action: "cover-open".into(),
                         });
                     }
@@ -1968,7 +2252,10 @@ impl Controller for Rack<'_> {
         )
             .hash(&mut scroll);
         scene.scroll_interaction = Some(scroll.finish());
-        scene.background = native::hex(self.palette().bg);
+        // Preserve the terminal around pane borders, between modules and in
+        // the footer; only the panes themselves own opaque themed backgrounds.
+        scene.background = "transparent".into();
+        scene.spans.clear();
         scene.foreground = native::hex(self.palette().fg);
         scene.accent = native::hex(self.palette().accent);
         scene.border = native::hex(self.palette().border);
@@ -2017,7 +2304,7 @@ impl Controller for Rack<'_> {
                                 .modules
                                 .first()
                                 .map(|(_, start, _)| *start as u16)
-                                .unwrap_or(246);
+                                .unwrap_or(238);
                             let end = *start + i32::from(*height);
                             if *start - i32::from(self.offset) < i32::from(top) {
                                 self.offset = (*start - i32::from(top)).max(0) as u16;
@@ -2037,7 +2324,10 @@ impl Controller for Rack<'_> {
                 }
             }
             Input::Paste { text } => {
-                if !self.app.import_artist_paste(&text) && !self.app.auth_paste(&text) {
+                if !self.app.filter_paste(&text)
+                    && !self.app.import_artist_paste(&text)
+                    && !self.app.auth_paste(&text)
+                {
                     self.app.eq_value_paste(&text);
                 }
             }
@@ -2049,15 +2339,27 @@ impl Controller for Rack<'_> {
                 pixel,
                 modifiers,
             } => {
+                if action != "move" {
+                    tracing::debug!(%action, button, x, y, ?pixel, overlay = self.overlay, "Graphical pointer input");
+                }
+                if self.overlay
+                    && (self.filter_pointer(&action, button, x, y, pixel)
+                        || self.popup_pointer(&action, button, x, y, pixel))
+                {
+                    return;
+                }
                 if self.surface.is_none() || self.overlay {
+                    // KIT's pointer protocol is zero based: left, right, middle.
+                    let mouse_button = match button {
+                        0 => MouseButton::Left,
+                        1 => MouseButton::Right,
+                        2 => MouseButton::Middle,
+                        _ => return,
+                    };
                     let kind = match action.as_str() {
-                        "down" => MouseEventKind::Down(if button == 1 {
-                            MouseButton::Left
-                        } else {
-                            MouseButton::Right
-                        }),
-                        "up" => MouseEventKind::Up(MouseButton::Left),
-                        "drag" => MouseEventKind::Drag(MouseButton::Left),
+                        "down" => MouseEventKind::Down(mouse_button),
+                        "up" => MouseEventKind::Up(mouse_button),
+                        "drag" => MouseEventKind::Drag(mouse_button),
                         "move" => MouseEventKind::Moved,
                         "scroll_up" => MouseEventKind::ScrollUp,
                         "scroll_down" => MouseEventKind::ScrollDown,
@@ -2078,6 +2380,42 @@ impl Controller for Rack<'_> {
                     u32::from(x) * self.viewport.width / u32::from(self.viewport.columns.max(1)),
                     u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
                 ]);
+                if action == "down" {
+                    if let Some(name) = self
+                        .surface
+                        .as_ref()
+                        .and_then(|s| {
+                            s.hits.iter().find(|hit| {
+                                hit.action.starts_with("focus:")
+                                    && hit.rect.contains(px as u16, py as u16)
+                            })
+                        })
+                        .map(|hit| hit.action.as_str())
+                    {
+                        self.app.panels.focus = match name {
+                            "focus:player" => Focus::Player,
+                            "focus:eq" => Focus::Equalizer,
+                            "focus:album" => Focus::Album,
+                            "focus:activity" => Focus::History,
+                            _ => Focus::Playlist,
+                        };
+                    }
+                }
+                if action == "down" && button == 0 {
+                    if let Some(((), above)) = self.playlist_bars.press(px as u16, py as u16) {
+                        self.scroll_playlist_to(above);
+                        return;
+                    }
+                }
+                if action == "drag" && button == 0 {
+                    if let Some(((), above)) = self.playlist_bars.drag(py as u16) {
+                        self.scroll_playlist_to(above);
+                        return;
+                    }
+                }
+                if action == "up" && self.playlist_bars.release() {
+                    return;
+                }
                 if matches!(action.as_str(), "scroll_up" | "scroll_down") {
                     if let Some(index) = self
                         .surface
@@ -2110,11 +2448,10 @@ impl Controller for Rack<'_> {
                         .as_deref()
                         .is_some_and(|a| a.starts_with("playlist:"))
                     {
-                        self.app.panels.focus = Focus::Playlist;
-                        self.app.handle(if action == "scroll_up" {
-                            Action::CursorUp
+                        self.scroll_playlist_to(if action == "scroll_up" {
+                            self.app.queue.scroll.saturating_sub(3) as u32
                         } else {
-                            Action::CursorDown
+                            self.app.queue.scroll.saturating_add(3) as u32
                         });
                         return;
                     }
@@ -2128,7 +2465,7 @@ impl Controller for Rack<'_> {
                                 self.app.panels.history_scroll.saturating_sub(1);
                         } else {
                             self.app.panels.history_scroll = (self.app.panels.history_scroll + 1)
-                                .min(self.app.activity.snapshot().recent.len().saturating_sub(4));
+                                .min(self.app.activity.snapshot().recent.len().saturating_sub(5));
                         }
                         return;
                     }
@@ -2147,14 +2484,36 @@ impl Controller for Rack<'_> {
                     .and_then(|s| s.hit(px as u16, py as u16))
                     .map(|h| h.action.clone());
                 self.skin.hovered = hit.clone();
-                if action == "down" && button == 1 {
+                if action == "down" && button == 0 {
                     self.skin.pressed = hit.clone();
                     self.drag = hit.clone();
-                    if let Some(name) = hit {
-                        self.action(&name, px as u16, py as u16);
+                    if let Some(name) = hit.as_deref() {
+                        self.action(name, px as u16, py as u16);
                     }
                 }
-                if action == "drag" {
+                if action == "down" && button == 1 {
+                    if let Some(index) = hit
+                        .as_deref()
+                        .and_then(|name| name.strip_prefix("playlist:"))
+                        .and_then(|row| row.parse::<usize>().ok())
+                        .and_then(|row| match self.app.queue.rows.rows().get(row) {
+                            Some(playlist::Row::Track(index)) => Some(*index),
+                            _ => None,
+                        })
+                    {
+                        if let Some(source) = self.app.queue.items.get(index).cloned() {
+                            self.context_anchor = Some([px, py]);
+                            self.app.panels.focus = Focus::Playlist;
+                            self.app.set_cursor(index);
+                            if self.app.import.is_some() {
+                                self.app.open_import_album_menu(source, index);
+                            } else {
+                                self.app.open_track_menu(source, index);
+                            }
+                        }
+                    }
+                }
+                if action == "drag" && button == 0 {
                     if let Some(name) = self.drag.clone() {
                         if matches!(name.as_str(), "seek" | "volume") {
                             self.action(&name, px as u16, py as u16);
@@ -2175,6 +2534,7 @@ impl Controller for Rack<'_> {
             }
             Input::Detach => self.app.quit = true,
             Input::CancelPointer => {
+                self.playlist_bars.release();
                 self.skin.pressed = None;
                 self.skin.hovered = None;
                 if self.eq_dirty {
@@ -2257,6 +2617,10 @@ impl App {
             drag: None,
             max_offset: 0,
             overlay: false,
+            context_anchor: None,
+            playlist_bars: Scrollbars::new(),
+            playlist_visible: 0,
+            playlist_scrolled: None,
             cover_cache: None,
             modules: Vec::new(),
             skin: crate::embed::skin::PlayerSkin::new()?,
@@ -2317,6 +2681,110 @@ impl App {
             rows: 71,
             generation: 0,
         };
+        let playlist_geometry = |rack: &Rack<'_>| {
+            rack.modules
+                .iter()
+                .find(|(focus, _, _)| *focus == Focus::Playlist)
+                .map(|(_, y, height)| (*y, *height))
+                .unwrap()
+        };
+        // Album and Activity share a row whenever both readable modules fit,
+        // including at Retina density. Compact Album retains its artwork.
+        for density in [1, 2] {
+            for width in [1000, 1100, 1400] {
+                let viewport = Viewport {
+                    width: width * density,
+                    height: 1800 * density,
+                    columns: 140,
+                    rows: 90,
+                    generation: 0,
+                };
+                let scene = rack.scene(viewport);
+                let module_y = |focus| rack.modules.iter().find(|(f, _, _)| *f == focus).unwrap().1;
+                assert_eq!(
+                    module_y(Focus::Album) == module_y(Focus::History),
+                    width >= 1056
+                );
+                if width == 1100 {
+                    starkit::terminal_graphics::renderer::render_reference(&scene)?
+                        .save(output.join(format!("album-activity-paired-{density}x.png")))?;
+                }
+            }
+        }
+        let activity = rack.activity(520, &crate::embed::skin::colors(&rack.palette()), 12);
+        let activity_text = activity
+            .nodes
+            .iter()
+            .filter_map(|n| match n {
+                Primitive::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(activity_text.contains("RECENT LISTENS"));
+        for removed in ["LOCAL HISTORY", "Last.fm", "ListenBrainz", "Not connected"] {
+            assert!(!activity_text.contains(removed));
+        }
+        for (width, height, rows) in [(1400, 2000, 100), (2737, 2401, 70)] {
+            let v = Viewport {
+                width,
+                height,
+                columns: 171,
+                rows,
+                generation: 0,
+            };
+            rack.scene(v);
+            let (start, expanded_height) = playlist_geometry(&rack);
+            assert!(expanded_height > 260);
+            assert_eq!(
+                start + i32::from(expanded_height),
+                (height / u32::from(rack.density)) as i32 - 32
+            );
+            assert_eq!(rack.max_offset, 0);
+            rack.app.panels.eq = false;
+            rack.scene(v);
+            assert_eq!(playlist_geometry(&rack).1, expanded_height + 302);
+            rack.app.panels.eq = true;
+            rack.folded.insert("eq".into());
+            rack.scene(v);
+            assert_eq!(playlist_geometry(&rack).1, expanded_height + 256);
+            rack.folded.remove("eq");
+            rack.folded.insert("playlist".into());
+            rack.scene(v);
+            assert_eq!(playlist_geometry(&rack).1, 38);
+            rack.folded.remove("playlist");
+        }
+        let compact = Viewport {
+            width: 900,
+            height: 700,
+            columns: 90,
+            rows: 35,
+            generation: 0,
+        };
+        rack.scene(compact);
+        assert_eq!(playlist_geometry(&rack).1, 260);
+        rack.offset = 96;
+        rack.scene(compact);
+        assert_eq!(playlist_geometry(&rack).1, 260);
+        // A resize must paint at the newly clamped offset immediately.
+        let tall = Viewport {
+            width: 1400,
+            height: 2000,
+            columns: 140,
+            rows: 100,
+            generation: 0,
+        };
+        rack.scene(tall);
+        assert_eq!(rack.offset, 0);
+        let (start, height) = playlist_geometry(&rack);
+        let toolbar = rack
+            .surface
+            .as_ref()
+            .unwrap()
+            .hits
+            .iter()
+            .find(|hit| hit.action == "queue-remove")
+            .unwrap();
+        assert_eq!(i32::from(toolbar.rect.y), start + i32::from(height) - 35);
         // The production terminal uses real pixel dimensions, including tall,
         // odd-sized and 4K windows. Fixed glyphs must never be rescaled to fit.
         for (width, height, rows) in [(1400, 2000, 100), (2737, 1801, 56), (3840, 2160, 67)] {
@@ -2339,6 +2807,13 @@ impl App {
             starkit::terminal_graphics::renderer::render_reference(&scene)?;
         }
         let selected_scene = rack.scene(selected_view);
+        assert!(rack
+            .surface
+            .as_ref()
+            .unwrap()
+            .nodes
+            .iter()
+            .any(|node| matches!(node, Primitive::Text { text, .. } if text == "Theme: Classic")));
         starkit::terminal_graphics::renderer::render_reference(&selected_scene)?
             .save(output.join("selected-rack.png"))?;
         rack.reference_colors = false;
@@ -2355,13 +2830,43 @@ impl App {
                     generation: 0,
                 };
                 let scene = rack.scene(v);
+                let theme_label = format!("Theme: {}", rack.app.look.theme.name);
+                assert!(rack.surface.as_ref().unwrap().nodes.iter().any(|node| {
+                    matches!(node, Primitive::Text { text, rect, .. }
+                        if text == &theme_label && usize::from(rect.width) >= theme_label.width() * 8)
+                }));
+                let status_area = Rect::new(0, 0, columns, 1);
+                let mut status = starkit::ratatui::buffer::Buffer::empty(status_area);
+                rack.app.draw_status(status_area, &mut status);
+                let status_text = (0..columns)
+                    .map(|x| status[(x, 0)].symbol())
+                    .collect::<String>();
+                assert!(status_text.contains(&theme_label));
                 for component in &scene.components {
                     if let Component::Surface { surface, .. } = component {
                         surface.validate()?;
                     }
                 }
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
-                    .save(output.join(format!("{id}-{name}.png")))?;
+                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                let theme_rect = rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .nodes
+                    .iter()
+                    .find_map(|node| match node {
+                        Primitive::Text { text, rect, .. } if text == &theme_label => Some(*rect),
+                        _ => None,
+                    })
+                    .unwrap();
+                assert!(
+                    (theme_rect.y..theme_rect.y + theme_rect.height).any(|y| {
+                        (theme_rect.x..theme_rect.x + theme_rect.width)
+                            .any(|x| image.get_pixel(u32::from(x), u32::from(y))[3] > 0)
+                    }),
+                    "{id}/{name}: theme footer must remain visible on a transparent canvas"
+                );
+                image.save(output.join(format!("{id}-{name}.png")))?;
                 // The player stays at the same physical position while the
                 // lower rack scrolls, and every target remains inside bounds.
                 let player_hit = rack
@@ -2409,7 +2914,7 @@ impl App {
                 .find(|h| h.action == "play")
                 .unwrap()
                 .rect,
-            R::new(118, 390, 58, 58)
+            R::new(102, 374, 58, 58)
         );
         rack.reference_colors = true;
         starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?
@@ -2535,7 +3040,7 @@ impl App {
             .rect;
         rack.input(Input::Pointer {
             action: "down".into(),
-            button: 1,
+            button: 0,
             x: hit.x / 10,
             y: hit.y / 20,
             pixel: Some([u32::from(hit.x + 2), u32::from(hit.y + 2)]),
@@ -2562,6 +3067,904 @@ impl App {
         });
         rack.scene(v);
         assert!(!rack.overlay);
+        // Use the producer's actual button numbers (left = 0), through the
+        // complete pointer route. Calling action() directly missed the wire
+        // mismatch, and a header-wide fold hit used to swallow these links.
+        fn click(rack: &mut Rack<'_>, name: &str) {
+            click_button(rack, name, 0);
+        }
+        fn click_button(rack: &mut Rack<'_>, name: &str, button: u8) {
+            let surface = rack.surface.as_ref().unwrap();
+            let rect = surface
+                .hits
+                .iter()
+                .find(|hit| hit.action == name)
+                .unwrap()
+                .rect;
+            let (x, y) = (rect.x + rect.width / 2, rect.y + rect.height / 2);
+            assert_eq!(surface.hit(x, y).unwrap().action, name);
+            rack.input(Input::Pointer {
+                action: "down".into(),
+                button,
+                x: (u32::from(x) * u32::from(rack.viewport.columns) / rack.viewport.width) as u16,
+                y: (u32::from(y) * u32::from(rack.viewport.rows) / rack.viewport.height) as u16,
+                pixel: Some([u32::from(x), u32::from(y)]),
+                modifiers: 0,
+            });
+        }
+        rack.app.player.queue.lock().unwrap().set_shuffle(false);
+        for density in [1, 2] {
+            let viewport = Viewport {
+                width: 1400 * density,
+                height: 1800 * density,
+                columns: 140,
+                rows: 90,
+                generation: 0,
+            };
+            rack.app.panels.padding_x = 3;
+            rack.app.panels.padding_y = 2;
+            for (name, focus) in [
+                ("settings:player", Focus::Player),
+                ("settings:eq", Focus::Equalizer),
+                ("settings:album", Focus::Album),
+                ("settings:activity", Focus::History),
+                ("settings:playlist", Focus::Playlist),
+            ] {
+                rack.scene(viewport);
+                click(&mut rack, name);
+                let settings = rack.app.over.settings.as_ref().expect(name);
+                assert_eq!(settings.panel, focus);
+                assert_eq!(settings.kind, Overlay::Settings);
+                assert!(rack.folded.is_empty());
+                rack.scene(viewport);
+                assert!(rack.overlay);
+                rack.input(Input::Key {
+                    code: "escape".into(),
+                    modifiers: 0,
+                });
+            }
+            rack.scene(viewport);
+            // Catalog links also share the foldable header, but this check
+            // must not launch a browser or contact a catalog service.
+            for name in ["catalog-artist", "catalog-album"] {
+                let surface = rack.surface.as_ref().unwrap();
+                let rect = surface
+                    .hits
+                    .iter()
+                    .find(|hit| hit.action == name)
+                    .unwrap()
+                    .rect;
+                assert_eq!(
+                    surface
+                        .hit(rect.x + rect.width / 2, rect.y + rect.height / 2)
+                        .unwrap()
+                        .action,
+                    name
+                );
+            }
+            click(&mut rack, "gravity");
+            assert_eq!(
+                rack.app.over.settings.as_ref().unwrap().kind,
+                Overlay::Gravity
+            );
+            rack.input(Input::Key {
+                code: "escape".into(),
+                modifiers: 0,
+            });
+            rack.scene(viewport);
+            click(&mut rack, "sorting");
+            assert_eq!(
+                rack.app.over.settings.as_ref().unwrap().kind,
+                Overlay::Filter
+            );
+            rack.scene(viewport);
+            let grouping = rack.app.player.queue.lock().unwrap().grouping();
+            click(&mut rack, "popup:row:0");
+            assert_ne!(rack.app.player.queue.lock().unwrap().grouping(), grouping);
+            rack.input(Input::Key {
+                code: "escape".into(),
+                modifiers: 0,
+            });
+            rack.scene(viewport);
+            let enabled = rack.app.eq.enabled;
+            click(&mut rack, "eq-enabled");
+            assert_ne!(rack.app.eq.enabled, enabled);
+            let volume = rack.app.player.volume();
+            rack.app.player.set_volume(0.1);
+            click(&mut rack, "volume");
+            assert!((rack.app.player.volume() - 0.5).abs() < 0.05);
+            rack.app.player.set_volume(volume);
+        }
+        rack.app.panels.padding_x = 0;
+        rack.app.panels.padding_y = 0;
+        rack.scene(v);
+        // The actual worker consumes transport commands even without a device.
+        // Exercise pause, resume and stop rather than only checking hit bounds.
+        fn wait_state(rack: &Rack<'_>, expected: PlayState) {
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while rack.app.player.state.state() != expected && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(rack.app.player.state.state(), expected);
+        }
+        click(&mut rack, "pause");
+        wait_state(&rack, PlayState::Paused);
+        rack.scene(v);
+        click(&mut rack, "play");
+        wait_state(&rack, PlayState::Playing);
+        rack.scene(v);
+        click(&mut rack, "stop");
+        wait_state(&rack, PlayState::Stopped);
+
+        // Exercise the displayed groups and track context actions, not just
+        // the sorting switch. Interleaved albums must become two real groups
+        // while retaining the current decoder's queue occurrence.
+        let grouped_items = (0..6)
+            .map(|i| {
+                let mut item = QueueItem::new(crate::playlist::uri::TrackUri::parse(&format!(
+                    "album-{}/track-{i}.flac",
+                    i % 2
+                )));
+                item.title = Some(format!("Song {i}"));
+                item.artist = Some("Artist".into());
+                item.album = Some(
+                    if i % 2 == 0 {
+                        "First album"
+                    } else {
+                        "Second album"
+                    }
+                    .into(),
+                );
+                item.year = Some(if i % 2 == 0 { 1990 } else { 2000 });
+                item.track_no = Some(i + 1);
+                item
+            })
+            .collect();
+        {
+            let mut queue = rack.app.player.queue.lock().unwrap();
+            queue.set_tracks(grouped_items);
+            queue.set_grouping(None);
+            queue.set_shuffle(true);
+        }
+        rack.app.queue.folded.clear();
+        let current = rack.app.player.current_item().unwrap().uri;
+        let viewport = Viewport {
+            width: 1400,
+            height: 1800,
+            columns: 140,
+            rows: 90,
+            generation: 0,
+        };
+        rack.scene(viewport);
+        click(&mut rack, "sorting");
+        rack.scene(viewport);
+        click(&mut rack, "popup:row:0");
+        rack.scene(viewport);
+        assert!(rack.app.session_grouped());
+        assert!(!rack.app.player.queue.lock().unwrap().shuffled());
+        assert_eq!(rack.app.player.current_item().unwrap().uri, current);
+        let albums = |rack: &Rack<'_>| {
+            rack.app
+                .queue
+                .rows
+                .rows()
+                .iter()
+                .filter_map(|row| {
+                    if let playlist::Row::Section { label, .. } = row {
+                        Some(label.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let ascending = albums(&rack);
+        assert_eq!(ascending.len(), 2);
+        assert!(ascending[0].contains("First album"));
+        assert!(ascending[1].contains("Second album"));
+        click(&mut rack, "popup:row:1");
+        rack.scene(viewport);
+        assert_eq!(
+            albums(&rack),
+            ascending.into_iter().rev().collect::<Vec<_>>()
+        );
+        click(&mut rack, "popup:close");
+        let grouped_scene = rack.scene(viewport);
+        starkit::terminal_graphics::renderer::render_reference(&grouped_scene)?
+            .save(output.join("album-grouping.png"))?;
+        // Check actual raster colors and mouse focus after composition and
+        // density scaling, including paired panes and their blank interiors.
+        let previous_theme = rack.app.look.theme.clone();
+        let previous_reference = rack.reference_colors;
+        rack.app.look.theme = crate::theme::builtin::load("kanagawa").unwrap();
+        rack.reference_colors = false;
+        for density in [1, 2] {
+            let viewport = Viewport {
+                width: 1400 * density,
+                height: 1800 * density,
+                columns: 140,
+                rows: 90,
+                generation: 0,
+            };
+            for (name, focus) in [
+                ("player", Focus::Player),
+                ("eq", Focus::Equalizer),
+                ("album", Focus::Album),
+                ("activity", Focus::History),
+                ("playlist", Focus::Playlist),
+            ] {
+                rack.scene(viewport);
+                let rect = rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .hits
+                    .iter()
+                    .find(|h| h.action == format!("focus:{name}"))
+                    .unwrap()
+                    .rect;
+                let pixel = [
+                    u32::from(rect.x + rect.width - 5 * density as u16),
+                    u32::from(rect.y + rect.height - 5 * density as u16),
+                ];
+                rack.input(Input::Pointer {
+                    action: "down".into(),
+                    button: 0,
+                    x: 0,
+                    y: 0,
+                    pixel: Some(pixel),
+                    modifiers: 0,
+                });
+                assert_eq!(rack.app.panels.focus, focus);
+                let scene = rack.scene(viewport);
+                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                let accent = rack.palette().accent;
+                assert_eq!(
+                    image
+                        .get_pixel(
+                            u32::from(rect.x + rect.width / 2),
+                            u32::from(rect.y) + density
+                        )
+                        .0,
+                    [accent[0], accent[1], accent[2], 255]
+                );
+                if name == "playlist" {
+                    image.save(output.join(format!("kanagawa-grouped-focus-{density}x.png")))?;
+                }
+            }
+        }
+        rack.app.look.theme = previous_theme;
+        rack.reference_colors = previous_reference;
+        rack.scene(viewport);
+        assert_eq!(rack.app.queue.rows.rows().len(), 8);
+        click(&mut rack, "playlist:0");
+        rack.scene(viewport);
+        assert_eq!(
+            rack.app.queue.rows.rows().len(),
+            5,
+            "fold only the clicked album"
+        );
+        click(&mut rack, "playlist:0");
+        rack.scene(viewport);
+        assert_eq!(rack.app.queue.rows.rows().len(), 8);
+        let source = match rack.app.queue.rows.rows()[2] {
+            playlist::Row::Track(i) => rack.app.queue.items[i].clone(),
+            _ => panic!("expected track"),
+        };
+        click_button(&mut rack, "playlist:2", 1);
+        let context_scene = rack.scene(viewport);
+        assert_eq!(
+            rack.app.over.playlist_add.as_ref().unwrap().source.uri,
+            source.uri
+        );
+        for i in 0..6 {
+            assert!(rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .any(|h| h.action == format!("popup:row:{i}")));
+        }
+        starkit::terminal_graphics::renderer::render_reference(&context_scene)?
+            .save(output.join("track-context-menu.png"))?;
+        // Pointer anchoring, edge flipping, hover and outside dismissal must
+        // work at both physical pixel densities without moving the playlist.
+        for density in [1, 2] {
+            let viewport = Viewport {
+                width: 900 * density,
+                height: 700 * density,
+                columns: 100,
+                rows: 35,
+                generation: 0,
+            };
+            for [x, y] in [[100, 100], [895, 695]] {
+                rack.context_anchor = Some([x * density, y * density]);
+                let scene = rack.scene(viewport);
+                let surface = rack.surface.as_ref().unwrap();
+                let body = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "popup:body")
+                    .unwrap()
+                    .rect;
+                assert!(u32::from(body.x + body.width) <= viewport.width);
+                assert!(u32::from(body.y + body.height) <= viewport.height);
+                if x == 100 {
+                    assert_eq!(u32::from(body.x), (x + 2) * density);
+                } else {
+                    assert!(u32::from(body.x) < x * density);
+                }
+                let row = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "popup:row:4")
+                    .unwrap()
+                    .rect;
+                rack.input(Input::Pointer {
+                    action: "move".into(),
+                    button: 0,
+                    x: 0,
+                    y: 0,
+                    pixel: Some([u32::from(row.x + 8), u32::from(row.y + 8)]),
+                    modifiers: 0,
+                });
+                assert_eq!(rack.app.over.playlist_add.as_ref().unwrap().cursor, 4);
+                assert_eq!(
+                    rack.app.player.queue.lock().unwrap().len(),
+                    6,
+                    "hover never executes an action"
+                );
+                if x == 895 {
+                    starkit::terminal_graphics::renderer::render_reference(&scene)?
+                        .save(output.join(format!("track-context-edge-{density}x.png")))?;
+                }
+            }
+        }
+        rack.scene(viewport);
+        let view_index = rack.app.over.playlist_add.as_ref().unwrap().view_index;
+        rack.input(Input::Pointer {
+            action: "down".into(),
+            button: 0,
+            x: 0,
+            y: 0,
+            pixel: Some([0, 0]),
+            modifiers: 0,
+        });
+        assert!(rack.app.over.playlist_add.is_none());
+        rack.app.open_track_menu(source.clone(), view_index);
+        rack.scene(viewport);
+        click(&mut rack, "popup:row:1");
+        assert!(rack.app.over.playlist_add.is_none());
+        assert_eq!(rack.app.player.queue.lock().unwrap().len(), 5);
+        assert!(!rack
+            .app
+            .player
+            .queue
+            .lock()
+            .unwrap()
+            .tracks()
+            .iter()
+            .any(|i| i.uri == source.uri));
+
+        // Long values must survive native layout in full, and the final row
+        // of a scrolling menu must remain reachable at either pixel density.
+        for density in [1, 2] {
+            let viewport = Viewport {
+                width: 800 * density,
+                height: 600 * density,
+                columns: 100,
+                rows: 30,
+                generation: 0,
+            };
+            rack.app.open_settings(Focus::Equalizer);
+            let state = rack.app.over.settings.as_mut().unwrap();
+            state.title =
+                "A long equalizer profile title that must wrap rather than disappear".into();
+            state.rows = (0..40)
+                .map(|i| {
+                    settings::Row::setting(
+                        &format!("Setting {i}"),
+                        format!("{}: complete-value-{i}", "long profile value ".repeat(6)),
+                    )
+                })
+                .collect();
+            state.items = vec![Setting::Visualizer; 40];
+            state.cursor = 39;
+            let scene = rack.scene(viewport);
+            let surface = rack.surface.as_ref().unwrap();
+            let texts = surface
+                .nodes
+                .iter()
+                .filter_map(|node| {
+                    if let Primitive::Text { text, .. } = node {
+                        Some(text.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<String>();
+            assert!(texts.contains("complete-value-39"));
+            assert!(surface.hits.iter().any(|h| h.action == "popup:row:39"));
+            assert!(rack.app.over.settings.as_ref().unwrap().scroll > 0);
+            starkit::terminal_graphics::renderer::render_reference(&scene)?
+                .save(output.join(format!("settings-long-values-{density}x.png")))?;
+            click(&mut rack, "popup:close");
+        }
+        // Graphical playlist uses the ASCII section/track model, including
+        // disc numbers, undated records and untagged tracks at the bottom.
+        let mut items = Vec::new();
+        for (album, year, disc, number) in [
+            (None, Some(1901), None, None),
+            (Some("Later album"), Some(2005), Some(1), Some(1)),
+            (Some("Early album"), Some(1990), Some(2), Some(2)),
+            (Some("Undated album"), None, None, Some(1)),
+            (Some("Early album"), Some(1990), Some(1), Some(1)),
+        ] {
+            let mut item = QueueItem::new(crate::playlist::uri::TrackUri::parse(&format!(
+                "section-{}.flac",
+                items.len()
+            )));
+            item.album = album.map(str::to_owned);
+            item.year = year;
+            item.disc_no = disc;
+            item.track_no = number;
+            item.artist = Some("Artist".into());
+            item.title = Some(format!("Song {}", items.len()));
+            items.push(item);
+        }
+        {
+            let mut queue = rack.app.player.queue.lock().unwrap();
+            queue.set_tracks(items);
+            queue.set_shuffle(false);
+            queue.set_grouping(Some(false));
+        }
+        rack.app.queue.cursor = 0;
+        rack.app.queue.scroll = 0;
+        rack.app.queue.folded.clear();
+        rack.app.queue.fold_gen += 1;
+        rack.playlist_scrolled = None;
+        rack.offset = 0;
+        for density in [1, 2] {
+            let v = Viewport {
+                width: 1400 * density,
+                height: 1800 * density,
+                columns: 140,
+                rows: 90,
+                generation: 0,
+            };
+            let scene = rack.scene(v);
+            assert_eq!(
+                albums(&rack),
+                [
+                    "1990 · Early album",
+                    "2005 · Later album",
+                    "Undated album",
+                    "no album"
+                ]
+            );
+            let surface = rack.surface.as_ref().unwrap();
+            let texts = surface
+                .nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Primitive::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(texts.iter().any(|t| t.trim() == "1.01"));
+            assert!(texts.iter().any(|t| t.trim() == "2.02"));
+            assert!(texts.contains(&"Artist — Song 4"));
+            assert!(texts.contains(&"2 tracks"));
+            assert!(
+                surface.nodes.iter().any(|n| matches!(n,
+                Primitive::Fill { rect, .. } if rect.height == density as u16 && rect.width > 100))
+            );
+            assert!(rack.playlist_bars.visible().next().is_none());
+            for h in surface
+                .hits
+                .iter()
+                .filter(|h| h.action.starts_with("close:"))
+            {
+                assert_eq!(
+                    (h.rect.width, h.rect.height),
+                    (30 * density as u16, 24 * density as u16)
+                );
+            }
+            starkit::terminal_graphics::renderer::render_reference(&scene)?
+                .save(output.join(format!("playlist-album-sections-{density}x.png")))?;
+        }
+        rack.app
+            .player
+            .queue
+            .lock()
+            .unwrap()
+            .set_grouping(Some(true));
+        rack.scene(viewport);
+        assert_eq!(
+            albums(&rack),
+            [
+                "2005 · Later album",
+                "1990 · Early album",
+                "Undated album",
+                "no album"
+            ]
+        );
+
+        // Filter the actual graphical row model, not just the predicate. The
+        // draft previews live; cancel restores the committed query; keyboard,
+        // paste and mouse Apply/Clear all share the ASCII editing model.
+        rack.app.panels.eq = false;
+        rack.app.panels.album = false;
+        rack.app.panels.history = false;
+        for density in [1, 2] {
+            let v = Viewport {
+                width: 900 * density,
+                height: 700 * density,
+                columns: 90,
+                rows: 35,
+                generation: 0,
+            };
+            rack.app.edit.words.clear();
+            rack.app.edit.gen += 1;
+            rack.offset = 0;
+            rack.scene(v);
+            let before = rack.app.player.current_item().unwrap().uri;
+            rack.input(Input::Key {
+                code: "char:/".into(),
+                modifiers: 0,
+            });
+            rack.scene(v);
+            assert!(rack.app.edit.typing.is_some());
+            rack.input(Input::Paste {
+                text: "Early".into(),
+            });
+            let scene = rack.scene(v);
+            assert_eq!(rack.app.queue.matched_count, 2);
+            assert_eq!(albums(&rack), ["1990 · Early album"]);
+            assert!(
+                rack.app.edit.words.is_empty(),
+                "the live draft is not yet committed"
+            );
+            let surface = rack.surface.as_ref().unwrap();
+            assert!(surface.hits.iter().any(|h| h.action == "filter:apply"));
+            assert!(
+                !surface
+                    .hits
+                    .iter()
+                    .any(|h| h.action.starts_with("playlist:")),
+                "modal clicks cannot leak to the playlist"
+            );
+            let texts = surface
+                .nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Primitive::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert!(texts.contains(&"FILTER PLAYLIST"));
+            assert!(texts.contains(&"Match words in artist, title, album, year or path."));
+            assert!(texts.contains(&"Enter apply · Esc cancel · Ctrl+U clear"));
+            surface.validate()?;
+            starkit::terminal_graphics::renderer::render_reference(&scene)?
+                .save(output.join(format!("filter-live-{density}x.png")))?;
+            click(&mut rack, "filter:cancel");
+            rack.scene(v);
+            assert_eq!(rack.app.queue.matched_count, 5);
+            rack.app.open_filter_box();
+            rack.scene(v);
+            let query = format!("{}末尾é", "long-query ".repeat(20));
+            rack.input(Input::Paste {
+                text: query.clone(),
+            });
+            let scene = rack.scene(v);
+            assert_eq!(rack.app.edit.typing.as_ref().unwrap().text(), query);
+            assert_eq!(rack.app.queue.matched_count, 0);
+            assert!(rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .any(|n| matches!(n,
+                Primitive::Text { text, .. } if text.starts_with("No tracks match"))));
+            starkit::terminal_graphics::renderer::render_reference(&scene)?
+                .save(output.join(format!("filter-long-no-results-{density}x.png")))?;
+            click(&mut rack, "filter:clear");
+            rack.scene(v);
+            assert_eq!(rack.app.queue.matched_count, 5);
+            rack.input(Input::Paste {
+                text: "Artist\nSong 4\r\n".into(),
+            });
+            rack.scene(v);
+            assert_eq!(rack.app.queue.matched_count, 1);
+            click(&mut rack, "filter:apply");
+            rack.scene(v);
+            assert!(rack.app.edit.typing.is_none());
+            assert_eq!(rack.app.edit.words, "Artist Song 4");
+            assert_eq!(rack.app.queue.matched_count, 1);
+            assert_eq!(
+                rack.app.player.current_item().unwrap().uri,
+                before,
+                "filtering never changes playback"
+            );
+            rack.app.open_filter_box();
+            rack.scene(v);
+            assert_eq!(
+                rack.app.edit.typing.as_ref().unwrap().text(),
+                "Artist Song 4"
+            );
+            click(&mut rack, "filter:clear");
+            rack.scene(v);
+            click(&mut rack, "filter:close");
+            rack.scene(v);
+            assert_eq!(
+                rack.app.queue.matched_count, 1,
+                "closing restores the committed filter"
+            );
+            rack.app.open_filter_box();
+            rack.scene(v);
+            click(&mut rack, "filter:clear");
+            rack.scene(v);
+            rack.input(Input::Key {
+                code: "enter".into(),
+                modifiers: 0,
+            });
+            let scene = rack.scene(v);
+            assert_eq!(rack.app.queue.matched_count, 5);
+            assert!(rack.app.edit.words.is_empty());
+            assert_eq!(scene.background, "transparent");
+            let surface = rack.surface.as_ref().unwrap();
+            assert_eq!(surface.background, "transparent");
+            let frame = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            assert_eq!(
+                frame.get_pixel(0, 0)[3],
+                0,
+                "rounded pane corners reveal the terminal"
+            );
+            assert_eq!(
+                frame.get_pixel(v.width / 2, 232 * density)[3],
+                0,
+                "rack gaps reveal the terminal"
+            );
+            assert_eq!(
+                frame.get_pixel(v.width / 2, 2 * density)[3],
+                255,
+                "pane starts at the top edge"
+            );
+        }
+        rack.app.panels.eq = true;
+        rack.app.panels.album = true;
+        rack.app.panels.history = true;
+        // Drag the real scrollbar at both densities. Headings count toward
+        // thumb size and an all-folded list retains the viewport on release.
+        let long_items = (0..30_002)
+            .map(|i| {
+                let mut item = QueueItem::new(crate::playlist::uri::TrackUri::parse(&format!(
+                    "scroll-{i}.flac"
+                )));
+                item.title = Some(format!("Song {i}"));
+                if i < 30_000 {
+                    item.album = Some(format!("Album {:02}", i / 5));
+                    item.year = Some(1980 + i / 5);
+                    item.track_no = Some((i % 5 + 1) as u32);
+                }
+                item
+            })
+            .collect();
+        {
+            let mut queue = rack.app.player.queue.lock().unwrap();
+            queue.set_tracks(long_items);
+            queue.set_grouping(Some(false));
+        }
+        rack.app.panels.eq = false;
+        rack.app.panels.album = false;
+        rack.app.panels.history = false;
+        for density in [1, 2] {
+            let v = Viewport {
+                width: 1400 * density,
+                height: 700 * density,
+                columns: 140,
+                rows: 42,
+                generation: 0,
+            };
+            for folded in [false, true] {
+                rack.app.queue.folded.clear();
+                rack.app.queue.fold_gen += 1;
+                rack.app.queue.cursor = 0;
+                rack.app.queue.scroll = 0;
+                rack.playlist_scrolled = None;
+                rack.scene(v);
+                if folded {
+                    rack.app.queue.folded = rack
+                        .app
+                        .queue
+                        .rows
+                        .rows()
+                        .iter()
+                        .filter_map(|r| match r {
+                            playlist::Row::Section { fold, .. } => Some(fold.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    rack.app.queue.fold_gen += 1;
+                    rack.scene(v);
+                }
+                let (track, thumb) = rack.playlist_bars.visible().next().unwrap();
+                let maximum = rack.app.queue.rows.len() - rack.playlist_visible;
+                // KIT owns proportional sizing, clipping and drag arithmetic.
+                assert!(thumb.len >= 24 * density as u16 && thumb.len <= track.height / 4);
+                let painted = rack.surface.as_ref().unwrap().nodes.iter().any(|node| {
+                    matches!(node,
+                    Primitive::Fill { rect, color, .. } if rect.x == track.x + 6 * density as u16
+                        && rect.y == track.y + thumb.start && rect.height == thumb.len
+                        && color == &crate::embed::skin::colors(&rack.palette()).accent)
+                });
+                assert!(
+                    painted,
+                    "paint and input must use the exact same physical thumb"
+                );
+                let x = u32::from(track.x + track.width / 2);
+                for (action, y) in [
+                    ("down", track.y + thumb.start + thumb.len / 2),
+                    ("drag", track.y + track.height - 1),
+                    ("up", track.y + track.height - 1),
+                ] {
+                    rack.input(Input::Pointer {
+                        action: action.into(),
+                        button: 0,
+                        x: 0,
+                        y: 0,
+                        pixel: Some([x, u32::from(y)]),
+                        modifiers: 0,
+                    });
+                }
+                let scene = rack.scene(v);
+                assert_eq!(
+                    rack.app.queue.scroll, maximum,
+                    "drag remains at the bottom after release"
+                );
+                let (track, thumb) = rack.playlist_bars.visible().next().unwrap();
+                assert_eq!(thumb.start + thumb.len, track.height);
+                assert!(rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .nodes
+                    .iter()
+                    .any(|n| matches!(n,
+                    Primitive::Text { text, .. } if text == "no album")));
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("playlist-scroll-{folded}-{density}x.png")))?;
+                let offset = rack.offset;
+                rack.input(Input::Pointer {
+                    action: "scroll_up".into(),
+                    button: 0,
+                    x: 0,
+                    y: 0,
+                    pixel: Some([x, u32::from(track.y + 2)]),
+                    modifiers: 0,
+                });
+                rack.scene(v);
+                assert_eq!(rack.app.queue.scroll, maximum.saturating_sub(3));
+                assert_eq!(rack.offset, offset, "playlist wheel does not move the rack");
+            }
+        }
+        rack.app.queue.folded.clear();
+        rack.app.queue.fold_gen += 1;
+        rack.playlist_scrolled = None;
+        rack.app.queue.cursor = 0;
+        rack.app.queue.scroll = 0;
+        rack.app.panels.eq = true;
+        rack.app.panels.album = true;
+        rack.app.panels.history = true;
+        // A real separate playback owner, at library scale. Local preferences
+        // must not re-sort its queue, and the open menu must reflect each
+        // acknowledged change immediately. Include duplicate occurrences.
+        let owner = Arc::new(Player::detached());
+        let tracks = (0..30_000)
+            .map(|i| {
+                let album = i % 1000;
+                let mut item = QueueItem::new(crate::playlist::uri::TrackUri::parse(&format!(
+                    "album-{album}/{}.flac",
+                    i / 2
+                )));
+                item.title = Some(format!("Song {i}"));
+                item.album = Some(format!("Album {album:04}"));
+                item.year = Some(1900 + album % 100);
+                item.track_no = Some((i / 1000 + 1) as u32);
+                item
+            })
+            .collect();
+        owner.set_queue_tracks(tracks);
+        owner.queue.lock().unwrap().jump_to(4592);
+        let playing = owner.current_item().unwrap().uri;
+        let socket = std::env::temp_dir().join(format!("amp-rack-{}.sock", std::process::id()));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        crate::ipc::spawn_at(
+            socket.clone(),
+            Arc::clone(&owner),
+            crate::view::shared(),
+            Arc::clone(&stop),
+        )
+        .expect("isolated playback owner");
+        {
+            let mut q = rack.app.player.queue.lock().unwrap();
+            q.set_grouping(Some(true));
+            q.set_manual_order(vec!["album 0999".into()]);
+            q.set_shuffle(true);
+        }
+        rack.app
+            .set_mirror(crate::mirror::Mirror::connect_at(socket.clone()).unwrap());
+        rack.app.poll_mirror();
+        let assert_owner = |rack: &Rack<'_>| {
+            let q = rack.app.player.queue.lock().unwrap();
+            let leader = owner.queue.lock().unwrap();
+            let expected = leader
+                .view()
+                .iter()
+                .map(|&i| &leader.tracks()[i])
+                .collect::<Vec<_>>();
+            let actual = q.view().iter().map(|&i| &q.tracks()[i]).collect::<Vec<_>>();
+            assert_eq!(actual, expected, "mirror preserves exact owner order");
+            assert_eq!(
+                q.revision(),
+                leader.revision(),
+                "queue edits use the owner's revision"
+            );
+            assert_eq!(q.current().unwrap().uri, playing);
+        };
+        assert_owner(&rack);
+        rack.app.queue.group_desc = false;
+        rack.app.open_filter();
+        rack.scene(v);
+        click(&mut rack, "popup:row:0");
+        assert_owner(&rack);
+        assert!(rack.app.session_grouped());
+        assert_eq!(
+            rack.app.over.settings.as_ref().unwrap().rows[0].value,
+            "album by year"
+        );
+        assert_eq!(
+            rack.app.over.settings.as_ref().unwrap().rows[1].value,
+            "oldest first"
+        );
+        rack.scene(v);
+        click(&mut rack, "popup:row:1");
+        assert_owner(&rack);
+        assert_eq!(
+            rack.app.over.settings.as_ref().unwrap().rows[1].value,
+            "newest first"
+        );
+        // External changes are reflected while the dialog remains open too.
+        crate::ipc::handle(&owner, &crate::view::shared(), "set-group album");
+        rack.app.poll_mirror();
+        assert_owner(&rack);
+        assert_eq!(
+            rack.app.over.settings.as_ref().unwrap().rows[1].value,
+            "oldest first"
+        );
+        crate::ipc::handle(&owner, &crate::view::shared(), "set-shuffle on");
+        rack.app.poll_mirror();
+        assert_owner(&rack);
+        rack.scene(v);
+        click(&mut rack, "popup:row:0");
+        assert_owner(&rack);
+        assert!(!owner.queue.lock().unwrap().shuffled());
+        rack.scene(v);
+        click(&mut rack, "popup:row:0");
+        assert_owner(&rack);
+        assert!(!rack.app.session_grouped());
+        assert_eq!(
+            rack.app.over.settings.as_ref().unwrap().rows[0].value,
+            "playlist order"
+        );
+        rack.app.session.link = None;
+        stop.store(true, Relaxed);
+        let _ = crate::ipc::connect(&socket);
+        rack.app.handle(Action::CloseOverlay);
+
         // Empty is rendered from real queue membership, not inferred from a
         // zero duration (which is also normal during decoder startup).
         rack.app.player.queue.lock().unwrap().set_tracks(Vec::new());

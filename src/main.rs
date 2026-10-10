@@ -1422,9 +1422,10 @@ fn build_queue(
                     anyhow::anyhow!("audio path has no file name: {}", t.display())
                 })?;
                 let root = parent.to_path_buf();
-                let items = vec![QueueItem::new(TrackUri::File {
+                let mut items = vec![QueueItem::new(TrackUri::File {
                     rel_path: name.to_string_lossy().into_owned(),
                 })];
+                enrich_local_queue(&mut items, &root, cfg.library_root.as_deref(), index);
                 return Ok((root, items));
             }
             let pl = playlist::m3u::read_file(t)?;
@@ -1484,6 +1485,7 @@ fn build_queue(
                 }
             }
             items.sort_by_key(|a| a.uri.to_string());
+            enrich_local_queue(&mut items, t, cfg.library_root.as_deref(), index);
             return Ok((t.to_path_buf(), items));
         }
     }
@@ -1491,6 +1493,71 @@ fn build_queue(
     // Otherwise: everything the index knows.
     let items = library_queue(index)?;
     Ok((root, items))
+}
+
+/// A folder opened directly is playable without a scan. Prefer indexed tags
+/// for files in that library, otherwise read the files' own metadata. Keep
+/// root-relative URIs unchanged for decoding and file actions.
+fn enrich_local_queue(
+    items: &mut [playlist::queue::QueueItem],
+    root: &Path,
+    library_root: Option<&Path>,
+    index: &Path,
+) {
+    let db = index
+        .exists()
+        .then(|| library::db::Db::open_readonly(index).ok())
+        .flatten();
+    let mut query = db.as_ref().and_then(|db| {
+        db.conn
+            .prepare(&format!("{META_SELECT} WHERE t.uri = ?1"))
+            .ok()
+    });
+    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let library_root = library_root.map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()));
+    for item in items {
+        let playlist::uri::TrackUri::File { rel_path } = &item.uri else {
+            continue;
+        };
+        let path = root.join(rel_path);
+        let indexed = library_root
+            .as_ref()
+            .and_then(|root| path.strip_prefix(root).ok())
+            .and_then(|rel| {
+                query
+                    .as_mut()?
+                    .query_row([rel.to_string_lossy().as_ref()], read_meta)
+                    .ok()
+            });
+        if let Some((_, meta)) = indexed {
+            meta.fill(item);
+        } else if let Ok(tags) = library::tags::read(&path) {
+            TrackMeta {
+                title: tags.title,
+                artist: tags.artist,
+                album_artist: tags.album_artist,
+                album: tags.album,
+                year: tags.year.map(i64::from),
+                disc_no: tags.disc_no,
+                track_no: tags.track_no,
+                duration_ms: tags.duration_ms.and_then(|ms| i64::try_from(ms).ok()),
+                rg: audio::dsp::gain::ReplayGain {
+                    track_gain_db: tags.rg_track_gain,
+                    track_peak: tags.rg_track_peak,
+                    album_gain_db: tags.rg_album_gain,
+                    album_peak: tags.rg_album_peak,
+                },
+            }
+            .fill(item);
+        }
+        let (artist, title) = library::tags::from_filename(&path);
+        if item.artist.is_none() {
+            item.artist = artist;
+        }
+        if item.title.is_none() {
+            item.title = title;
+        }
+    }
 }
 
 /// The whole library, in album order: what the player opens on when nothing
@@ -2239,5 +2306,53 @@ mod launch_tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].uri.to_string(), "one.flac");
         assert!(!items[0].unplayable);
+    }
+
+    #[test]
+    fn a_folder_queue_reads_album_tags_without_a_scan() {
+        use lofty::config::WriteOptions;
+        use lofty::prelude::*;
+        use lofty::tag::{Tag, TagType};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("01 - filename.wav");
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&52u32.to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&44100u32.to_le_bytes());
+        wav.extend_from_slice(&88200u32.to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&[0; 16]);
+        std::fs::write(&path, wav).unwrap();
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.set_title("Tagged title".into());
+        tag.set_artist("Artist".into());
+        tag.set_album("Album".into());
+        tag.set_year(1996);
+        tag.set_track(3);
+        tag.save_to_path(&path, WriteOptions::default()).unwrap();
+        for target in [dir.path(), path.as_path()] {
+            let (_, items) = build_queue(
+                &config::Config::default(),
+                Some(target),
+                &dir.path().join("missing.db"),
+            )
+            .unwrap();
+            assert_eq!(items.len(), 1);
+            let track = &items[0];
+            assert_eq!(track.title.as_deref(), Some("Tagged title"));
+            assert_eq!(track.artist.as_deref(), Some("Artist"));
+            assert_eq!(track.album.as_deref(), Some("Album"));
+            assert_eq!(track.year, Some(1996));
+            assert_eq!(track.track_no, Some(3));
+            assert_eq!(track.uri.to_string(), "01 - filename.wav");
+            assert!(!track.unplayable);
+        }
     }
 }

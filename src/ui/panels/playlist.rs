@@ -302,6 +302,17 @@ impl Rows {
         &self.rows
     }
 
+    /// Shared ASCII/native disc and track column, including multi-disc albums.
+    pub fn album_index(&self, track: usize, item: &QueueItem) -> String {
+        let multiple_discs = self.multi_disc.get(track).copied().unwrap_or(false);
+        match (multiple_discs, item.disc_no, item.track_no) {
+            (true, Some(disc), Some(track)) => format!("{disc}.{track:02}"),
+            (_, _, Some(track)) => format!("{track:02}"),
+            (true, Some(disc), None) => format!("{disc}.--"),
+            _ => "--".into(),
+        }
+    }
+
     /// Where a track is drawn, or `None` when its record is folded away.
     pub fn row_of_track(&self, track: usize) -> Option<usize> {
         self.row_of.get(track).copied().flatten()
@@ -419,6 +430,23 @@ fn heading(album: Option<&str>, year: Option<i64>, version: Option<&str>) -> Str
     }
 }
 
+/// The two presentations share wording and metadata fallbacks.
+pub fn section_count(tracks: usize, folded: bool) -> String {
+    match (tracks, folded) {
+        (1, false) => "1 track".into(),
+        (n, false) => format!("{n} tracks"),
+        (n, true) => format!("{n} hidden"),
+    }
+}
+
+pub fn track_name(item: &QueueItem) -> String {
+    match (&item.artist, &item.title) {
+        (Some(a), Some(t)) => format!("{a} — {t}"),
+        (None, Some(t)) => t.clone(),
+        _ => item.uri.to_string(),
+    }
+}
+
 /// Draw one divider: a rule, the record it introduces, and how long it is.
 ///
 /// The rule is what makes a heading read as a seam rather than as a track with
@@ -475,11 +503,7 @@ fn render_section(
     // taught. Words are drawn in the same face as the text beside them, and
     // the folded wording is the shorter of the two because it is the one that
     // has to survive a narrow panel.
-    let count = match (tracks, folded) {
-        (1, false) => "1 track".to_string(),
-        (n, false) => format!("{n} tracks"),
-        (n, true) => format!("{n} hidden"),
-    };
+    let count = section_count(tracks, folded);
     let count_w = count.chars().count();
 
     // A folded record must say so even when there is barely room, so its count
@@ -697,25 +721,13 @@ impl<'a> Widget for PlaylistView<'a> {
             // lose it the way `render_section` warns a lone symbol can; and it
             // leaves `!` and the play face the one column they have.
             let playlist_idx = format!("{:>4}{}", i + 1, if is_tagged { '+' } else { '.' });
-            let album_idx = show_album_indices.then(|| {
-                let multiple_discs = self.rows.multi_disc.get(i).copied().unwrap_or(false);
-                match (multiple_discs, item.disc_no, item.track_no) {
-                    (true, Some(disc), Some(track)) => format!("{disc}.{track:02}"),
-                    (_, _, Some(track)) => format!("{track:02}"),
-                    (true, Some(disc), None) => format!("{disc}.--"),
-                    _ => "--".into(),
-                }
-            });
+            let album_idx = show_album_indices.then(|| self.rows.album_index(i, item));
             let idx_w = playlist_idx.len()
                 + album_idx
                     .as_ref()
                     .map(|album_idx| 3 + album_idx.len().max(5))
                     .unwrap_or(0);
-            let name = match (&item.artist, &item.title) {
-                (Some(a), Some(ti)) => format!("{a} — {ti}"),
-                (None, Some(ti)) => ti.clone(),
-                _ => item.uri.to_string(),
-            };
+            let name = track_name(item);
 
             let avail = content_w as usize;
             let fixed = 1 + idx_w + 1 + dur.len() + 1;

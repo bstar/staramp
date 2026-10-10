@@ -110,6 +110,9 @@ enum Setting {
     OpenAlbumCatalog,
     Shuffle,
     Repeat,
+    Visualizer,
+    Crossfade,
+    Animations,
     LoadPlaylist,
     EqEnabled,
     EqPreset,
@@ -1581,7 +1584,7 @@ struct Editing {
     words: String,
     /// The filter box, while it is open: what has been typed so far, seeded
     /// with the filter in force so `/` again shows what is being matched.
-    typing: Option<String>,
+    typing: Option<starkit::input::TextInput>,
     /// Bumped when the filter changes, so the rows rebuild.
     gen: u64,
     /// What a held left button is currently adjusting.
@@ -1604,10 +1607,10 @@ struct Sharing {
     /// album panel can look anything up while mirroring.
     uri: String,
     revision: u64,
-    /// Whether the leader has its queue in album order. A mirror draws the
-    /// dividers from this rather than working them out: its items arrive with
-    /// no years, so ordering them itself would scramble the leader's order.
+    /// Whether the owner is showing album order. The received queue is
+    /// already ordered; a mirror must not sort or shuffle it again.
     group: bool,
+    arranged: bool,
     /// Analyzer output received from the instance being mirrored.
     bands: Vec<f32>,
     /// The owner's view revision, from its status line, so a follower knows
@@ -1641,6 +1644,8 @@ struct Sharing {
 struct QueueView {
     /// The queue in play order, cloned when it changes rather than every frame.
     items: Vec<QueueItem>,
+    /// Matching members, including tracks hidden inside folded albums.
+    matched_count: usize,
     /// The lines the playlist draws, built during the frame and kept because a
     /// click arrives between frames and has to map to the same rows the last
     /// frame drew.
@@ -2190,43 +2195,53 @@ impl App {
         true
     }
 
-    fn filter_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
-        let Some(text) = &mut self.edit.typing else {
+    fn filter_type(&mut self, key: KeyEvent) -> bool {
+        use starkit::input::Edit;
+        let Some(input) = &mut self.edit.typing else {
             return false;
         };
-        let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
-        match k.code {
-            KeyCode::Char('u') if ctrl => text.clear(),
-            KeyCode::Char(c) if !ctrl => text.push(c),
-            KeyCode::Backspace => {
-                text.pop();
-            }
-            KeyCode::Esc => self.edit.typing = None,
-            KeyCode::Enter => {
-                let text = text.trim().to_string();
+        let before = input.text().to_owned();
+        match input.handle(key) {
+            Edit::Cancel => {
                 self.edit.typing = None;
-                if text != self.edit.words {
-                    self.edit.words = text;
-                    self.edit.gen += 1;
-                    if !self.edit.words.is_empty() {
-                        // A filter is a fresh result set, not the tail below
-                        // whichever track happened to hold the cursor. The
-                        // rows rebuild on the next draw; zero lies before
-                        // every possible match, so `nearest_shown` below moves
-                        // it onto the first result without touching playback.
-                        self.queue.cursor = 0;
-                        self.queue.scroll = 0;
-                    }
-                }
-                if self.edit.words.is_empty() {
-                    self.note("filter cleared".into());
-                } else {
-                    self.note(format!("filter: {}", self.edit.words));
-                }
+                self.edit.gen = self.edit.gen.wrapping_add(1);
             }
-            _ => return false,
+            Edit::Submit => {
+                self.edit.words = input.text().trim().to_owned();
+                self.edit.typing = None;
+                self.edit.gen = self.edit.gen.wrapping_add(1);
+                self.note(if self.edit.words.is_empty() {
+                    "filter cleared".into()
+                } else {
+                    format!("filter: {}", self.edit.words)
+                });
+            }
+            Edit::Consumed if input.text() != before => self.filter_changed(),
+            // A modal field consumes keys before playback and navigation.
+            Edit::Consumed | Edit::Ignored => {}
         }
+        true
+    }
+
+    fn filter_changed(&mut self) {
+        self.edit.gen = self.edit.gen.wrapping_add(1);
+        self.queue.cursor = 0;
+        self.queue.scroll = 0;
+    }
+
+    fn filter_query(&self) -> &str {
+        self.edit
+            .typing
+            .as_ref()
+            .map_or(&self.edit.words, |input| input.text())
+    }
+
+    fn filter_paste(&mut self, pasted: &str) -> bool {
+        let Some(input) = &mut self.edit.typing else {
+            return false;
+        };
+        input.paste(pasted);
+        self.filter_changed();
         true
     }
 
@@ -2368,7 +2383,7 @@ impl App {
         self.panels.playlist = true;
         self.panels.focus = Focus::Playlist;
         self.over.settings = None;
-        self.edit.typing = Some(self.edit.words.clone());
+        self.edit.typing = Some(starkit::input::TextInput::single().with_text(&self.edit.words));
     }
 
     /// Keys typed into the search line, before any table sees them.
@@ -2866,6 +2881,7 @@ impl App {
                 // Built on the first frame: the queue's revision has already
                 // moved past the zero this starts from.
                 items: Vec::new(),
+                matched_count: 0,
                 rows: playlist::Rows::default(),
                 rows_from: (0, false, 0, None, 0),
                 folded: std::collections::HashSet::new(),
@@ -2900,6 +2916,7 @@ impl App {
                 uri: String::new(),
                 revision: u64::MAX,
                 group: false,
+                arranged: false,
                 bands: Vec::new(),
                 their_view: 0,
                 shared: view,
@@ -2930,6 +2947,7 @@ impl App {
     /// Follow another running instance instead of owning the audio device.
     pub fn set_mirror(&mut self, m: Mirror) {
         self.session.link = Some(m);
+        self.session.revision = u64::MAX;
         // A mirror has nothing of its own to resume or choose.
         self.over.resume = None;
         self.panels.picker = false;
@@ -3246,6 +3264,21 @@ impl App {
             return;
         };
 
+        // Do not acknowledge a revision until its queue arrived. A failed
+        // fetch must retry, and local sort settings must never reorder it.
+        let changed = st.revision != self.session.revision;
+        if changed {
+            let Some(items) = m.queue() else { return };
+            self.player.queue.lock().unwrap().follow_snapshot(
+                items,
+                &st,
+                st.group_desc.unwrap_or(self.queue.group_desc),
+            );
+            self.session.revision = st.revision;
+            self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
+            self.queue.tagged.clear();
+        }
+
         use std::sync::atomic::Ordering::Relaxed;
         let s = &self.player.state;
         s.playing.store(st.state != "stopped", Relaxed);
@@ -3270,33 +3303,25 @@ impl App {
 
         self.session.uri = st.uri.clone();
         self.session.group = st.group;
+        self.session.arranged = st.arranged;
+        if let Some(desc) = st.group_desc {
+            self.queue.group_desc = desc;
+        }
         self.session.their_view = st.view_revision;
 
         if !st.bands.is_empty() {
             self.session.bands = st.bands.clone();
         }
 
-        // Refetch the queue only when the leader says it changed.
-        if st.revision != self.session.revision {
-            // Whole tracks, URIs and years included, so this window can name a
-            // row to play it and can order the list by record itself.
-            if let Some(items) = m.queue() {
-                self.player.set_queue_tracks(items);
-            }
-            self.session.revision = st.revision;
+        if st.index >= 0 {
+            self.player
+                .queue
+                .lock()
+                .unwrap()
+                .set_view_cursor(st.index as usize);
         }
-
-        {
-            let mut q = self.player.queue.lock().unwrap();
-            if q.shuffled() != st.shuffle {
-                q.set_shuffle(st.shuffle);
-            }
-            if st.index >= 0 {
-                // A position in the order, which is what the leader sends --
-                // and following it is not a jump anybody asked for, so it must
-                // not move the revision every frame.
-                q.set_view_cursor(st.index as usize);
-            }
+        if changed {
+            self.refresh_settings();
         }
     }
 
@@ -3888,6 +3913,7 @@ impl App {
                     // A font zoom arrives as a resize, and it changes the
                     // cell size the button images were built for.
                     Event::Resize(..) => self.graphics.remeasure(),
+                    Event::Paste(text) if self.filter_paste(&text) => {}
                     Event::Paste(text) if self.import_artist_paste(&text) => {}
                     Event::Paste(text) if self.auth_paste(&text) => {}
                     Event::Paste(text) if self.eq_value_paste(&text) => {}
@@ -7484,11 +7510,8 @@ impl App {
             .render(area, buf);
             return;
         }
-        if let Some(text) = &self.edit.typing {
-            let rows = [settings::Row::setting(
-                "matching",
-                format!("{text}\u{2582}"),
-            )];
+        if let Some(input) = &mut self.edit.typing {
+            let rows = [settings::Row::action("matching")];
             SettingsView {
                 theme: &self.look.theme,
                 heading: "FILTER",
@@ -7499,6 +7522,16 @@ impl App {
                 footer: "enter apply \u{b7} esc cancel",
             }
             .render(area, buf);
+            let row = settings::list_rect(area, rows.len());
+            let field = Rect::new(row.x + 10, row.y, row.width.saturating_sub(11), 1);
+            let t = &self.look.theme;
+            let style = Style::default()
+                .fg(rgb(t.row_cursor_fg))
+                .bg(rgb(t.row_cursor_bg));
+            if let Some((x, y)) = input.render(field, buf, style) {
+                buf[(x, y)]
+                    .set_style(style.add_modifier(starkit::ratatui::style::Modifier::REVERSED));
+            }
             return;
         }
         if let Some(name) = &self.edit.naming {
@@ -7764,6 +7797,7 @@ impl App {
         // drawn. `playing` is in there because a folded record says whether it
         // holds the track that is playing.
         if self.queue.rows_from != from {
+            let filter_changed = self.queue.rows_from.4 != from.4;
             // Shown in play order, not storage order. With shuffle on those
             // differ, and rendering storage order made shuffle look like it did
             // nothing.
@@ -7783,9 +7817,18 @@ impl App {
                 true => playlist::Rows::grouped(&self.queue.items, &self.queue.folded, playing),
                 false => playlist::Rows::flat(self.queue.items.len()),
             };
-            if !self.edit.words.trim().is_empty() {
-                let mask = crate::playlist::filter::mask(&self.queue.items, &self.edit.words);
+            self.queue.matched_count = self.queue.items.len();
+            if !self.filter_query().trim().is_empty() {
+                let mask = crate::playlist::filter::mask(&self.queue.items, self.filter_query());
+                self.queue.matched_count = mask.iter().filter(|matched| **matched).count();
                 self.queue.rows = std::mem::take(&mut self.queue.rows).matching(&mask);
+            }
+            if filter_changed {
+                tracing::debug!(
+                    matches = self.queue.matched_count,
+                    total = self.queue.items.len(),
+                    "Playlist filter updated"
+                );
             }
             self.queue.rows_from = from;
             // A cursor inside a record that has just been folded away has to
@@ -8252,8 +8295,38 @@ impl App {
                 ]);
                 ("listening activity and scrobbling".into(), rows)
             }
-            // The transport has no header and so cannot get here.
-            Focus::Player => (String::new(), Vec::new()),
+            Focus::Player => {
+                let q = self.player.queue.lock().unwrap();
+                (
+                    "player".into(),
+                    vec![
+                        (
+                            Row::setting("visualizer", self.vis.mode.name()),
+                            Setting::Visualizer,
+                        ),
+                        (
+                            Row::setting("shuffle", on_off(q.shuffled())),
+                            Setting::Shuffle,
+                        ),
+                        (
+                            Row::setting("repeat", q.repeat().to_string().to_lowercase()),
+                            Setting::Repeat,
+                        ),
+                        (
+                            Row::setting("crossfade", on_off(self.player.crossfade())),
+                            Setting::Crossfade,
+                        ),
+                        (
+                            Row::setting("equalizer", on_off(self.eq.enabled)),
+                            Setting::EqEnabled,
+                        ),
+                        (
+                            Row::setting("animations", on_off(self.fx.active)),
+                            Setting::Animations,
+                        ),
+                    ],
+                )
+            }
         }
     }
 
@@ -8506,10 +8579,12 @@ impl App {
         let q = self.player.queue.lock().unwrap();
         let group = q.grouping();
         let shuffled = q.shuffled();
-        let arranged = !q.manual_order().is_empty();
-        // Nothing to group by is worth saying out loud. A queue built by
-        // pointing at a directory carries no tags at all, and album order over
-        // it would silently do nothing.
+        let arranged = if self.session.link.is_some() {
+            self.session.arranged
+        } else {
+            !q.manual_order().is_empty()
+        };
+        // A genuinely untagged queue cannot supply album boundaries.
         let tagged = q.tracks().iter().any(|t| t.album.is_some());
         drop(q);
 
@@ -8633,70 +8708,96 @@ impl App {
         (self.queue.name.clone(), rows)
     }
 
-    /// Turn album order on, or back off again.
-    ///
-    /// Reordering the queue is felt rather than merely seen: the track keeps
-    /// playing, but what follows it changes. The note says so.
-    fn cycle_grouping(&mut self) {
-        let q = self.player.queue.lock().unwrap();
-        if !q.tracks().iter().any(|t| t.album.is_some()) {
-            drop(q);
-            return self.note("nothing in this queue is indexed \u{2014} run a scan".into());
+    /// Apply the complete year-order request to the playback owner. Do not
+    /// report success when another instance rejects or fails to answer it.
+    fn change_album_order(&mut self, on: bool, descending: bool) -> bool {
+        if let Some(mirror) = &self.session.link {
+            let group = match (on, descending) {
+                (false, _) => "set-group off",
+                (true, false) => "set-group album",
+                (true, true) => "set-group album desc",
+            };
+            let requests = if on {
+                vec!["set-shuffle off", "set-album-order", group]
+            } else {
+                vec![group]
+            };
+            for request in requests {
+                match mirror.ask(request).as_deref() {
+                    Some("ok") => {}
+                    reply => {
+                        let error = reply.unwrap_or("the playback owner did not answer");
+                        self.note(format!(
+                            "cannot change album order: {}",
+                            error.trim_start_matches("error: ")
+                        ));
+                        return false;
+                    }
+                }
+            }
+            // Older owners do not publish direction; retain the requested one.
+            self.queue.group_desc = descending;
+            self.poll_mirror();
+            if self.session_grouped() != on {
+                self.note(
+                    "album order has not updated — retry or restart the playback owner".into(),
+                );
+                return false;
+            }
+        } else {
+            let mut queue = self.player.queue.lock().unwrap();
+            if on {
+                queue.set_shuffle(false);
+                queue.set_manual_order(Vec::new());
+            }
+            queue.set_grouping(on.then_some(descending));
+            self.queue.group_desc = descending;
         }
-        let shuffled = q.shuffled();
-        drop(q);
-        // Asked of the session, which may be another window's.
-        let on = !self.session_grouped();
-
-        let descending = self.queue.group_desc;
-        let want = match (on, descending) {
-            (false, _) => "set-group off".to_string(),
-            (true, true) => "set-group album desc".to_string(),
-            (true, false) => "set-group album".to_string(),
-        };
-        if self.owns(&want) {
-            self.player
-                .queue
-                .lock()
-                .unwrap()
-                .set_grouping(on.then_some(descending));
-        }
-        // The cursor is a track and the reorder moved it, so follow it rather
-        // than leaving the highlight on whatever landed in its place.
         self.follow_order();
-        self.note(match (on, shuffled) {
-            (true, true) => "album order \u{2014} shuffle is on top of it".into(),
-            (true, false) => "album order, oldest first \u{2014} this is what plays next".into(),
-            (false, _) => "back to the playlist's own order".into(),
-        })
+        true
     }
 
-    /// Turn the albums round. Off means there is nothing to turn.
+    /// Turn album order on, or back off again, preserving the playing track.
+    fn cycle_grouping(&mut self) {
+        self.poll_mirror();
+        let tagged = self
+            .player
+            .queue
+            .lock()
+            .unwrap()
+            .tracks()
+            .iter()
+            .any(|t| t.album.as_ref().is_some_and(|a| !a.trim().is_empty()));
+        if !tagged {
+            return self
+                .note("no album tags in this queue — tag the files or scan the library".into());
+        }
+        let on = !self.session_grouped();
+        let descending = self.queue.group_desc;
+        if !self.change_album_order(on, descending) {
+            return;
+        }
+        self.note(match (on, descending) {
+            (true, true) => "album order, newest first — shuffle off".into(),
+            (true, false) => "album order, oldest first — shuffle off".into(),
+            (false, _) => "back to the playlist's own order".into(),
+        });
+    }
+
     fn flip_grouping(&mut self) {
+        self.poll_mirror();
         if !self.session_grouped() {
             return self.note("nothing to reverse until the albums are in order".into());
         }
-        self.queue.group_desc = !self.queue.group_desc;
-        let desc = self.queue.group_desc;
-        // A direction over a hand-made arrangement means nothing, so asking
-        // for one puts the records back in the order the years give them.
-        if self.owns("set-album-order") {
-            self.player
-                .queue
-                .lock()
-                .unwrap()
-                .set_manual_order(Vec::new());
+        let descending = !self.queue.group_desc;
+        if !self.change_album_order(true, descending) {
+            return;
         }
-        let want = format!("set-group album{}", if desc { " desc" } else { "" });
-        if self.owns(&want) {
-            self.player.queue.lock().unwrap().set_grouping(Some(desc));
-        }
-        self.follow_order();
-        self.note(if self.queue.group_desc {
+        self.note(if descending {
             "newest records first".into()
         } else {
             "oldest records first".into()
-        })
+        });
     }
 
     fn art_fetch(&self) -> bool {
@@ -9037,6 +9138,9 @@ impl App {
             }
             Setting::Shuffle => self.handle(Action::ToggleShuffle),
             Setting::Repeat => self.handle(Action::CycleRepeat),
+            Setting::Visualizer => self.handle(Action::ToggleVisualizer),
+            Setting::Crossfade => self.handle(Action::ToggleCrossfade),
+            Setting::Animations => self.handle(Action::ToggleAnimations),
             Setting::JoinSession => {
                 let name = self.queue.name.clone();
                 self.session.joining = None;
@@ -9628,6 +9732,19 @@ impl App {
             area.y,
             "? help",
             Style::default().fg(rgb(t.accent)).bg(bg),
+        );
+
+        let theme_end = if area.width > ind_w + 4 {
+            area.width - ind_w - 2
+        } else {
+            area.width.saturating_sub(1)
+        };
+        buf.set_stringn(
+            area.x + 9,
+            area.y,
+            format!("Theme: {}", t.name),
+            usize::from(theme_end.saturating_sub(9)),
+            Style::default().fg(rgb(t.fg)).bg(bg),
         );
 
         if area.width > ind_w + 4 {

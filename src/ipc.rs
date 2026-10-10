@@ -610,7 +610,7 @@ fn handle_with_activity(
         // Deliberately compact: this is polled several times a second.
         "mirror" => {
             let st = &player.state;
-            let (index, total, shuffle, group, repeat, revision) = {
+            let (index, total, shuffle, group, grouping, group_desc, arranged, repeat, revision) = {
                 let q = player.queue.lock().unwrap();
                 (
                     // A *position in the order*, not a track index. The queue
@@ -624,6 +624,11 @@ fn handle_with_activity(
                     q.len(),
                     q.shuffled(),
                     q.grouped_now(),
+                    q.grouping().is_some(),
+                    q.grouping()
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "null".into()),
+                    !q.manual_order().is_empty(),
                     q.repeat().to_string(),
                     q.revision(),
                 )
@@ -657,7 +662,7 @@ fn handle_with_activity(
                 .unwrap_or_default();
 
             format!(
-                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"view":{view_revision},"bands":"{bands}"}}"#,
+                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"grouping":{grouping},"group_desc":{group_desc},"arranged":{arranged},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"view":{view_revision},"bands":"{bands}"}}"#,
                 match st.state() {
                     PlayState::Playing => "playing",
                     PlayState::Paused => "paused",

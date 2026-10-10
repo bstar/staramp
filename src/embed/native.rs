@@ -11,6 +11,73 @@ use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Sur
 pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
+/// A restrained raised edge, independent of the heading's text metrics.
+pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, ink: &str) {
+    use starkit::theme::color::Rgb;
+    let bg = Rgb::parse_hex(background).unwrap();
+    let light = bg.mix(Rgb::parse_hex(ink).unwrap(), 0.06).to_hex();
+    let dark = bg.mix(Rgb::new(0, 0, 0), 0.18).to_hex();
+    surface.fill(
+        R::new(rect.x + 2, rect.y, rect.width.saturating_sub(4), 1),
+        &light,
+        0,
+    );
+    surface.fill(
+        R::new(
+            rect.x + 2,
+            rect.y + rect.height - 1,
+            rect.width.saturating_sub(4),
+            1,
+        ),
+        &dark,
+        0,
+    );
+}
+
+/// Two logical pixels of accent, preserving the existing pane bounds.
+pub(crate) fn focus_outline(surface: &mut Surface, accent: &str, radius: u16) {
+    for inset in [1, 2] {
+        surface.nodes.push(Primitive::Border {
+            rect: R::new(
+                inset,
+                inset,
+                surface.width - inset * 2,
+                surface.height - inset * 2,
+            ),
+            color: accent.into(),
+            radius: radius.saturating_sub(inset),
+        });
+    }
+}
+/// Draw the same centered close mark in player pickers and rack headers.
+/// The hit target is larger than the mark and independent of font metrics.
+pub(crate) fn close_button(
+    surface: &mut Surface,
+    rect: R,
+    colors: &starkit::native_surface::classic::Colors,
+    action: &str,
+    hovered: bool,
+) {
+    if hovered {
+        surface.fill(rect, &colors.raised, 3);
+    }
+    let size = rect.width.min(rect.height).min(28).saturating_sub(2);
+    surface.nodes.push(Primitive::Icon {
+        rect: R::new(
+            rect.x + (rect.width - size) / 2,
+            rect.y + (rect.height - size) / 2,
+            size,
+            size,
+        ),
+        name: "close".into(),
+        color: if hovered { &colors.accent } else { &colors.ink }.clone(),
+    });
+    surface.hits.push(HitRegion {
+        rect,
+        action: action.into(),
+    });
+}
+
 fn clock(seconds: f64) -> String {
     let seconds = seconds.max(0.) as u64;
     format!("{}:{:02}", seconds / 60, seconds % 60)
@@ -167,7 +234,7 @@ pub(super) fn player_surface(
     let accent = c.accent.clone();
     let border = hex(palette.border);
     let header_ink = super::skin::tone(palette, "#bbc6d5", true);
-    let led_off = super::skin::tone(palette, "#1c2a20", false);
+    let led_off = super::skin::inactive_led(palette);
     let fg = c.ink.clone();
     let w = w.min((8_000_000 / u32::from(h.max(1))) as u16);
     let mut s = Surface::new(w, h, hex(palette.bg));
@@ -178,6 +245,7 @@ pub(super) fn player_surface(
     let pad = if artwork.is_some() { 14 } else { 12 };
     player_frame(artwork, &mut s, R::new(0, 0, w, h), &c, radius, false);
     s.fill(R::new(7, 7, w - 14, 24), &c.title, 2);
+    heading_depth(&mut s, R::new(7, 7, w - 14, 24), &c.title, &c.ink);
     let header = 24;
     if !artwork.is_some_and(|art| {
         art.fixed_label(
@@ -335,27 +403,13 @@ pub(super) fn player_surface(
                                 },
                                 size.min(analyzer_height - dy),
                             ),
-                            if artwork.is_some() {
+                            if dy < (f32::from(analyzer_height) * level) as u16 {
+                                &accent
+                            } else if artwork.is_some() {
                                 &led_off
                             } else {
                                 &c.title
                             },
-                            0,
-                        );
-                    }
-                    for dy in (0..bar_h).step_by(pitch) {
-                        s.fill(
-                            R::new(
-                                bx,
-                                analyzer_top + analyzer_height - bar_h + dy,
-                                if state.vis_mode == VisMode::Dots {
-                                    2.min(step)
-                                } else {
-                                    step.saturating_sub(3).max(1)
-                                },
-                                size.min(bar_h - dy),
-                            ),
-                            &accent,
                             0,
                         );
                     }
@@ -862,12 +916,14 @@ pub fn track_surface(
         font,
         true,
     );
-    let close = R::new(width.saturating_sub(row), 0, row, row);
-    surface.text(close, "×", &hex(palette.fg), font, true);
-    surface.hits.push(HitRegion {
-        rect: close,
-        action: "picker_close".into(),
-    });
+    let close_width = row.max(30).min(width);
+    close_button(
+        &mut surface,
+        R::new(width.saturating_sub(close_width + 6), 4, close_width, row),
+        &super::skin::colors(palette),
+        "picker_close",
+        false,
+    );
     let visible = height.saturating_sub(row + 8) / row;
     let offset = selected.saturating_sub(visible.saturating_sub(1) as usize);
     for (index, label) in entries

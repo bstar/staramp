@@ -347,6 +347,27 @@ impl Queue {
         self.revision += 1;
     }
 
+    /// Install the owner's already ordered snapshot without applying local
+    /// shuffle, grouping or manual order again. Its revision and positions
+    /// also identify queue edits sent back over IPC.
+    pub fn follow_snapshot(
+        &mut self,
+        tracks: Vec<QueueItem>,
+        state: &crate::mirror::MirrorState,
+        descending: bool,
+    ) {
+        self.tracks = tracks;
+        self.order = (0..self.tracks.len()).collect();
+        self.pos = (state.index.max(0) as usize).min(self.tracks.len().saturating_sub(1));
+        self.shuffle = state.shuffle;
+        self.group = state.grouping.then_some(descending);
+        self.repeat = RepeatMode::parse(&state.repeat);
+        self.manual.clear();
+        self.play_next.clear();
+        self.from_queue = false;
+        self.revision = state.revision;
+    }
+
     /// Reload an edited playlist while keeping the current decoder's place.
     pub fn refresh_tracks(&mut self, tracks: Vec<QueueItem>) {
         let current = self.current_index().and_then(|index| {

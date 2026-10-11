@@ -15,6 +15,7 @@ use starkit::terminal_graphics::{
     session::{self, Controller},
 };
 
+const EQ_HEIGHT: u16 = 258;
 const LEDGER_HEIGHT: u16 = 320;
 const LEDGER_ROWS: usize = 6;
 const ALBUM_COVER: u16 = 160;
@@ -368,7 +369,7 @@ impl Rack<'_> {
                 )
             },
             state: st.state(),
-            loading: st.loading.load(Relaxed),
+            loading: st.is_loading(),
             position: st.position_secs(),
             duration: st.duration_secs(),
             volume: a.player.volume(),
@@ -560,8 +561,7 @@ impl Rack<'_> {
             ..c.clone()
         };
         let c = &eq_colors;
-        let h = 294;
-        let mut s = self.window(w, h, c, "PARAMETRIC EQUALIZER", font);
+        let mut s = self.window(w, EQ_HEIGHT, c, "PARAMETRIC EQUALIZER", font);
         let e = &self.app.eq;
         self.button(
             &mut s,
@@ -938,93 +938,6 @@ impl Rack<'_> {
                 "DELETE",
                 "eq-remove",
                 14,
-                false,
-            );
-        }
-        let summaries = e
-            .active()
-            .stages
-            .iter()
-            .enumerate()
-            .filter(|(_, stage)| !matches!(stage.filter, Filter::Preamp { .. }))
-            .map(|(i, stage)| {
-                let text = match stage.filter {
-                    Filter::Biquad {
-                        frequency, gain_db, ..
-                    } => format!(
-                        "{} {} · {frequency:.0} Hz · {gain_db:+.1} dB",
-                        e.band_number(i),
-                        filter_caption(&stage.filter)
-                    ),
-                    _ => format!("{} {}", e.band_number(i), filter_caption(&stage.filter)),
-                };
-                (
-                    i,
-                    if i == e.stage {
-                        format!("[{text}]")
-                    } else {
-                        text
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        let selected = summaries
-            .iter()
-            .position(|(i, _)| *i == e.stage)
-            .unwrap_or(0);
-        let mut first = 0;
-        while first < selected
-            && summaries[first..=selected]
-                .iter()
-                .map(|(_, t)| t.width() * 7 + 24)
-                .sum::<usize>()
-                > usize::from(w - 36)
-        {
-            first += 1;
-        }
-        let mut left = 18;
-        for (i, text) in summaries.iter().skip(first) {
-            let width = (text.width() as u16 * 7 + 24).min(w - 18 - left);
-            if width < 48 {
-                break;
-            }
-            let rect = R::new(left, h - 48, width, 22);
-            classic::label(
-                &mut s,
-                rect,
-                text,
-                if *i == e.stage { &c.accent } else { &c.ink },
-                11,
-                false,
-            );
-            s.hits.push(HitRegion {
-                rect,
-                action: format!("eq-select:{i}"),
-            });
-            left += width;
-            if left >= w - 18 {
-                break;
-            }
-        }
-        for (x, width, text, action) in [
-            (18, 100, "+ Add filter", "eq-add"),
-            (134, 120, "‹ Previous band", "eq-stage-prev"),
-            (270, 110, "Next band ›", "eq-stage-next"),
-        ] {
-            let rect = R::new(x, h - 30, width, 24);
-            classic::label(&mut s, rect, text, &c.accent, 11, false);
-            s.hits.push(HitRegion {
-                rect,
-                action: action.into(),
-            });
-        }
-        if w > 1100 {
-            classic::label(
-                &mut s,
-                R::new(w - 360, h - 30, 342, 24),
-                "Drag: frequency / gain · wheel: Q",
-                &c.dim,
-                11,
                 false,
             );
         }
@@ -1927,16 +1840,8 @@ impl Rack<'_> {
         match name {
             "previous" => a.handle(Action::Prev),
             "next" => a.handle(Action::Next),
-            "play" => {
-                if a.player.state.state() != PlayState::Playing {
-                    a.handle(Action::PlayPause);
-                }
-            }
-            "pause" => {
-                if a.player.state.state() == PlayState::Playing {
-                    a.handle(Action::PlayPause);
-                }
-            }
+            "play" => a.play(),
+            "pause" => a.pause(),
             "stop" => a.handle(Action::Stop),
             "visualizer" => a.handle(Action::ToggleVisualizer),
             "seek" | "volume" => {
@@ -2900,9 +2805,23 @@ impl Controller for Rack<'_> {
                             self.drag = None;
                             self.eq_drag = None;
                             self.playlist_bars.release();
-                            // Selecting a pane consumes the press, so its drag
-                            // and release cannot operate the control beneath it.
-                            return;
+                            // Transport buttons act on the first press from any
+                            // pane. Keep focus-only presses for sliders/graphs so
+                            // selecting a pane never starts an unintended drag.
+                            let transport = button == 0
+                                && self
+                                    .surface
+                                    .as_ref()
+                                    .and_then(|s| s.hit(px as u16, py as u16))
+                                    .is_some_and(|hit| {
+                                        matches!(
+                                            hit.action.as_str(),
+                                            "previous" | "play" | "pause" | "stop" | "next"
+                                        )
+                                    });
+                            if !transport {
+                                return;
+                            }
                         }
                     }
                 }
@@ -3705,11 +3624,11 @@ impl App {
             assert_eq!(rack.max_offset, 0);
             rack.app.panels.eq = false;
             rack.scene(v);
-            assert_eq!(playlist_geometry(&rack).1, expanded_height + 302);
+            assert_eq!(playlist_geometry(&rack).1, expanded_height + EQ_HEIGHT + 8);
             rack.app.panels.eq = true;
             rack.folded.insert("eq".into());
             rack.scene(v);
-            assert_eq!(playlist_geometry(&rack).1, expanded_height + 256);
+            assert_eq!(playlist_geometry(&rack).1, expanded_height + EQ_HEIGHT - 38);
             rack.folded.remove("eq");
             rack.folded.insert("playlist".into());
             rack.scene(v);
@@ -4056,7 +3975,7 @@ impl App {
             .find(|(focus, _, _)| *focus == Focus::Equalizer)
             .unwrap()
             .2;
-        assert_eq!(closed_height, 294);
+        assert_eq!(closed_height, EQ_HEIGHT);
         rack.action("fold:eq", 0, 0);
         rack.scene(v);
         assert!(
@@ -4153,7 +4072,10 @@ impl App {
         fn click_button(rack: &mut Rack<'_>, name: &str, button: u8) {
             let focus = rack.app.panels.focus;
             press_button(rack, name, button);
-            if rack.app.panels.focus != focus && rack.app.over.settings.is_none() {
+            if rack.app.panels.focus != focus
+                && rack.app.over.settings.is_none()
+                && !matches!(name, "previous" | "play" | "pause" | "stop" | "next")
+            {
                 rack.scene(rack.viewport);
                 press_button(rack, name, button);
             }
@@ -4574,7 +4496,7 @@ impl App {
                     0,
                     238 * density,
                     1400 * density,
-                    294 * density,
+                    u32::from(EQ_HEIGHT) * density,
                 )
                 .to_image()
                 .save(output.join(format!("eq-reference-{density}x.png")))?;
@@ -4766,11 +4688,23 @@ impl App {
             }
             assert_eq!(rack.app.player.state.state(), expected);
         }
+        rack.app.panels.focus = Focus::Playlist;
+        rack.scene(v);
         click(&mut rack, "pause");
         wait_state(&rack, PlayState::Paused);
+        assert_eq!(rack.app.panels.focus, Focus::Player);
+        rack.app.panels.focus = Focus::Equalizer;
         rack.scene(v);
-        click(&mut rack, "play");
+        // One click must resume from another pane; repeated Play presses
+        // before the worker responds must never become queued toggles.
+        for _ in 0..5 {
+            click(&mut rack, "play");
+        }
         wait_state(&rack, PlayState::Playing);
+        assert_eq!(rack.app.panels.focus, Focus::Player);
+        std::thread::sleep(Duration::from_millis(30));
+        assert_eq!(rack.app.player.state.state(), PlayState::Playing);
+        rack.app.panels.focus = Focus::Album;
         rack.scene(v);
         click(&mut rack, "stop");
         wait_state(&rack, PlayState::Stopped);

@@ -604,7 +604,7 @@ fn handle_with_activity(
                 player.volume(),
                 player.crossfade(),
                 st.bit_perfect.load(Ordering::Relaxed),
-                st.loading.load(Ordering::Relaxed),
+                st.is_loading(),
             )
         }
         // Everything a mirroring instance needs for one frame, on one line.
@@ -682,7 +682,7 @@ fn handle_with_activity(
                 st.bitrate_kbps.load(Ordering::Relaxed),
                 st.bit_perfect.load(Ordering::Relaxed),
                 json_string(&uri),
-                st.loading.load(Ordering::Relaxed),
+                st.is_loading(),
             )
         }
 

@@ -406,7 +406,7 @@ pub fn run_stdio() -> Result<()> {
                 let count = samples.len().min(wave.len());
                 wave[..count].copy_from_slice(&samples[samples.len() - count..]);
             }
-            if player.state.loading.load(Relaxed)
+            if player.state.is_loading()
                 || (cfg.fx.active() && player.state.state() == PlayState::Playing)
             {
                 seek_phase = (seek_phase + dt / 3.5).fract();
@@ -451,13 +451,7 @@ pub fn run_stdio() -> Result<()> {
             .or_else(|| current.as_ref().map(|item| item.uri.to_string()))
             .unwrap_or_else(|| "nothing playing".into());
         let path = current.as_ref().map(|item| item.uri.to_string());
-        let status = (
-            playing,
-            paused,
-            title,
-            path,
-            player.state.loading.load(Relaxed),
-        );
+        let status = (playing, paused, title, path, player.state.is_loading());
         if last_status.as_ref() != Some(&status) {
             write_response(
                 &mut output,
@@ -930,7 +924,7 @@ fn render_state(
         subtitle,
         tech,
         state: st.state(),
-        loading: st.loading.load(Relaxed),
+        loading: st.is_loading(),
         position: st.position_secs(),
         duration: st.duration_secs(),
         volume: player.volume(),

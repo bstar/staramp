@@ -145,17 +145,32 @@ pub struct OutputState {
     /// players earn a reputation for crackling, so this is always visible.
     pub underruns: AtomicU64,
     pub paused: AtomicBool,
+    /// Current starvation, published independently of a blocked decoder.
+    pub buffering: AtomicBool,
     /// Set once the decode side is done *and* the ring has drained.
     pub finished: AtomicBool,
 }
 
 impl OutputState {
-    fn new(paused: bool) -> Self {
+    pub(super) fn new(paused: bool) -> Self {
         Self {
             frames_out: AtomicU64::new(0),
             underruns: AtomicU64::new(0),
             paused: AtomicBool::new(paused),
+            buffering: AtomicBool::new(false),
             finished: AtomicBool::new(false),
+        }
+    }
+
+    fn read_result(&self, got: usize, wanted: usize, done: bool) {
+        self.buffering
+            .store(got < wanted && !done, Ordering::Relaxed);
+        if got < wanted {
+            if done {
+                self.finished.store(true, Ordering::Release);
+            } else {
+                self.underruns.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -248,16 +263,8 @@ impl Output {
                         Err(_) => 0,
                     };
 
-                    if got < out.len() {
-                        out[got..].fill(0.0);
-                        // Running dry after the decoder has finished is the end
-                        // of the track, not a fault.
-                        if source_done.load(Ordering::Acquire) {
-                            cb_state.finished.store(true, Ordering::Release);
-                        } else {
-                            cb_state.underruns.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
+                    out[got..].fill(0.0);
+                    cb_state.read_result(got, out.len(), source_done.load(Ordering::Acquire));
 
                     // Tap what is going to the device, not what the decoder
                     // produced: the ring holds ~200ms, and tapping upstream
@@ -312,10 +319,12 @@ impl Output {
                         continue;
                     }
                     let count = consumer.slots().min(super::relay::FRAMES * 2) / 2 * 2;
+                    cb.read_result(
+                        count,
+                        super::relay::FRAMES * 2,
+                        done.load(Ordering::Acquire),
+                    );
                     if count == 0 {
-                        if done.load(Ordering::Acquire) {
-                            cb.finished.store(true, Ordering::Release);
-                        }
                         std::thread::sleep(std::time::Duration::from_millis(5));
                         next = std::time::Instant::now();
                         continue;
@@ -363,6 +372,7 @@ impl Output {
     }
 
     pub fn resume(&self) {
+        self.state.buffering.store(true, Ordering::Relaxed);
         self.state.paused.store(false, Ordering::Relaxed);
     }
 
@@ -448,6 +458,22 @@ impl Drop for Output {
 mod relay_tests {
     use super::*;
     #[test]
+    fn callback_reports_storage_starvation_recovery_and_eof_independently_of_decoder() {
+        let state = OutputState::new(false);
+        state.read_result(1920, 1920, false);
+        assert!(!state.buffering.load(Ordering::Relaxed));
+        state.read_result(0, 1920, false);
+        assert!(state.buffering.load(Ordering::Relaxed));
+        assert!(!state.finished.load(Ordering::Acquire));
+        state.read_result(1920, 1920, false);
+        assert!(!state.buffering.load(Ordering::Relaxed));
+        state.read_result(0, 1920, true);
+        assert!(!state.buffering.load(Ordering::Relaxed));
+        assert!(state.finished.load(Ordering::Acquire));
+        assert_eq!(state.underruns.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
     fn pcm_output_is_bounded_pauses_and_joins_without_a_device() {
         let receiver = super::super::relay::receiver();
         for _ in receiver.try_iter() {}
@@ -480,6 +506,19 @@ mod relay_tests {
         assert_eq!(block.samples.len(), 1920);
         assert!(block.samples.iter().all(|sample| *sample == 16384));
         assert!(!output.bit_perfect);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+        while !output.state.buffering.load(Ordering::Relaxed)
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(
+            output.state.buffering.load(Ordering::Relaxed),
+            "empty output must report a stall without any decoder notification"
+        );
+        output.pause();
+        output.resume();
+        assert!(output.state.buffering.load(Ordering::Relaxed));
         drop(output);
     }
 }

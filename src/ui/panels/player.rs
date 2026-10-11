@@ -431,10 +431,12 @@ const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT + VOLUME
 impl<'a> Widget for PlayerView<'a> {
     fn render(mut self, area: Rect, buf: &mut Buffer) {
         if self.loading {
-            self.position = 0.;
-            self.duration = 0.;
+            if self.state == PlayState::Stopped {
+                self.position = 0.;
+                self.duration = 0.;
+            }
             self.bit_perfect = false;
-            self.tech = "Opening audio · waiting for media".into();
+            self.tech = "Loading audio · waiting for media".into();
         }
         let t = self.theme;
 
@@ -486,7 +488,7 @@ impl<'a> Widget for PlayerView<'a> {
         };
 
         // ---- clock and analyzer ----
-        let shown = if self.loading || self.state == PlayState::Stopped {
+        let shown = if self.state == PlayState::Stopped {
             "-:--".to_string()
         } else {
             digits::clock(self.position)

@@ -530,7 +530,7 @@ pub(super) fn player_surface(
         &mut s,
         R::new(x, display_y + display_h - header, width, header),
         if state.loading {
-            "Opening audio · waiting for media".into()
+            "Loading audio · waiting for media".into()
         } else if state.bit_perfect && artwork.is_none() {
             format!("{} · BIT PERFECT", state.tech)
         } else {

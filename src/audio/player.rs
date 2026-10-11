@@ -18,7 +18,7 @@ use crossbeam_channel::{bounded, Receiver, Sender, TryRecvError};
 use super::decode::{Decoder, StreamSpec};
 use super::dsp::eq::{EqHandle, EqState};
 use super::dsp::gain::{soft_clip, ReplayGain, RgMode};
-use super::output::Output;
+use super::output::{Output, OutputState};
 use super::ring;
 use super::source;
 use super::tap::Tap;
@@ -67,6 +67,30 @@ pub enum Command {
     Quit,
 }
 
+/// A queued storage/transport request stays visible even when an earlier
+/// decoder read prevents the worker from accepting it yet.
+struct QueuedCommand {
+    command: Command,
+    loading: bool,
+}
+
+impl Command {
+    fn may_wait_for_audio(&self) -> bool {
+        matches!(
+            self,
+            Self::PlayIndex(_)
+                | Self::ReplaceQueueAndPlay { .. }
+                | Self::Resume
+                | Self::Next
+                | Self::Prev
+                | Self::SeekTo(_)
+                | Self::SeekBy(_)
+                | Self::AudioRelay(_)
+                | Self::TogglePause
+        )
+    }
+}
+
 /// What the UI reads. All atomics, so rendering never blocks the audio path.
 pub struct PlayerState {
     pub position_frames: AtomicU64,
@@ -84,6 +108,8 @@ pub struct PlayerState {
     pub underruns: AtomicU64,
     /// Foreground track open and initial buffering; background preloads never set this.
     pub loading: AtomicBool,
+    pending_loads: AtomicU64,
+    output: ArcSwapOption<OutputState>,
     pub playing: AtomicBool,
     pub paused: AtomicBool,
     pub bit_perfect: AtomicBool,
@@ -105,12 +131,27 @@ impl PlayerState {
             codec: ArcSwap::from(Arc::new(String::new())),
             underruns: AtomicU64::new(0),
             loading: AtomicBool::new(false),
+            pending_loads: AtomicU64::new(0),
+            output: ArcSwapOption::empty(),
             playing: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             bit_perfect: AtomicBool::new(false),
             track_revision: AtomicU64::new(0),
             last_error: ArcSwapOption::empty(),
         }
+    }
+
+    /// Includes accepted requests and starvation reported by the audio output.
+    /// The decoder cannot publish its own wait while blocked inside a read.
+    pub fn is_loading(&self) -> bool {
+        self.pending_loads.load(Ordering::Acquire) > 0
+            || self.loading.load(Ordering::Relaxed)
+            || (self.state() == PlayState::Playing
+                && self
+                    .output
+                    .load()
+                    .as_ref()
+                    .is_some_and(|output| output.buffering.load(Ordering::Relaxed)))
     }
 
     pub fn state(&self) -> PlayState {
@@ -138,7 +179,7 @@ pub struct Player {
     /// The library this player reads from. Held so the UI can ask what kind
     /// of library it is without a second copy of the answer.
     vfs: Arc<Vfs>,
-    cmds: Sender<Command>,
+    cmds: Sender<QueuedCommand>,
     pub state: Arc<PlayerState>,
     pub eq: Arc<EqHandle>,
     /// The queue, shared so the UI can render it. Locked only by non-audio code.
@@ -268,16 +309,23 @@ impl Player {
     }
 
     pub fn send(&self, cmd: Command) {
-        // A full command queue means the worker is wedged; dropping a keypress
-        // beats blocking the UI thread on it.
-        let _ = self.cmds.try_send(cmd);
+        let _ = self.send_checked(cmd);
     }
 
-    /// Embedded clients need to know when a transport command was not queued.
-    pub fn send_checked(&self, cmd: Command) -> Result<()> {
-        self.cmds
-            .try_send(cmd)
-            .map_err(|e| anyhow::anyhow!("playback command unavailable: {e}"))
+    /// Publish accepted work before the worker touches storage. Failed sends
+    /// roll back their own count, preserving any earlier outstanding request.
+    pub fn send_checked(&self, command: Command) -> Result<()> {
+        let loading = command.may_wait_for_audio();
+        if loading {
+            self.state.pending_loads.fetch_add(1, Ordering::AcqRel);
+        }
+        if let Err(error) = self.cmds.try_send(QueuedCommand { command, loading }) {
+            if loading {
+                self.state.pending_loads.fetch_sub(1, Ordering::AcqRel);
+            }
+            anyhow::bail!("playback command unavailable: {error}");
+        }
+        Ok(())
     }
 
     pub fn set_volume(&self, v: f32) {
@@ -348,7 +396,10 @@ impl Player {
 
 impl Drop for Player {
     fn drop(&mut self) {
-        let _ = self.cmds.send(Command::Quit);
+        let _ = self.cmds.send(QueuedCommand {
+            command: Command::Quit,
+            loading: false,
+        });
         if let Some(w) = self.worker.take() {
             let _ = w.join();
         }
@@ -550,7 +601,7 @@ const CROSSFADE_SECS: u64 = 5;
 #[allow(clippy::too_many_arguments)]
 fn run(
     vfs: Arc<Vfs>,
-    rx: Receiver<Command>,
+    rx: Receiver<QueuedCommand>,
     state: Arc<PlayerState>,
     eq: Arc<EqHandle>,
     queue: Arc<Mutex<Queue>>,
@@ -614,8 +665,8 @@ fn run(
 
     loop {
         // Drain commands first: responsiveness beats a full ring.
-        while let Ok(cmd) = rx.try_recv() {
-            match cmd {
+        while let Ok(queued) = rx.try_recv() {
+            match queued.command {
                 Command::Quit => return,
                 Command::Stop => {
                     album_preload = None;
@@ -832,7 +883,7 @@ fn run(
                             // `drain` does not yet remove it -- see its note.
                             if let Some(s) = &mut stream {
                                 if super::relay::enabled() {
-                                    if let Err(error) = reset_relay(s, &d.spec(), &tap) {
+                                    if let Err(error) = reset_relay(s, &d.spec(), &tap, &state) {
                                         fail_track(&state, format!("audio relay seek: {error}"));
                                     }
                                 } else {
@@ -856,7 +907,7 @@ fn run(
                             state.position_frames.store(landed, Ordering::Relaxed);
                             if let Some(s) = &mut stream {
                                 if super::relay::enabled() {
-                                    if let Err(error) = reset_relay(s, &d.spec(), &tap) {
+                                    if let Err(error) = reset_relay(s, &d.spec(), &tap, &state) {
                                         fail_track(&state, format!("audio relay seek: {error}"));
                                     }
                                 } else {
@@ -868,6 +919,9 @@ fn run(
                         }
                     }
                 }
+            }
+            if queued.loading {
+                state.pending_loads.fetch_sub(1, Ordering::AcqRel);
             }
         }
 
@@ -1699,6 +1753,9 @@ fn open_track(
     // Publish before the first filesystem access: metadata/open can wait for
     // a sleeping USB drive, and the UI must remain able to explain that wait.
     state.loading.store(true, Ordering::Relaxed);
+    state.playing.store(false, Ordering::Relaxed);
+    state.position_frames.store(0, Ordering::Relaxed);
+    state.duration_frames.store(0, Ordering::Relaxed);
     state.last_error.store(None);
     let opened = match source::open(vfs, index, uri) {
         Ok(o) => o,
@@ -1786,6 +1843,7 @@ fn open_track(
             true,
         ) {
             Ok(output) => {
+                state.output.store(Some(Arc::clone(&output.state)));
                 state
                     .bit_perfect
                     .store(output.bit_perfect, Ordering::Relaxed);
@@ -1886,11 +1944,17 @@ pub fn needs_rebuild(
     current_rate != next.sample_rate || current_channels != next.channels
 }
 
-fn reset_relay(s: &mut Stream, spec: &StreamSpec, tap: &Arc<Tap>) -> Result<()> {
+fn reset_relay(
+    s: &mut Stream,
+    spec: &StreamSpec,
+    tap: &Arc<Tap>,
+    state: &PlayerState,
+) -> Result<()> {
     let plan = super::output::plan(spec, None)?;
     let (producer, consumer) = ring::create(s.sample_rate, s.channels);
     let source_done = Arc::new(AtomicBool::new(false));
     let output = Output::open(plan, consumer, source_done.clone(), tap.clone(), true)?;
+    state.output.store(Some(Arc::clone(&output.state)));
     s.output = output;
     s.producer = producer;
     s.source_done = source_done;
@@ -1949,6 +2013,8 @@ mod tests {
         }
         let loading = player.state.loading.load(Ordering::Relaxed);
         let failed_early = player.state.last_error.load_full().is_some();
+        let resume_accepted = player.send_checked(Command::Resume).is_ok();
+        let waiting_requests = player.state.pending_loads.load(Ordering::Acquire);
         // Release before any assertion, including on a regression, so Drop can
         // always join the real playback worker rather than hanging the suite.
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
@@ -1971,22 +2037,70 @@ mod tests {
         release.write_all(b"invalid cue sheet\n").unwrap();
         drop(release);
         let deadline = std::time::Instant::now() + Duration::from_secs(2);
-        while player.state.last_error.load_full().is_none() && std::time::Instant::now() < deadline
+        while (player.state.last_error.load_full().is_none() || player.state.is_loading())
+            && std::time::Instant::now() < deadline
         {
             thread::sleep(Duration::from_millis(2));
         }
         assert!(loading, "no loading feedback during a blocked source read");
         assert!(!failed_early);
+        assert!(resume_accepted);
+        assert_eq!(
+            waiting_requests, 2,
+            "Resume stays visible behind blocked IO"
+        );
         assert!(player.state.last_error.load_full().is_some());
-        assert!(!player.state.loading.load(Ordering::Relaxed));
+        assert!(!player.state.is_loading());
         assert_eq!(player.state.state(), PlayState::Stopped);
         player.send_checked(Command::Stop).unwrap();
+    }
+
+    #[test]
+    fn resume_is_visible_while_the_worker_has_not_accepted_it_and_full_send_rolls_back() {
+        let mut player = Player::detached();
+        let (tx, rx) = bounded(1);
+        player.cmds = tx;
+        player.state.playing.store(true, Ordering::Relaxed);
+        player.state.paused.store(true, Ordering::Relaxed);
+        assert!(!player.state.is_loading());
+        player.send_checked(Command::Resume).unwrap();
+        assert!(
+            player.state.is_loading(),
+            "queued Resume needs immediate feedback"
+        );
+        assert!(player.send_checked(Command::Next).is_err());
+        assert!(
+            player.state.is_loading(),
+            "failed send must retain the accepted request"
+        );
+        assert_eq!(player.state.pending_loads.load(Ordering::Acquire), 1);
+        assert!(matches!(rx.recv().unwrap().command, Command::Resume));
+    }
+
+    #[test]
+    fn starvation_is_visible_without_decoder_progress_and_hidden_while_paused_or_stopped() {
+        let state = PlayerState::new();
+        let output = Arc::new(OutputState::new(false));
+        state.output.store(Some(output.clone()));
+        state.playing.store(true, Ordering::Relaxed);
+        output.buffering.store(true, Ordering::Relaxed);
+        assert!(state.is_loading());
+        state.paused.store(true, Ordering::Relaxed);
+        assert!(!state.is_loading());
+        state.paused.store(false, Ordering::Relaxed);
+        output.buffering.store(false, Ordering::Relaxed);
+        assert!(!state.is_loading());
+        output.buffering.store(true, Ordering::Relaxed);
+        state.playing.store(false, Ordering::Relaxed);
+        assert!(!state.is_loading());
     }
 
     #[test]
     fn checked_send_reports_a_disconnected_worker() {
         let player = Player::detached();
         assert!(player.send_checked(Command::Pause).is_err());
+        assert!(player.send_checked(Command::Resume).is_err());
+        assert!(!player.state.is_loading());
     }
 
     struct NumberedDecoder {

@@ -3010,6 +3010,23 @@ impl App {
         }
     }
 
+    /// Button intent is explicit: a second Play press cannot queue a Pause
+    /// while the first request is still waiting on storage or the audio worker.
+    fn play(&mut self) {
+        if self.player.state.is_loading() {
+            return;
+        }
+        match self.player.state.state() {
+            PlayState::Stopped => self.play_track_at_cursor(),
+            PlayState::Paused => self.command(&Command::Resume, "play"),
+            PlayState::Playing => {}
+        }
+    }
+
+    fn pause(&self) {
+        self.command(&Command::Pause, "pause");
+    }
+
     /// The instance that owned the session has gone. Try to become it.
     ///
     /// Every surviving window notices at the same moment and races to bind the
@@ -4210,12 +4227,7 @@ impl App {
     /// the title transition, so the bar breathes with the track rather than
     /// sweeping to its own clock.
     fn advance_seek_phase(&mut self, dt: f32) {
-        if self
-            .player
-            .state
-            .loading
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
+        if self.player.state.is_loading() {
             self.look.seek_phase = (self.look.seek_phase + dt / SEEK_SHEEN_PERIOD).fract();
             return;
         }
@@ -5393,6 +5405,9 @@ impl App {
             CloseOverlay => self.panels.help = false,
             Help => self.panels.help = !self.panels.help,
             PlayPause => {
+                if self.player.state.is_loading() {
+                    return;
+                }
                 if self.player.state.state() == PlayState::Stopped {
                     self.play_track_at_cursor();
                 } else {
@@ -6795,13 +6810,10 @@ impl App {
             return self.handle(Action::Prev);
         }
         if hit(c.play, x, y) {
-            return match self.player.state.state() {
-                PlayState::Playing => {}
-                _ => self.handle(Action::PlayPause),
-            };
+            return self.play();
         }
         if hit(c.pause, x, y) {
-            return self.handle(Action::PlayPause);
+            return self.pause();
         }
         if hit(c.stop, x, y) {
             return self.handle(Action::Stop);
@@ -7827,7 +7839,7 @@ impl App {
             subtitle,
             tech,
             state: st.state(),
-            loading: st.loading.load(Relaxed),
+            loading: st.is_loading(),
             position: st.position_secs(),
             duration: st.duration_secs(),
             volume: self.player.volume(),

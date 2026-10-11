@@ -9,7 +9,47 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Contextual EQ details · October 11
+
+The native EQ no longer has a bottom strip of every band's parameters,
+previous/next links or drag instructions. Clicking a curve point selects the
+band and shows its editable details beside the graph. The panel is 36 logical
+pixels shorter; adding filters remains available through EQ Settings and the
+existing keyboard action.
+
+Formatting, strict Clippy, the native rack integration check and the Nix release
+build passed. The 1x production EQ capture was visually inspected. The desktop
+frontend, relay and playback owner were refreshed on the new executable with
+the queue, paused track/position, shared view, theme and EQ profile files retained.
+
 ### Track loading feedback · October 11
+
+Follow-up: the first implementation missed paused-track resumes and storage
+reads that blocked an already-running decoder. Playback requests now publish
+pending work before reaching the worker; the independent audio callback also
+reports starvation and recovery. A failed command send rolls back only its own
+pending count. The loading display retains the current position during resume
+and buffering, and resets stale timing when opening a different track.
+
+Native transport buttons now activate on the first click from another pane.
+Play and Pause send explicit commands; repeated Play presses during a wait
+cannot queue opposing toggles. Slider/graph clicks retain their existing
+focus-before-drag behavior.
+
+Regression checks exercise Resume queued behind a real blocked CUE read, a
+full command channel, empty/refilled/finished output, the actual bounded PCM
+relay starving without decoder progress, and first-click transport from other
+panes with repeated Play clicks through the production compositor. The full
+suite passes: 893 unit tests (5 ignored), 12 embed tests and one graphical
+integration test. Physical USB wake and macOS remain unverified.
+
+The follow-up Nix release, formatting and strict Clippy passed. An isolated
+real-frontend PTY with a silent WAV and the local audio service confirmed
+first-click Play/Pause/Stop after switching pane focus, five rapid Play presses
+remaining Playing, zero-coordinate input and main-X clean exit. The live Kitty
+frontend, relay and playback owner were restarted on the new release and their
+executable inodes verified. The paused position, exact 29,615-track queue order,
+shared view, theme, EQ settings and saved/draft profile hashes were preserved.
 
 Foreground track opens now publish a loading flag before any filesystem access,
 including the stat/open that can wait for a sleeping USB drive. It stays set

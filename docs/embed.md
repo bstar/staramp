@@ -94,8 +94,10 @@ The first response is
 The service then sends `status` when playback state or title changes. A status
 contains `playing`, `paused`, `loading`, `title`, and an optional absolute `path` for the
 current track, which lets the host open that track externally after next or
-previous. `loading` covers foreground opening and initial buffering; the player
-display also shows this wait. Older services omit it (treat as false). It sends `error`
+previous. `loading` covers accepted playback requests waiting for the worker,
+foreground opening, initial buffering, and an output buffer waiting for more
+audio during playback. The player display also shows this wait, retaining its
+position when resuming or buffering. Older services omit it (treat as false). It sends `error`
 for a failed request or playback problem, and `frame` while configured. A frame
 has `generation`, `width`, `height`, and exactly `width * height` row-major
 `cells`. Every cell has `symbol`, RGB `fg` and `bg` triples, and `modifiers`,

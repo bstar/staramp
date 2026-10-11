@@ -222,8 +222,10 @@ impl PlayerRenderState {
     /// the previous track's format, clock, or spectrum while loading or idle.
     pub fn clear_empty_idle(mut self) -> Self {
         if self.loading || (!self.has_items && self.state == PlayState::Stopped) {
-            self.position = 0.;
-            self.duration = 0.;
+            if self.state == PlayState::Stopped {
+                self.position = 0.;
+                self.duration = 0.;
+            }
             self.tech.clear();
             if !self.loading {
                 self.subtitle.clear();
@@ -390,7 +392,7 @@ pub fn render_frame(
                 cell.bg = palette.bg;
                 cell.modifiers = 0;
             }
-            let clock = if player.loading || player.state == PlayState::Stopped {
+            let clock = if player.state == PlayState::Stopped {
                 "--:--".to_string()
             } else {
                 crate::ui::digits::clock_padded(player.position)
@@ -523,8 +525,8 @@ mod tests {
         state.loading = true;
         state.bit_perfect = true;
         let state = state.clear_empty_idle();
-        assert_eq!(state.position, 0.);
-        assert_eq!(state.duration, 0.);
+        assert_eq!(state.position, 30.);
+        assert_eq!(state.duration, 120.);
         assert!(!state.bit_perfect);
         assert!(state.tech.is_empty());
         assert!(state.bands.iter().all(|v| *v == 0.));

@@ -1,0 +1,65 @@
+# Original STAR/AMP treatment inspired by the Winamp 2 blue-gray and silver look.
+# The native skin adds three-stop panel shading and original silver button art.
+[meta]
+name = "Winamp Silver"
+id = "winamp-silver"
+author = "STAR/AMP"
+variant = "dark"
+
+[app]
+bg = "#28283b"
+fg = "#cfd8e1"
+dim = "#9aa1b7"
+accent = "#a4d791"
+ok = "#a4d791"
+warn = "#dfca45"
+error = "#ef4932"
+
+[chrome]
+border = "#6e7189"
+border_focused = "#a4d791"
+divider = "#45455d"
+titlebar_active_fg = "#cfd8e1"
+titlebar_active_bg = "#222235"
+titlebar_inactive_fg = "#9aa1b7"
+
+[row]
+fg = "#cfd8e1"
+selected_fg = "#a4d791"
+selected_bg = "#313149"
+playing_fg = "#a4d791"
+index_fg = "#9aa1b7"
+duration_fg = "#9aa1b7"
+meta_fg = "#9aa1b7"
+
+[time]
+digit_fg = "#a4d791"
+digit_dim_fg = "#203226"
+colon_fg = "#a4d791"
+remaining_fg = "#dfca45"
+
+[marquee]
+fg = "#a4d791"
+paused_fg = "#a4d791"
+
+[transport]
+button_bg = "#b7c6d0"
+button_active_bg = "#b7c6d0"
+button_fg = "#273743"
+button_active_fg = "#273743"
+button_disabled_fg = "#63717c"
+toggle_on_fg = "#a4d791"
+toggle_off_fg = "#9aa1b7"
+
+[eq]
+slider_fill_pos = "#d4d937"
+slider_fill_neg = "#d69729"
+enabled_fg = "#a4d791"
+band_value = "#a4d791"
+
+[vis]
+bg = "#06070b"
+grid_fg = "#15251b"
+peak_fg = "#c3e5b6"
+ramp = ["#517e43", "#7daa68", "#a4d791", "#c3e5b6"]
+osc = ["#a4d791", "#91c17f", "#7daa68", "#668d54", "#517043"]

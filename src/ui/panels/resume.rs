@@ -17,6 +17,7 @@ use crate::ui::panels::player::truncate;
 pub struct ResumeView<'a> {
     pub theme: &'a Theme,
     pub session: &'a Session,
+    pub playlist_available: bool,
     pub now: i64,
 }
 
@@ -79,7 +80,7 @@ impl<'a> Widget for ResumeView<'a> {
             put(view, Style::default().fg(rgb(t.dim)), buf, &mut y);
         }
 
-        if !self.session.playlist_available() {
+        if !self.playlist_available {
             put(
                 "that playlist is gone — will resume from the library".into(),
                 Style::default().fg(rgb(t.warn)),

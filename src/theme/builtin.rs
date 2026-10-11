@@ -2,13 +2,12 @@
 //! without shipping a data directory alongside it.
 //!
 //! The themes, and the lookup that finds one, are starkit's; what is here is
-//! the player's registry -- the same sixteen built-ins resolved into the
-//! player's own [`Theme`] -- behind the free functions the rest of the crate
-//! already called.
+//! the player's registry: the shared built-ins plus Winamp Silver, resolved
+//! into the player's own [`Theme`].
 
 use std::sync::LazyLock;
 
-use starkit::theme::Registry;
+use starkit::theme::{Builtin, Registry};
 
 use super::Theme;
 
@@ -17,7 +16,24 @@ use super::Theme;
 /// One for the process: it holds no mutable state, and the alternative is
 /// threading it from `main` through every panel that wants to know what
 /// `theme list` would print.
-static REGISTRY: LazyLock<Registry<Theme>> = LazyLock::new(|| Registry::new(crate::paths::PATHS));
+static PLAYER_BUILTINS: LazyLock<Vec<Builtin>> = LazyLock::new(|| {
+    let mut themes = Vec::new();
+    for builtin in starkit::theme::BUILTINS {
+        themes.push(Builtin {
+            id: builtin.id,
+            toml: builtin.toml,
+        });
+        if builtin.id == "winamp-classic" {
+            themes.push(Builtin {
+                id: "winamp-silver",
+                toml: include_str!("../../themes/winamp-silver.toml"),
+            });
+        }
+    }
+    themes
+});
+static REGISTRY: LazyLock<Registry<Theme>> =
+    LazyLock::new(|| Registry::new(crate::paths::PATHS).with_builtins(&PLAYER_BUILTINS));
 
 pub fn load(id: &str) -> Option<Theme> {
     REGISTRY.load(id)
@@ -50,6 +66,21 @@ mod tests {
     use super::*;
     use starkit::theme::color::Rgb;
     use starkit::theme::{BUILTINS, DEFAULT_ID};
+
+    #[test]
+    fn silver_is_selectable_with_muted_green_player_roles() {
+        let t = load("winamp-silver").unwrap();
+        assert_eq!(t.id, "winamp-silver");
+        assert!(selectable().iter().any(|id| id == "winamp-silver"));
+        let green = Rgb::new(164, 215, 145);
+        assert_eq!(t.accent, green);
+        assert_eq!(t.time_digit_fg, green);
+        assert_eq!(t.marquee_fg, green);
+        assert!(t.vis_ramp.contains(&green));
+        assert!(t.bg.contrast(t.fg) >= 7.0);
+        assert!(t.bg.contrast(t.dim) >= 4.5);
+        assert_eq!(default_theme().id, "winamp-classic");
+    }
 
     #[test]
     fn winamp_classic_carries_the_real_viscolor_ramp() {

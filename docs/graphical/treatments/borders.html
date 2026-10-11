@@ -1,0 +1,136 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>STAR/AMP · Border treatments</title><style>
+    :root{color-scheme:dark;font:14px/1.6 system-ui,sans-serif;color:#cfd8e1;background:#1c1c27}
+    *{box-sizing:border-box}body{margin:0}main{max-width:1480px;margin:auto;padding:36px 28px 50px}
+    .eyebrow{color:#a4d791;font-size:11px;letter-spacing:2px}h1{font-size:32px;letter-spacing:-.8px;line-height:1.25;margin:10px 0}
+    p{color:#9aa1b7;margin:6px 0 16px}a{color:#a4d791;text-underline-offset:3px}button{font:inherit;cursor:pointer}
+    button,select{color:#cfd8e1;background:#28283b;border:1px solid #50546a;border-radius:4px;padding:7px 12px}
+    button:hover{background:#34344a}button[aria-pressed="true"]{border-color:#a4d791;color:#a4d791;background:#303344}
+    button:focus-visible,select:focus-visible,a:focus-visible,summary:focus-visible{outline:2px solid #a4d791;outline-offset:3px}
+    nav{display:flex;gap:8px;flex-wrap:wrap;margin:22px 0 14px}.controls{display:flex;align-items:center;gap:22px;flex-wrap:wrap;padding-bottom:24px;border-bottom:1px solid #3b3d50}
+    label{display:flex;align-items:center;gap:8px;color:#aeb5c7}input{accent-color:#a4d791}select{font:inherit}
+    article,.reference{margin:28px 0 40px;padding-bottom:24px;border-bottom:1px solid #3b3d50;scroll-margin:18px}
+    .card-heading{display:flex;justify-content:space-between;gap:20px;align-items:start}h2{font-size:18px;margin:0;line-height:1.5}
+    h2 span{color:#a4d791;margin-right:8px}.card-heading p{font-size:13px;margin:6px 0 18px}.focus-option{white-space:nowrap}
+    .stage{overflow-x:auto;background:#1c1c27}.scene{display:block;width:100%;max-width:1400px;height:auto}.scene-panes{display:none}
+    body.panes .scene-player{display:none}body.panes .scene-panes{display:block}body.native .stage>.scene{width:1400px;max-width:none}
+    details{margin-top:16px}summary{color:#b5bfd0;cursor:pointer;font-size:12px;width:fit-content}.corners{display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin-top:10px}
+    figure{margin:0}figcaption{color:#9aa1b7;font-size:10px;margin-bottom:7px}.loupe{display:block;image-rendering:pixelated;background:#1c1c27;border:1px solid #3b3d50}
+    .detail-note{font-size:12px;margin:0}.exports{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;margin-top:16px}.exports span{color:#9aa1b7}.permalink{margin-left:auto}
+    .reference{border:0;border-bottom:1px solid #3b3d50;padding:0 0 24px}.reference p{font-size:12px}.note{font-size:12px;margin-top:32px}
+    [hidden]{display:none!important}@media(max-width:650px){main{padding:22px 12px}h1{font-size:27px}.card-heading{gap:8px}.card-heading p{font-size:12px}.focus-option{padding:5px 8px}.controls{gap:12px}.corners{gap:12px}.detail-note{display:none}.permalink{margin-left:0}}
+    </style><main><div class="eyebrow">STAR/AMP · FRAME STUDIES</div><h1>Less weight. Clearer relief.</h1>
+    <p>Four border treatments around the same native player content. Muted green, silver playback buttons, and the blue-gray panel gradient stay consistent.</p>
+    <nav aria-label="Treatment filter"><button data-focus="all" aria-pressed="true">All options</button><button data-focus="a" aria-pressed="false">A · Previous bevel</button><button data-focus="b" aria-pressed="false">B · Fine bevel</button><button data-focus="c" aria-pressed="false">C · Soft contour</button><button data-focus="d" aria-pressed="false">D · Thin outline</button></nav>
+    <div class="controls"><label>Context <select id="context"><option value="player">Player</option><option value="panes">Album + Activity</option></select></label>
+    <label><input id="native" type="checkbox"> Actual size · 1:1</label><label><input id="compare" type="checkbox"> Show latest version for comparison</label></div>
+    <section class="reference" id="reference" hidden><h2>Latest version · comparison</h2><p>The heavier two-step bevel currently in the app.</p><div class="stage"><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-player" width="1400" height="230" viewBox="0 0 1400 230" role="img" aria-label="CURRENT border treatment, player"><g id="drawing-current-player"><svg width="1400" height="230" viewBox="0 0 1400 230"><image x="0" y="0" width="1400" height="1200" href="borders-native-rack.png"/></svg></g></svg><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-panes" width="1400" height="320" viewBox="0 0 1400 320" role="img" aria-label="CURRENT border treatment, panes"><g id="drawing-current-panes"><svg width="696" height="320" viewBox="0 0 696 320"><image x="0" y="-540" width="1400" height="1200" href="borders-native-rack.png"/></svg><g transform="translate(704 0)"><svg width="696" height="320" viewBox="0 0 696 320"><image x="-704" y="-540" width="1400" height="1200" href="borders-native-rack.png"/></svg></g></g></svg></div></section>
+    <div id="options"><article id="option-a" data-option="a">
+        <div class="card-heading"><div><h2><span>A</span> Previous bevel</h2><p>The earlier edge: a slim highlight and a quiet dark return. A familiar starting point.</p></div>
+        <button class="focus-option" data-focus="a" aria-label="Focus option A">Focus A</button></div>
+        <div class="stage"><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-player" width="1400" height="230" viewBox="0 0 1400 230" role="img" aria-label="A border treatment, player"><g id="drawing-a-player"><defs><linearGradient id="border-a-player-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-a-player-content"><rect x="6" y="6" width="1388" height="218"/></clipPath></defs><rect x="0" y="0" width="1400" height="230" rx="4" fill="#10101b"/><rect x="1" y="1" width="1398" height="228" rx="3" fill="#28283b"/><path d="M3 227V3H1397" fill="none" stroke="#7e8299"/><path d="M3 227H1397V3" fill="none" stroke="#10101b"/><rect x="4" y="4" width="1392" height="222" rx="0" fill="url(#border-a-player-body)"/><image x="0" y="0" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-a-player-content)"/></g></svg><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-panes" width="1400" height="320" viewBox="0 0 1400 320" role="img" aria-label="A border treatment, panes"><g id="drawing-a-panes"><defs><linearGradient id="border-a-panes-album-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-a-panes-album-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#10101b"/><rect x="1" y="1" width="694" height="318" rx="3" fill="#28283b"/><path d="M3 317V3H693" fill="none" stroke="#7e8299"/><path d="M3 317H693V3" fill="none" stroke="#10101b"/><rect x="4" y="4" width="688" height="312" rx="0" fill="url(#border-a-panes-album-body)"/><image x="0" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-a-panes-album-content)"/><g transform="translate(704 0)"><defs><linearGradient id="border-a-panes-activity-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-a-panes-activity-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#10101b"/><rect x="1" y="1" width="694" height="318" rx="3" fill="#28283b"/><path d="M3 317V3H693" fill="none" stroke="#7e8299"/><path d="M3 317H693V3" fill="none" stroke="#10101b"/><rect x="4" y="4" width="688" height="312" rx="0" fill="url(#border-a-panes-activity-body)"/><image x="-704" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-a-panes-activity-content)"/></g></g></svg></div>
+        <details open><summary>Corner detail · 3×</summary><div class="corners">
+        <figure><figcaption>Light edge · top left</figcaption><svg class="loupe top" width="180" height="126" viewBox="0 0 60 42" aria-label="Top left corner enlarged three times"><use href="#drawing-a-player"/></svg></figure>
+        <figure><figcaption>Dark edge · bottom right</figcaption><svg class="loupe bottom" width="180" height="126" viewBox="1340 188 60 42" aria-label="Bottom right corner enlarged three times"><use href="#drawing-a-player"/></svg></figure>
+        <p class="detail-note">Same content and panel shading.<br>Only the outer frame changes.</p></div></details>
+        <div class="exports"><span>Export player:</span><a data-export="svg" href="borders-a-player.svg">SVG</a><a data-export="1x" href="borders-a-player-1x.png">PNG 1×</a><a data-export="2x" href="borders-a-player-2x.png">PNG 2×</a><a class="permalink" href="#option-a">Link to A</a></div>
+        </article><article id="option-b" data-option="b">
+        <div class="card-heading"><div><h2><span>B</span> Fine bevel</h2><p>One crisp light edge and one crisp dark edge. Balanced relief with less visual weight.</p></div>
+        <button class="focus-option" data-focus="b" aria-label="Focus option B">Focus B</button></div>
+        <div class="stage"><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-player" width="1400" height="230" viewBox="0 0 1400 230" role="img" aria-label="B border treatment, player"><g id="drawing-b-player"><defs><linearGradient id="border-b-player-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-b-player-content"><rect x="6" y="6" width="1388" height="218"/></clipPath></defs><rect x="0" y="0" width="1400" height="230" rx="4" fill="#11111d"/><rect x="1" y="1" width="1398" height="228" rx="3" fill="url(#border-b-player-body)"/><path d="M2.5 227.5V2.5H1397.5" fill="none" stroke="#6c7088"/><path d="M2.5 227.5H1397.5V2.5" fill="none" stroke="#080811"/><image x="0" y="0" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-b-player-content)"/></g></svg><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-panes" width="1400" height="320" viewBox="0 0 1400 320" role="img" aria-label="B border treatment, panes"><g id="drawing-b-panes"><defs><linearGradient id="border-b-panes-album-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-b-panes-album-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#11111d"/><rect x="1" y="1" width="694" height="318" rx="3" fill="url(#border-b-panes-album-body)"/><path d="M2.5 317.5V2.5H693.5" fill="none" stroke="#6c7088"/><path d="M2.5 317.5H693.5V2.5" fill="none" stroke="#080811"/><image x="0" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-b-panes-album-content)"/><g transform="translate(704 0)"><defs><linearGradient id="border-b-panes-activity-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-b-panes-activity-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#11111d"/><rect x="1" y="1" width="694" height="318" rx="3" fill="url(#border-b-panes-activity-body)"/><path d="M2.5 317.5V2.5H693.5" fill="none" stroke="#6c7088"/><path d="M2.5 317.5H693.5V2.5" fill="none" stroke="#080811"/><image x="-704" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-b-panes-activity-content)"/></g></g></svg></div>
+        <details open><summary>Corner detail · 3×</summary><div class="corners">
+        <figure><figcaption>Light edge · top left</figcaption><svg class="loupe top" width="180" height="126" viewBox="0 0 60 42" aria-label="Top left corner enlarged three times"><use href="#drawing-b-player"/></svg></figure>
+        <figure><figcaption>Dark edge · bottom right</figcaption><svg class="loupe bottom" width="180" height="126" viewBox="1340 188 60 42" aria-label="Bottom right corner enlarged three times"><use href="#drawing-b-player"/></svg></figure>
+        <p class="detail-note">Same content and panel shading.<br>Only the outer frame changes.</p></div></details>
+        <div class="exports"><span>Export player:</span><a data-export="svg" href="borders-b-player.svg">SVG</a><a data-export="1x" href="borders-b-player-1x.png">PNG 1×</a><a data-export="2x" href="borders-b-player-2x.png">PNG 2×</a><a class="permalink" href="#option-b">Link to B</a></div>
+        </article><article id="option-c" data-option="c">
+        <div class="card-heading"><div><h2><span>C</span> Soft contour</h2><p>A continuous silver-gray rim with softer corners. Depth without the hard stair-step.</p></div>
+        <button class="focus-option" data-focus="c" aria-label="Focus option C">Focus C</button></div>
+        <div class="stage"><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-player" width="1400" height="230" viewBox="0 0 1400 230" role="img" aria-label="C border treatment, player"><g id="drawing-c-player"><defs><linearGradient id="border-c-player-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-c-player-content"><rect x="6" y="6" width="1388" height="218"/></clipPath></defs><defs><linearGradient id="border-c-player-rim" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#7b8097"/><stop offset=".25" stop-color="#575b74"/>
+        <stop offset=".65" stop-color="#32354e"/><stop offset="1" stop-color="#11111f"/>
+        </linearGradient></defs><rect x="0" y="0" width="1400" height="230" rx="7" fill="#10101c"/><rect x="1" y="1" width="1398" height="228" rx="6" fill="url(#border-c-player-rim)"/><rect x="3" y="3" width="1394" height="224" rx="4" fill="url(#border-c-player-body)"/><image x="0" y="0" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-c-player-content)"/></g></svg><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-panes" width="1400" height="320" viewBox="0 0 1400 320" role="img" aria-label="C border treatment, panes"><g id="drawing-c-panes"><defs><linearGradient id="border-c-panes-album-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-c-panes-album-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><defs><linearGradient id="border-c-panes-album-rim" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#7b8097"/><stop offset=".25" stop-color="#575b74"/>
+        <stop offset=".65" stop-color="#32354e"/><stop offset="1" stop-color="#11111f"/>
+        </linearGradient></defs><rect x="0" y="0" width="696" height="320" rx="7" fill="#10101c"/><rect x="1" y="1" width="694" height="318" rx="6" fill="url(#border-c-panes-album-rim)"/><rect x="3" y="3" width="690" height="314" rx="4" fill="url(#border-c-panes-album-body)"/><image x="0" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-c-panes-album-content)"/><g transform="translate(704 0)"><defs><linearGradient id="border-c-panes-activity-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-c-panes-activity-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><defs><linearGradient id="border-c-panes-activity-rim" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#7b8097"/><stop offset=".25" stop-color="#575b74"/>
+        <stop offset=".65" stop-color="#32354e"/><stop offset="1" stop-color="#11111f"/>
+        </linearGradient></defs><rect x="0" y="0" width="696" height="320" rx="7" fill="#10101c"/><rect x="1" y="1" width="694" height="318" rx="6" fill="url(#border-c-panes-activity-rim)"/><rect x="3" y="3" width="690" height="314" rx="4" fill="url(#border-c-panes-activity-body)"/><image x="-704" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-c-panes-activity-content)"/></g></g></svg></div>
+        <details open><summary>Corner detail · 3×</summary><div class="corners">
+        <figure><figcaption>Light edge · top left</figcaption><svg class="loupe top" width="180" height="126" viewBox="0 0 60 42" aria-label="Top left corner enlarged three times"><use href="#drawing-c-player"/></svg></figure>
+        <figure><figcaption>Dark edge · bottom right</figcaption><svg class="loupe bottom" width="180" height="126" viewBox="1340 188 60 42" aria-label="Bottom right corner enlarged three times"><use href="#drawing-c-player"/></svg></figure>
+        <p class="detail-note">Same content and panel shading.<br>Only the outer frame changes.</p></div></details>
+        <div class="exports"><span>Export player:</span><a data-export="svg" href="borders-c-player.svg">SVG</a><a data-export="1x" href="borders-c-player-1x.png">PNG 1×</a><a data-export="2x" href="borders-c-player-2x.png">PNG 2×</a><a class="permalink" href="#option-c">Link to C</a></div>
+        </article><article id="option-d" data-option="d">
+        <div class="card-heading"><div><h2><span>D</span> Thin outline</h2><p>One muted silver line. The blue-gray panel gradient supplies the depth.</p></div>
+        <button class="focus-option" data-focus="d" aria-label="Focus option D">Focus D</button></div>
+        <div class="stage"><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-player" width="1400" height="230" viewBox="0 0 1400 230" role="img" aria-label="D border treatment, player"><g id="drawing-d-player"><defs><linearGradient id="border-d-player-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-d-player-content"><rect x="6" y="6" width="1388" height="218"/></clipPath></defs><rect x="0" y="0" width="1400" height="230" rx="4" fill="#60657c"/><rect x="1" y="1" width="1398" height="228" rx="3" fill="url(#border-d-player-body)"/><image x="0" y="0" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-d-player-content)"/></g></svg><svg xmlns="http://www.w3.org/2000/svg" class="scene scene-panes" width="1400" height="320" viewBox="0 0 1400 320" role="img" aria-label="D border treatment, panes"><g id="drawing-d-panes"><defs><linearGradient id="border-d-panes-album-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-d-panes-album-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#60657c"/><rect x="1" y="1" width="694" height="318" rx="3" fill="url(#border-d-panes-album-body)"/><image x="0" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-d-panes-album-content)"/><g transform="translate(704 0)"><defs><linearGradient id="border-d-panes-activity-body" x1="0" y1="0" x2="0" y2="1">
+    <stop stop-color="#212132"/><stop offset=".48" stop-color="#35354d"/>
+    <stop offset="1" stop-color="#202030"/></linearGradient>
+    <clipPath id="border-d-panes-activity-content"><rect x="6" y="6" width="684" height="308"/></clipPath></defs><rect x="0" y="0" width="696" height="320" rx="4" fill="#60657c"/><rect x="1" y="1" width="694" height="318" rx="3" fill="url(#border-d-panes-activity-body)"/><image x="-704" y="-540" width="1400" height="1200" href="borders-native-rack.png" clip-path="url(#border-d-panes-activity-content)"/></g></g></svg></div>
+        <details open><summary>Corner detail · 3×</summary><div class="corners">
+        <figure><figcaption>Light edge · top left</figcaption><svg class="loupe top" width="180" height="126" viewBox="0 0 60 42" aria-label="Top left corner enlarged three times"><use href="#drawing-d-player"/></svg></figure>
+        <figure><figcaption>Dark edge · bottom right</figcaption><svg class="loupe bottom" width="180" height="126" viewBox="1340 188 60 42" aria-label="Bottom right corner enlarged three times"><use href="#drawing-d-player"/></svg></figure>
+        <p class="detail-note">Same content and panel shading.<br>Only the outer frame changes.</p></div></details>
+        <div class="exports"><span>Export player:</span><a data-export="svg" href="borders-d-player.svg">SVG</a><a data-export="1x" href="borders-d-player-1x.png">PNG 1×</a><a data-export="2x" href="borders-d-player-2x.png">PNG 2×</a><a class="permalink" href="#option-d">Link to D</a></div>
+        </article></div>
+    <p class="note">HTML design studies over a native renderer capture. These alternatives have not been applied to the app.<br>
+    <a href="winamp-silver.html">Current native rack</a> · <a href="panes.html">Album + Activity layout studies</a> · <a href="buttons.html">Button studies</a></p></main>
+    <script>
+    const cards=[...document.querySelectorAll('article[data-option]')];
+    function focusOption(key,updateHash=true){
+      if(!['all','a','b','c','d'].includes(key))key='all';
+      cards.forEach(card=>card.hidden=key!=='all'&&card.dataset.option!==key);
+      document.querySelectorAll('nav [data-focus]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.focus===key)));
+      if(updateHash)history.replaceState(null,'',key==='all'?'#all':'#option-'+key);
+    }
+    document.querySelectorAll('[data-focus]').forEach(button=>button.addEventListener('click',()=>focusOption(button.dataset.focus)));
+    document.getElementById('native').addEventListener('change',event=>document.body.classList.toggle('native',event.target.checked));
+    document.getElementById('compare').addEventListener('change',event=>document.getElementById('reference').hidden=!event.target.checked);
+    document.getElementById('context').addEventListener('change',event=>{
+      const context=event.target.value;document.body.classList.toggle('panes',context==='panes');
+      cards.forEach(card=>{
+        const key=card.dataset.option;
+        card.querySelectorAll('.loupe use').forEach(use=>use.setAttribute('href','#drawing-'+key+'-'+context));
+        card.querySelector('.loupe.bottom').setAttribute('viewBox','1340 '+(context==='panes'?278:188)+' 60 42');
+        card.querySelector('.exports span').textContent='Export '+(context==='panes'?'panes':'player')+':';
+        card.querySelectorAll('[data-export]').forEach(link=>{const kind=link.dataset.export;link.href='borders-'+key+'-'+context+(kind==='svg'?'.svg':'-'+kind+'.png');});
+      });
+    });
+    function fromHash(){focusOption(location.hash.startsWith('#option-')?location.hash.slice(8):'all',false);}
+    document.querySelectorAll('.permalink').forEach(link=>link.addEventListener('click',()=>focusOption(link.hash.slice(8),false)));
+    addEventListener('hashchange',fromHash);fromHash();
+    </script></html>

@@ -16,6 +16,12 @@ for rigid in [False,True]:
     body=rect(0,0,24,24,PALETTE['shadow'],0 if rigid else 4)+rect(1,1,22,22,PALETTE['panel'],0 if rigid else 3)
     for a in [(3,3,21,3,'highlight'),(3,3,3,21,'highlight'),(3,21,21,21,'shadow'),(21,3,21,21,'shadow')]:body+=line(*a[:4],PALETTE[a[4]])
     export('panel-rigid' if rigid else 'panel',body)
+    # One-pixel focus ring follows the panel's exact outer and inner contours.
+    outer = '<rect width="24" height="24" rx="{}" fill="white"/>'.format(0 if rigid else 4)
+    inner = '<rect x="1" y="1" width="22" height="22" rx="{}" fill="black"/>'.format(0 if rigid else 3)
+    export('focus-rigid' if rigid else 'focus-rounded',
+           '<defs><mask id="ring">'+outer+inner+'</mask></defs>'
+           '<rect width="24" height="24" fill="white" mask="url(#ring)"/>')
 export('well',rect(0,0,24,24,'#1d2027',2)+rect(1,1,22,22,PALETTE['well'],1)+line(1,1,23,1,'#080b0a')+line(1,23,23,23,'#606575'))
 for state in ['normal','hover','pressed','disabled','focus','active']:
     pressed=state=='pressed'
@@ -94,7 +100,7 @@ roles={
 }
 layers={}
 for source in sorted((OUT/'source').glob('*.svg')):
- if source.stem in {'control-font', 'clock-on', 'clock-off', 'transport-glyphs', 'fixed-labels'}:continue
+ if source.stem in {'control-font', 'clock-on', 'clock-off', 'transport-glyphs', 'fixed-labels', 'minimal-labels', 'readout-glyphs'}:continue
  tree=ET.parse(source);original=tree.getroot()
  for density in [1,2]:
   entries=[]

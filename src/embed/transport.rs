@@ -260,6 +260,7 @@ mod tests {
             height: 48,
             theme: Palette {
                 bg: [24; 3],
+                inset_bg: None,
                 fg: [230; 3],
                 muted: [100; 3],
                 accent: [140; 3],

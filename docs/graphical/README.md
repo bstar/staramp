@@ -2,6 +2,53 @@
 
 ## Design review
 
+### Border alternatives
+
+[Border treatments](treatments/borders.html) compare Previous bevel, Fine bevel,
+Soft contour and Thin outline after the user rejected the latest stepped edge.
+Only the outer frames vary around a fixed native capture. Player and paired
+Album/Activity contexts retain the muted green, silver transport controls and
+blue-gray panel shading. The page has fit/1:1 modes, 3x corner details, a latest
+version comparison, focused option links and self-contained SVG/1x/2x PNG
+exports. The user selected **D — Thin outline**, now applied to the native Silver
+frames. All module headers share EQ styling. Regenerate the original studies with
+`python3 scripts/design/border_treatments.py`; the capture is kept separately in
+`treatments/borders-native-rack.png` so later production captures cannot change
+the review. Chromium checks cover desktop/mobile bounds, matching comparison
+size, context/filter controls, keyboard navigation, hash links and all exports.
+
+### Album and Activity alternatives
+
+[Paired pane comparisons](treatments/panes.html) show Refined classic, Compact
+ledger, Artwork first and Split rail layouts. Each uses the current palette,
+Minimal action buttons and the same sample metadata/service states. Panes are
+shown at 592×320 logical pixels, with separate Album/Activity views, keyboard
+focus, sample artwork-counter interaction and original 1x/2x exports.
+The user selected **B — Compact ledger**, then requested larger artwork. Native
+Album uses a 160px artwork slot with the image selector beside it, a three-column
+facts row and minimal footer actions. Activity uses a service strip and six-row
+ledger. Playback transport controls retain their previous treatment. Regenerate with
+`python3 scripts/design/pane_treatments.py --cover /path/to/cover.jpg`; omitting
+the cover uses a placeholder. Desktop/mobile layout, text bounds, controls and
+export links were checked in Chromium.
+
+### Button alternatives
+
+[Interactive button comparisons](treatments/buttons.html) show Compact Classic,
+Quiet bevel, Thin outline and Minimal treatments in the user's Album pane,
+alongside Player, Playlist and EQ controls and interaction states. All four
+use 22px button height and 11px labels, compared with the current 29px controls.
+The page includes the supplied current-pane reference and 1x/2x PNG and SVG
+exports. The user selected **D — Minimal** on October 10, with the five playback
+transport buttons explicitly kept unchanged. Native action buttons now use
+transparent faces, compact lettering and interaction framing. The gallery
+retains the four original studies for comparison.
+
+Regenerate with `python3 scripts/design/button_treatments.py`. Optional
+`--cover /path/to/cover.jpg` and `--reference /path/to/current-pane.png` retain
+the review's original cover and current-pane comparison; without them the
+generator uses an artwork placeholder and omits the current screenshot.
+
 ### Revised direction: Winamp Classic
 
 The original modern treatments were rejected as insufficiently Winamp-like.
@@ -15,6 +62,30 @@ visible profile selection/import/export/save-as. Plot the compiled chain's
 total response including preamp, not an independently approximated DSP curve.
 The study's curve is illustrative; production must use the existing response
 calculation. All actions must also be accessible in ASCII and by keyboard.
+
+The revised native EQ uses the reference's broad recessed dark-green graph,
+subtle log-frequency grid, numbered handles, right-hand band inspector and
+inline filter summary. Winamp Silver retains the selected Thin Outline chrome,
+shared headers and Minimal action buttons. Band numbering excludes preamp.
+The response is still calculated from the actual compiled DSP chain and follows
+the device sample rate automatically at startup and across output-format changes.
+
+Click **Profile** to open the searchable EQ library. Select a row and choose
+**Load** (or Enter) to apply it. **Save** updates the current custom profile;
+**Save As** asks for a new name and keeps the original. Built-in profiles use
+Save As. The library also offers New, Rename, confirmed Delete, confirmed Revert,
+Import and Export. Save and Save As always act on the current loaded curve;
+Rename/Delete/Revert act on the selected row. Ctrl+S saves within the library,
+Ctrl+Shift+S opens Save As, Ctrl+N creates a profile, and Ctrl+R renames the
+selected custom profile. Type to search, Ctrl+U clears, and Esc closes.
+
+Curve edits are recoverable drafts in `equalizers/working-edits.json`, retained
+when switching profiles or restarting, and marked `*` / Unsaved edits. They do
+not replace named profile files until Save. Save As uses exclusive publication;
+renaming, deleting and saving check the saved curve for external changes. An
+externally changed file requires Save As to preserve both versions. Naming
+errors remain in the form so they can be corrected. Native captures and the
+profile workflow are shown in `treatments/equalizer.html`.
 
 Album refinement: larger artwork, clear album/artist hierarchy, year/count/
 duration/format/genre, artwork provenance and candidate navigation, chooser,
@@ -208,8 +279,20 @@ corners = "rounded" # or "rigid"; transport buttons remain square
 graphical_palette = "classic" # selected design colors; "theme" uses ui.theme
 ```
 
+**Winamp Silver** (`theme = "winamp-silver"` at the configuration root,
+`ui.graphical_palette = "theme"`) adds a dark–light–dark blue-gray chassis,
+original silver gradient transport plates, and muted sage green text, clock and
+visualizer accents. Alt+T cycles to it immediately after Winamp Classic.
+The Minimal action buttons and Compact Ledger geometry remain in place.
+[Native production captures](treatments/winamp-silver.html) cover full and narrow
+racks plus 2x density. Winamp Classic remains a separate choice.
+
 The player stays fixed while the lower modules scroll. EQ handles drag frequency
-and gain; the wheel changes Q. Existing exact-value dialogs remain available.
+and gain continuously from their pickup position, with no grid rounding or
+jump to the combined response under the pointer. Kitty sessions with measured
+geometry now use SGR pixel mouse reporting, avoiding character-cell steps;
+other terminals retain cell input. The wheel changes Q. Existing
+exact-value dialogs remain available.
 APO/AutoEQ text and EasyEffects JSON imports share validation and managed-profile
 saving. EasyEffects imports support IIR APO (DR), x1 filters only; unsupported
 algorithms, global processing, or decramping are rejected. Other active processors

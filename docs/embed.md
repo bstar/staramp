@@ -27,6 +27,9 @@ change its focus, or change the host palette. Its `generation` identifies the
 current view; frames and play requests carry it so a host can discard stale
 results after a resize or a new selection.
 
+The theme may include `inset_bg: [r, g, b]` to distinguish native display wells
+from pane frames. Omitting it preserves the derived inset color.
+
 ```json
 {"type":"configure","generation":1,"width":64,"height":10,"focused":true,"theme":{"bg":[10,20,30],"fg":[230,230,230],"muted":[140,140,140],"accent":[200,120,60],"selected":[40,50,60],"border":[80,80,80],"error":[240,60,60]}}
 {"type":"play","generation":1,"paths":["/mnt/music/01.flac","/mnt/music/02.flac"],"index":0}

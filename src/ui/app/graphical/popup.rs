@@ -7,7 +7,7 @@ const FONT: u16 = 12;
 const ADVANCE: usize = 8; // Leave room for the terminal's monospace font.
 const LINE: u16 = 20;
 
-fn wrap(text: &str, columns: usize) -> Vec<String> {
+pub(super) fn wrap(text: &str, columns: usize) -> Vec<String> {
     let mut lines = Vec::new();
     let mut line = String::new();
     let mut width = 0;
@@ -42,6 +42,206 @@ fn wrap(text: &str, columns: usize) -> Vec<String> {
 }
 
 impl Rack<'_> {
+    pub(super) fn resume_popup(&mut self, s: &mut Surface, c: &Colors) -> bool {
+        let Some(session) = &self.app.over.resume else {
+            self.resume_scroll = 0;
+            self.resume_fresh = false;
+            return false;
+        };
+        self.overlay = true;
+        self.app.bars.begin_frame();
+        let width = 760.min(s.width - 32);
+        let inner = width - 40;
+        let mut rows = Vec::new();
+        if !session.artist.is_empty() {
+            rows.push((session.artist.clone(), c.accent.clone(), true));
+        }
+        rows.push((
+            if session.title.is_empty() {
+                session.uri.clone()
+            } else {
+                session.title.clone()
+            },
+            c.ink.clone(),
+            true,
+        ));
+        rows.push((String::new(), c.dim.clone(), false));
+        rows.push((session.describe_context(), c.ink.clone(), false));
+        rows.push((
+            format!(
+                "Position {} / {}",
+                crate::ui::digits::clock(session.position),
+                crate::ui::digits::clock(session.duration)
+            ),
+            c.accent.clone(),
+            false,
+        ));
+        rows.push((
+            format!(
+                "Saved {}",
+                crate::session::age(session.saved_at, crate::library::db::now_secs())
+            ),
+            c.dim.clone(),
+            false,
+        ));
+        if let Some(view) = session.describe_view() {
+            rows.push((view, c.dim.clone(), false));
+        }
+        if !self.app.over.resume_playlist_available {
+            rows.push((
+                "The saved playlist is unavailable. Resume will use the library.".into(),
+                c.accent.clone(),
+                false,
+            ));
+        }
+        let lines = rows
+            .iter()
+            .flat_map(|(text, color, bold)| {
+                wrap(text, usize::from(inner) / ADVANCE)
+                    .into_iter()
+                    .map(move |line| (line, color, *bold))
+            })
+            .collect::<Vec<_>>();
+        let header = 52;
+        let footer = 86;
+        let height = (lines.len() * usize::from(LINE) + usize::from(header + footer))
+            .min(usize::from(s.height - 32)) as u16;
+        let visible = usize::from((height - header - footer) / LINE);
+        self.resume_scroll = self.resume_scroll.min(lines.len().saturating_sub(visible));
+        let x = (s.width - width) / 2;
+        let y = (s.height - height) / 2;
+        s.hits.clear();
+        self.frame(s, R::new(x, y, width, height), c, self.radius, false);
+        s.hits.push(HitRegion {
+            rect: R::new(x, y, width, height),
+            action: "resume:body".into(),
+        });
+        classic::label(
+            s,
+            R::new(x + 20, y + 10, inner, 28),
+            "RESUME SESSION",
+            &c.accent,
+            FONT,
+            true,
+        );
+        s.fill(R::new(x + 20, y + 43, inner, 1), &c.shadow, 0);
+        for (i, (text, color, bold)) in lines
+            .iter()
+            .skip(self.resume_scroll)
+            .take(visible)
+            .enumerate()
+        {
+            classic::label(
+                s,
+                R::new(x + 20, y + header + i as u16 * LINE, inner, LINE),
+                text,
+                color,
+                FONT,
+                *bold,
+            );
+        }
+        let hint = if lines.len() > visible {
+            "↑↓ scroll · Tab switch · Enter choose · N / Esc start fresh"
+        } else {
+            "Tab switch · Enter choose · N / Esc start fresh"
+        };
+        classic::label(
+            s,
+            R::new(x + 20, y + height - 76, inner, 20),
+            hint,
+            &c.dim,
+            11,
+            false,
+        );
+        for (left, text, action, selected) in [
+            (
+                width - 358,
+                "Start fresh",
+                "resume:fresh",
+                self.resume_fresh,
+            ),
+            (width - 180, "Resume", "resume:accept", !self.resume_fresh),
+        ] {
+            let rect = R::new(x + left, y + height - 48, 160, 30);
+            self.button(s, rect, c, text, action, FONT, selected);
+        }
+        true
+    }
+
+    pub(super) fn resume_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        if self.app.over.resume.is_none()
+            || !self
+                .surface
+                .as_ref()
+                .is_some_and(|s| s.hits.iter().any(|h| h.action == "resume:body"))
+        {
+            return false;
+        }
+        match code {
+            KeyCode::Tab | KeyCode::BackTab | KeyCode::Left | KeyCode::Right => {
+                self.resume_fresh = !self.resume_fresh
+            }
+            KeyCode::Up => self.resume_scroll = self.resume_scroll.saturating_sub(1),
+            KeyCode::Down => self.resume_scroll = self.resume_scroll.saturating_add(1),
+            KeyCode::PageUp => self.resume_scroll = self.resume_scroll.saturating_sub(8),
+            KeyCode::PageDown => self.resume_scroll = self.resume_scroll.saturating_add(8),
+            KeyCode::Home => self.resume_scroll = 0,
+            KeyCode::End => self.resume_scroll = usize::MAX,
+            KeyCode::Enter => {
+                let answer = if self.resume_fresh {
+                    KeyCode::Char('n')
+                } else {
+                    KeyCode::Enter
+                };
+                self.app.answer_resume(KeyEvent::new(answer, modifiers));
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub(super) fn resume_pointer(
+        &mut self,
+        action: &str,
+        button: u8,
+        x: u16,
+        y: u16,
+        pixel: Option<[u32; 2]>,
+    ) -> bool {
+        if self.app.over.resume.is_none() {
+            return false;
+        }
+        let Some(surface) = &self.surface else {
+            return false;
+        };
+        if !surface.hits.iter().any(|h| h.action == "resume:body") {
+            return false;
+        }
+        let [px, py] = pixel.unwrap_or([
+            u32::from(x) * self.viewport.width / u32::from(self.viewport.columns.max(1)),
+            u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
+        ]);
+        let hit = surface.hit(px as u16, py as u16).map(|h| h.action.clone());
+        self.skin.hovered = hit.clone();
+        match action {
+            "scroll_up" => self.resume_scroll = self.resume_scroll.saturating_sub(3),
+            "scroll_down" => self.resume_scroll = self.resume_scroll.saturating_add(3),
+            "down" if button == 0 => match hit.as_deref() {
+                Some("resume:accept") => {
+                    self.app
+                        .answer_resume(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                }
+                Some("resume:fresh") => {
+                    self.app
+                        .answer_resume(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        true
+    }
+
     /// A real editable filter, independent of the terminal settings grid.
     /// KIT owns text editing and horizontal scrolling; AMP owns filter meaning.
     pub(super) fn filter_popup(&mut self, s: &mut Surface, c: &Colors) -> bool {
@@ -168,14 +368,14 @@ impl Rack<'_> {
             (width - 226, "Cancel", "filter:cancel", 96),
             (width - 122, "Apply", "filter:apply", 102),
         ] {
-            classic::button(
+            self.button(
                 s,
                 R::new(x + left, y + 190, button_width, 30),
                 c,
                 text,
                 action,
                 FONT,
-                self.skin.hovered.as_deref() == Some(action),
+                false,
             );
         }
         true

@@ -5,6 +5,7 @@
 //! structure is the point: it is what makes the thing read as Winamp rather
 //! than as one more bordered box full of sections.
 
+mod eq_profiles;
 #[cfg(feature = "terminal-graphics")]
 mod graphical;
 
@@ -116,6 +117,7 @@ enum Setting {
     LoadPlaylist,
     EqEnabled,
     EqPreset,
+    EqSaveProfile,
     EqReset,
     EqImport,
     EqExport,
@@ -1262,6 +1264,8 @@ struct EqState {
     enabled: bool,
     profiles: Vec<crate::audio::dsp::apo::Profile>,
     profile: usize,
+    saved_profiles: std::collections::BTreeMap<String, crate::audio::dsp::apo::Profile>,
+    managed_names: std::collections::BTreeSet<String>,
     /// Which ordered processing stage the keyboard is on.
     stage: usize,
     scroll: usize,
@@ -1284,7 +1288,10 @@ impl EqState {
             .iter()
             .map(|p| crate::audio::dsp::apo::Profile::legacy(p.name, 0.0, &p.gains))
             .collect::<Vec<_>>();
-        for profile in crate::audio::dsp::apo::managed_profiles() {
+        let managed = crate::audio::dsp::apo::managed_profiles();
+        let managed_names: std::collections::BTreeSet<_> =
+            managed.iter().map(|p| p.name.to_lowercase()).collect();
+        for profile in managed {
             if let Some(at) = profiles
                 .iter()
                 .position(|p| p.name.eq_ignore_ascii_case(&profile.name))
@@ -1301,6 +1308,7 @@ impl EqState {
         // Old hand-adjusted ten-band settings are a real profile, even when
         // they happened to start from a named built-in preset.
         if profile < eq::PRESETS.len()
+            && !managed_names.contains(&profiles[profile].name.to_lowercase())
             && (cfg.eq.preamp != 0.0 || cfg.eq.band_gains() != eq::PRESETS[profile].gains)
         {
             profiles.push(crate::audio::dsp::apo::Profile::legacy(
@@ -1316,15 +1324,25 @@ impl EqState {
         let rate = 44_100;
         let compiled =
             crate::audio::dsp::eq::EqSettings::from_profile(enabled, &profiles[profile], rate);
-        Self {
+        let saved_profiles = profiles
+            .iter()
+            .map(|p| (p.name.to_lowercase(), p.clone()))
+            .collect();
+        let mut state = Self {
             enabled,
             profiles,
             profile,
+            saved_profiles,
+            managed_names,
             stage: 0,
             scroll: 0,
             compiled,
             compiled_rate: rate,
-        }
+        };
+        state.restore_drafts();
+        state.select_first_band();
+        state.recompile(rate);
+        state
     }
 
     /// Rebuild the cached chain the curve is drawn from.
@@ -1523,11 +1541,15 @@ enum EqField {
     GraphicPoints,
     IirCoefficients,
     RenameProfile,
+    SaveAsProfile,
+    NewProfile,
 }
 
 struct EqInput {
+    target: usize,
     field: EqField,
     value: String,
+    error: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1568,6 +1590,7 @@ struct Editing {
     auth: Option<AuthInput>,
     /// Exact numeric entry for the selected parametric stage.
     eq_value: Option<EqInput>,
+    eq_profiles: Option<eq_profiles::Library>,
     /// What `space` does, once it has been asked.
     ///
     /// Remembered per loaded playlist for as long as the browser stays open, so
@@ -1721,6 +1744,8 @@ struct Overlays {
     playlist_add: Option<PlaylistAddState>,
     /// A previous session offered but not yet accepted or declined.
     resume: Option<Session>,
+    /// Startup fact; drawing either presentation must not stat a playlist.
+    resume_playlist_available: bool,
     /// The library browser, when it is open. Per window, not shared.
     library: Option<crate::ui::panels::library::Library>,
     /// Filesystem view used for APO import and export.
@@ -1977,7 +2002,9 @@ impl App {
     }
 
     fn open_eq_files(&mut self, purpose: crate::ui::panels::files::Purpose) {
-        let directory = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+        let directory =
+            crate::paths::equalizer_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+        let _ = std::fs::create_dir_all(&directory);
         self.over.files = Some(crate::ui::panels::files::Browser::new(purpose, directory));
     }
 
@@ -2018,8 +2045,9 @@ impl App {
                                 ));
                                 return true;
                             }
-                            let profile = import.profile;
-                            if let Err(error) = profile.save_managed() {
+                            let mut profile = import.profile;
+                            profile.name = self.eq.unique_name(&profile.name);
+                            if let Err(error) = profile.save_new_managed() {
                                 self.note(format!("could not import EQ: {error}"));
                                 return true;
                             }
@@ -2035,10 +2063,11 @@ impl App {
                                 self.eq.profiles.push(profile);
                                 self.eq.profile = self.eq.profiles.len() - 1;
                             }
-                            self.eq.stage = 0;
-                            self.eq.scroll = 0;
+                            self.eq.remember_saved(self.eq.profile);
+                            self.eq.select_first_band();
                             self.eq.enabled = true;
                             self.over.files = None;
+                            let _ = self.eq.persist_drafts();
                             self.apply_eq();
                             self.note(format!("imported EQ profile {}", self.eq.active().name));
                         }
@@ -3337,6 +3366,7 @@ impl App {
             return;
         }
         self.panels.picker = false;
+        self.over.resume_playlist_available = s.playlist_available();
         self.over.resume = Some(s);
     }
 
@@ -3769,6 +3799,12 @@ impl App {
         }
 
         self.poll_mirror();
+        // The audio worker recompiles on device-rate changes. Keep the graph
+        // at that same rate without requiring the user to reload the profile.
+        let rate = self.eq_sample_rate();
+        if rate != self.eq.compiled_rate {
+            self.eq.recompile(rate);
+        }
         self.poll_import();
         self.sync_view();
         self.check_track_change();
@@ -3827,6 +3863,9 @@ impl App {
             return;
         }
         if self.edit.auth.is_some() && self.auth_type(k) {
+            return;
+        }
+        if self.eq_library_key(k) {
             return;
         }
         if self.eq_value_type(k) {
@@ -5629,23 +5668,32 @@ impl App {
 
     fn step_preset(&mut self, delta: i32) {
         let n = self.eq.profiles.len() as i32;
-        self.eq.profile = (((self.eq.profile as i32 + delta) % n + n) % n) as usize;
-        self.eq.stage = self
-            .eq
-            .stage
-            .min(self.eq.active().stages.len().saturating_sub(1));
-        self.eq.enabled = true;
-        self.apply_eq();
-        self.note(format!("eq: {}", self.eq.active().name));
+        let index = (((self.eq.profile as i32 + delta) % n + n) % n) as usize;
+        self.select_eq_profile(index);
+    }
+
+    fn eq_sample_rate(&self) -> u32 {
+        if self.is_mirror() {
+            // Mirrors expose the source rate. Keep the last known
+            // rate while stopped, rather than compiling at an artificial 8 kHz.
+            let rate = self
+                .player
+                .state
+                .sample_rate
+                .load(std::sync::atomic::Ordering::Relaxed) as u32;
+            if rate == 0 {
+                self.eq.compiled_rate
+            } else {
+                rate
+            }
+        } else {
+            // Source metadata can differ from the device rate after resampling.
+            self.player.eq.load().sample_rate
+        }
     }
 
     fn apply_eq(&mut self) {
-        let rate = self
-            .player
-            .state
-            .sample_rate
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .max(8_000) as u32;
+        let rate = self.eq_sample_rate();
         self.eq.recompile(rate);
         self.send_eq();
     }
@@ -5665,12 +5713,7 @@ impl App {
             }
             return;
         }
-        let rate = self
-            .player
-            .state
-            .sample_rate
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .max(8_000) as u32;
+        let rate = self.eq_sample_rate();
         self.player
             .set_eq_profile(self.eq.enabled, self.eq.active().clone(), rate);
     }
@@ -5964,6 +6007,31 @@ impl App {
     /// functions, so a click lands on the thing the user can see rather than on
     /// a rect reconstructed by eye.
     fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
+        if matches!(m.kind, MouseEventKind::Down(_))
+            && !self.overlay_open()
+            && self.over.files.is_none()
+            && self.over.library.is_none()
+        {
+            if let Some(r) = self.regions(full) {
+                let pane = [
+                    (Some(r.player), Focus::Player),
+                    (r.equalizer, Focus::Equalizer),
+                    (r.album, Focus::Album),
+                    (r.history, Focus::History),
+                    (r.playlist, Focus::Playlist),
+                ]
+                .into_iter()
+                .find(|(rect, _)| rect.is_some_and(|rect| hit(rect, m.column, m.row)))
+                .map(|(_, focus)| focus);
+                if let Some(focus) = pane.filter(|focus| *focus != self.panels.focus) {
+                    self.panels.focus = focus;
+                    self.edit.drag = None;
+                    self.edit.last_click = ClickTracker::default();
+                    self.bars.release();
+                    return;
+                }
+            }
+        }
         // A scrollbar answers for its own press, drag and release before
         // anything else gets a look at the event -- including the overlay
         // checks just below, so a modal's own bar (chooser, picker) is the
@@ -5993,7 +6061,11 @@ impl App {
         }
 
         // Overlays are modal: while one is up nothing behind it can be clicked.
-        if self.over.resume.is_some() || self.panels.help {
+        if self.over.resume.is_some()
+            || self.panels.help
+            || self.edit.eq_value.is_some()
+            || self.edit.eq_profiles.is_some()
+        {
             return;
         }
         let Some(r) = self.regions(full) else { return };
@@ -6395,12 +6467,12 @@ impl App {
         if let Some(row) = self.eq.active_mut().stages.get_mut(stage) {
             match &mut row.filter {
                 Filter::Preamp { gain_db } | Filter::Biquad { gain_db, .. } => {
-                    *gain_db = (*gain_db + delta).clamp(-120.0, 120.0);
+                    *gain_db = (*gain_db + delta).clamp(-24.0, 24.0);
                     changed = true;
                 }
                 Filter::GraphicEq { points } => {
                     for (_, gain) in points {
-                        *gain = (*gain + delta).clamp(-120.0, 120.0);
+                        *gain = (*gain + delta).clamp(-24.0, 24.0);
                     }
                     changed = true;
                 }
@@ -6411,17 +6483,18 @@ impl App {
             return self.note("open settings to edit this stage's exact values".into());
         }
         self.eq.enabled = true;
-        let _ = self.eq.active().save_managed();
+        let _ = self.eq.persist_drafts();
         self.apply_eq();
         self.note(format!("eq stage {} gain {delta:+.0} dB", stage + 1));
     }
 
     fn begin_eq_value(&mut self, field: EqField) {
         use crate::audio::dsp::apo::{Filter, Width};
-        if matches!(field, EqField::RenameProfile) {
-            let value = self.eq.active().name.clone();
-            self.over.settings = None;
-            self.edit.eq_value = Some(EqInput { field, value });
+        if matches!(
+            field,
+            EqField::RenameProfile | EqField::SaveAsProfile | EqField::NewProfile
+        ) {
+            self.begin_eq_name(field);
             return;
         }
         let Some(stage) = self.eq.active().stages.get(self.eq.stage) else {
@@ -6454,7 +6527,12 @@ impl App {
             _ => return,
         };
         self.over.settings = None;
-        self.edit.eq_value = Some(EqInput { field, value });
+        self.edit.eq_value = Some(EqInput {
+            field,
+            value,
+            target: self.eq.profile,
+            error: String::new(),
+        });
     }
 
     fn eq_value_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
@@ -6466,7 +6544,13 @@ impl App {
         match key.code {
             KeyCode::Esc => self.edit.eq_value = None,
             KeyCode::Char('u') if ctrl => input.value.clear(),
-            KeyCode::Char(c) if !ctrl && matches!(input.field, EqField::RenameProfile) => {
+            KeyCode::Char(c)
+                if !ctrl
+                    && matches!(
+                        input.field,
+                        EqField::RenameProfile | EqField::SaveAsProfile | EqField::NewProfile
+                    ) =>
+            {
                 input.value.push(c)
             }
             KeyCode::Char(c) if !ctrl && (c.is_ascii_digit() || ".+-eE; ".contains(c)) => {
@@ -6477,40 +6561,20 @@ impl App {
             }
             KeyCode::Enter => {
                 let field = input.field;
+                let target = input.target;
                 let text = input.value.trim().to_string();
                 self.edit.eq_value = None;
-                if matches!(field, EqField::RenameProfile) {
-                    if text.is_empty() || text == "." || text == ".." || text.contains(['/', '\\'])
-                    {
-                        self.note("profile name must be a plain file name".into());
-                        return true;
-                    }
-                    if self.eq.profiles.iter().enumerate().any(|(index, profile)| {
-                        index != self.eq.profile && profile.name.eq_ignore_ascii_case(&text)
-                    }) {
-                        self.note("an EQ profile already has that name".into());
-                        return true;
-                    }
-                    let old = self.eq.active().managed_path().ok();
-                    let mut renamed = self.eq.active().clone();
-                    renamed.name = text;
-                    let new_path = renamed.managed_path().ok();
-                    if new_path.as_ref().is_some_and(|new| {
-                        new.exists() && old.as_ref().is_none_or(|old| old != new)
-                    }) {
-                        self.note("an EQ profile file already has that name".into());
-                        return true;
-                    }
-                    match renamed.save_managed() {
-                        Ok(new) => {
-                            if let Some(old) = old.filter(|old| *old != new) {
-                                let _ = std::fs::remove_file(old);
-                            }
-                            self.eq.profiles[self.eq.profile] = renamed;
-                            self.apply_eq();
-                            self.note(format!("renamed EQ profile {}", self.eq.active().name));
-                        }
-                        Err(error) => self.note(format!("could not rename EQ profile: {error}")),
+                if matches!(
+                    field,
+                    EqField::RenameProfile | EqField::SaveAsProfile | EqField::NewProfile
+                ) {
+                    if let Err(error) = self.commit_eq_name(field, &text, target) {
+                        self.edit.eq_value = Some(EqInput {
+                            field,
+                            target,
+                            value: text,
+                            error: error.to_string(),
+                        });
                     }
                     return true;
                 }
@@ -6518,14 +6582,25 @@ impl App {
                 if matches!(field, EqField::Frequency | EqField::Gain | EqField::Width)
                     && !value.is_finite()
                 {
-                    self.note("that is not a number".into());
+                    self.edit.eq_value = Some(EqInput {
+                        field,
+                        target,
+                        value: text,
+                        error: "Enter a finite number.".into(),
+                    });
                     return true;
                 }
                 if matches!(field, EqField::Frequency | EqField::Width) && value <= 0.0 {
-                    self.note("frequency and Q/bandwidth must be positive".into());
+                    self.edit.eq_value = Some(EqInput {
+                        field,
+                        target,
+                        value: text,
+                        error: "Frequency and Q/bandwidth must be positive.".into(),
+                    });
                     return true;
                 }
                 use crate::audio::dsp::apo::{Filter, Width};
+                let before = self.eq.active().clone();
                 let at = self.eq.stage;
                 if let Some(stage) = self.eq.active_mut().stages.get_mut(at) {
                     match (&mut stage.filter, field) {
@@ -6603,9 +6678,19 @@ impl App {
                         _ => {}
                     }
                 }
+                if let Err(error) = self.eq.active().validate() {
+                    self.eq.profiles[self.eq.profile] = before;
+                    self.edit.eq_value = Some(EqInput {
+                        field,
+                        target,
+                        value: text,
+                        error: error.to_string(),
+                    });
+                    return true;
+                }
                 self.finish_eq_edit();
             }
-            _ => return false,
+            _ => {}
         }
         true
     }
@@ -6619,9 +6704,11 @@ impl App {
     }
 
     fn finish_eq_edit(&mut self) {
-        match self.eq.active().save_managed() {
-            Ok(_) => self.note(format!("saved EQ profile {}", self.eq.active().name)),
-            Err(error) => self.note(format!("EQ changed, but could not save it: {error}")),
+        match self.eq.persist_drafts() {
+            Ok(()) => {
+                self.note("EQ adjusted · unsaved edits · Save or Save As to keep a profile".into())
+            }
+            Err(error) => self.note(format!("EQ changed; draft recovery failed: {error}")),
         }
         self.eq.enabled = true;
         self.apply_eq();
@@ -7416,7 +7503,8 @@ impl App {
     /// returns answer for, kept in one place so `draw_overlays` can ask it
     /// too rather than repeating it.
     fn overlay_open(&self) -> bool {
-        self.edit.eq_value.is_some()
+        self.edit.eq_profiles.is_some()
+            || self.edit.eq_value.is_some()
             || self.edit.auth.is_some()
             || self.edit.typing.is_some()
             || self.edit.naming.is_some()
@@ -7440,6 +7528,35 @@ impl App {
         if self.overlay_open() {
             self.bars.begin_frame();
         }
+        if let Some(library) = &self.edit.eq_profiles {
+            let indices = library.matches(&self.eq);
+            let rows: Vec<_> = indices
+                .iter()
+                .map(|&index| {
+                    settings::Row::setting(
+                        &self.eq.profiles[index].name,
+                        self.eq.profile_status(index),
+                    )
+                })
+                .collect();
+            let deleting = library.confirmation.map(|confirm| {
+                format!(
+                    "{} {}? Enter confirm · Esc cancel",
+                    if confirm.reverting() {
+                        "Revert"
+                    } else {
+                        "Delete"
+                    },
+                    self.eq.profiles[confirm.index()].name
+                )
+            });
+            SettingsView { theme: &self.look.theme, heading: "EQ PROFILES",
+                title: deleting.as_deref().unwrap_or(&library.query), rows: &rows,
+                cursor: library.cursor, scroll: library.scroll,
+                footer: "type search · Enter load · Ctrl+S save · Ctrl+N new · Ctrl+R rename · Del delete · Esc close",
+            }.render(area, buf);
+            return;
+        }
         if let Some(input) = &self.edit.eq_value {
             let label = match input.field {
                 EqField::Frequency => "frequency (Hz)",
@@ -7447,13 +7564,24 @@ impl App {
                 EqField::Width => "Q / bandwidth / slope",
                 EqField::GraphicPoints => "frequency gain; ...",
                 EqField::IirCoefficients => "b0..bn a0..an",
-                EqField::RenameProfile => "profile name",
+                EqField::RenameProfile | EqField::SaveAsProfile | EqField::NewProfile => {
+                    "profile name"
+                }
             };
             let rows = [settings::Row::setting(label, format!("{}▂", input.value))];
             settings::SettingsView {
                 theme: &self.look.theme,
-                heading: "EXACT VALUE",
-                title: "type a number · enter apply · esc cancel",
+                heading: match input.field {
+                    EqField::SaveAsProfile => "SAVE EQ PROFILE AS",
+                    EqField::NewProfile => "NEW EQ PROFILE",
+                    EqField::RenameProfile => "RENAME EQ PROFILE",
+                    _ => "EXACT VALUE",
+                },
+                title: if input.error.is_empty() {
+                    "type a value · Ctrl+U clear · enter apply · esc cancel"
+                } else {
+                    &input.error
+                },
                 rows: &rows,
                 cursor: 0,
                 scroll: 0,
@@ -7619,6 +7747,7 @@ impl App {
             ResumeView {
                 theme: &self.look.theme,
                 session: s,
+                playlist_available: self.over.resume_playlist_available,
                 now: crate::library::db::now_secs(),
             }
             .render(area, buf);
@@ -8149,11 +8278,9 @@ impl App {
                         Row::setting("profile", &self.eq.active().name),
                         Setting::EqPreset,
                     ),
-                    (Row::action("new profile"), Setting::EqNewProfile),
-                    (
-                        Row::action("duplicate profile"),
-                        Setting::EqDuplicateProfile,
-                    ),
+                    (Row::action("save profile"), Setting::EqSaveProfile),
+                    (Row::action("new profile…"), Setting::EqNewProfile),
+                    (Row::action("save profile as…"), Setting::EqDuplicateProfile),
                     (Row::action("rename profile…"), Setting::EqRenameProfile),
                     (
                         Row::action("delete managed profile"),
@@ -9226,87 +9353,33 @@ impl App {
             }
             Setting::JourneyWhy => return self.explain_journey_track(),
             Setting::EqEnabled => self.handle(Action::ToggleEqEnabled),
-            Setting::EqPreset => self.handle(Action::NextEqPreset),
+            Setting::EqPreset => {
+                self.open_eq_profiles();
+                return;
+            }
+            Setting::EqSaveProfile => {
+                self.save_eq_profile();
+                return;
+            }
             Setting::EqNewProfile => {
-                use crate::audio::dsp::apo::Profile;
-                let mut number = 1;
-                let name = loop {
-                    let candidate = format!("New profile {number}");
-                    if !self
-                        .eq
-                        .profiles
-                        .iter()
-                        .any(|profile| profile.name.eq_ignore_ascii_case(&candidate))
-                    {
-                        break candidate;
-                    }
-                    number += 1;
-                };
-                let profile = Profile::legacy(name, 0.0, &[0.0; 10]);
-                self.eq.profiles.push(profile);
-                self.eq.profile = self.eq.profiles.len() - 1;
-                self.eq.stage = 0;
-                self.finish_eq_edit();
+                self.begin_eq_name(EqField::NewProfile);
+                return;
             }
             Setting::EqDuplicateProfile => {
-                let mut profile = self.eq.active().clone();
-                let base = format!("{} copy", profile.name);
-                let mut number = 1;
-                profile.name = loop {
-                    let candidate = if number == 1 {
-                        base.clone()
-                    } else {
-                        format!("{base} {number}")
-                    };
-                    if !self
-                        .eq
-                        .profiles
-                        .iter()
-                        .any(|existing| existing.name.eq_ignore_ascii_case(&candidate))
-                    {
-                        break candidate;
-                    }
-                    number += 1;
-                };
-                self.eq.profiles.push(profile);
-                self.eq.profile = self.eq.profiles.len() - 1;
-                self.finish_eq_edit();
+                self.begin_eq_name(EqField::SaveAsProfile);
+                return;
             }
             Setting::EqRenameProfile => {
-                self.begin_eq_value(EqField::RenameProfile);
+                self.begin_eq_name(EqField::RenameProfile);
                 return;
             }
             Setting::EqDeleteProfile => {
-                let active = self.eq.active().clone();
-                let Ok(path) = active.managed_path() else {
-                    return self.note("that profile cannot be deleted".into());
-                };
-                if !path.exists() {
-                    return self.note("bundled profiles cannot be deleted".into());
-                }
-                if let Err(error) = std::fs::remove_file(&path) {
-                    return self.note(format!("could not delete EQ profile: {error}"));
-                }
-                if let Some(preset) = eq::PRESETS
-                    .iter()
-                    .find(|preset| preset.name.eq_ignore_ascii_case(&active.name))
-                {
-                    self.eq.profiles[self.eq.profile] =
-                        crate::audio::dsp::apo::Profile::legacy(preset.name, 0.0, &preset.gains);
-                } else {
-                    self.eq.profiles.remove(self.eq.profile);
-                    self.eq.profile = self.eq.profile.min(self.eq.profiles.len() - 1);
-                }
-                self.eq.stage = 0;
-                self.apply_eq();
-                self.note(format!("deleted EQ profile {}", active.name));
+                self.open_eq_profiles();
+                self.eq_library_action("delete");
+                return;
             }
             Setting::EqReset => {
-                self.eq.profile = 0;
-                self.eq.stage = 0;
-                self.eq.scroll = 0;
-                self.apply_eq();
-                self.note("eq: Flat".into());
+                self.select_eq_profile(0);
             }
             Setting::EqImport => {
                 self.over.settings = None;

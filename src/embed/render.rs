@@ -460,6 +460,7 @@ mod tests {
     fn palette() -> Palette {
         Palette {
             bg: [10, 20, 30],
+            inset_bg: None,
             fg: [230, 220, 210],
             muted: [120, 130, 140],
             accent: [200, 100, 50],

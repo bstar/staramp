@@ -13,12 +13,25 @@ use std::collections::BTreeMap;
 /// palette directly so Classic's surface hues do not bleed into other themes.
 pub(crate) const REFERENCE_PALETTE: Palette = Palette {
     bg: [23, 24, 32],
+    inset_bg: None,
     fg: [215, 217, 207],
     muted: [152, 158, 172],
     accent: [164, 215, 145],
     selected: [48, 63, 61],
     border: [116, 121, 134],
     error: [224, 152, 133],
+};
+/// Named AMP treatment, recognized by its complete palette so embedded hosts
+/// can use the same artwork without changing the surface protocol.
+pub(crate) const SILVER_PALETTE: Palette = Palette {
+    bg: [40, 40, 59],
+    inset_bg: Some([6, 7, 11]),
+    fg: [207, 216, 225],
+    muted: [154, 161, 183],
+    accent: [164, 215, 145],
+    selected: [49, 49, 73],
+    border: [110, 113, 137],
+    error: [239, 73, 50],
 };
 pub(crate) fn tone(p: &Palette, original: &str, ink: bool) -> String {
     if *p != REFERENCE_PALETTE {
@@ -51,13 +64,29 @@ fn calibrated(original: &str, reference: &str, actual: &str) -> String {
     .to_hex()
 }
 pub(crate) fn colors(p: &Palette) -> Colors {
+    if *p == SILVER_PALETTE {
+        return Colors {
+            panel: "#28283b".into(),
+            inset: "#06070b".into(),
+            ink: native::hex(p.fg),
+            dim: native::hex(p.muted),
+            accent: native::hex(p.accent),
+            highlight: "#7e8299".into(),
+            shadow: "#10101b".into(),
+            raised: "#b7c6d0".into(),
+            title: "#222235".into(),
+        };
+    }
     if *p != REFERENCE_PALETTE {
         use starkit::theme::color::Rgb;
         let bg = Rgb::new(p.bg[0], p.bg[1], p.bg[2]);
         let fg = Rgb::new(p.fg[0], p.fg[1], p.fg[2]);
         return Colors {
             panel: bg.to_hex(),
-            inset: bg.mix(Rgb::new(0, 0, 0), 0.06).to_hex(),
+            inset: p
+                .inset_bg
+                .map(native::hex)
+                .unwrap_or_else(|| bg.mix(Rgb::new(0, 0, 0), 0.06).to_hex()),
             ink: fg.to_hex(),
             dim: native::hex(p.muted),
             accent: native::hex(p.accent),
@@ -86,6 +115,9 @@ pub(crate) fn colors(p: &Palette) -> Colors {
     }
 }
 pub(crate) fn inactive_led(p: &Palette) -> String {
+    if *p == SILVER_PALETTE {
+        return "#1c2a20".into();
+    }
     if *p == REFERENCE_PALETTE {
         return "#1c2a20".into();
     }
@@ -95,6 +127,159 @@ pub(crate) fn inactive_led(p: &Palette) -> String {
         .unwrap()
         .mix(Rgb::new(p.fg[0], p.fg[1], p.fg[2]), 0.06)
         .to_hex()
+}
+
+/// Compact artwork inside the existing pointer target. Small fold controls
+/// keep their size; ordinary buttons use the selected 22px Minimal treatment.
+pub(crate) fn button_rect(rect: PixelRect) -> PixelRect {
+    let height = rect.height.min(22);
+    let width = if rect.width == rect.height {
+        rect.width.min(22)
+    } else {
+        (rect.width * 4 / 5).max(height).min(rect.width)
+    };
+    PixelRect::new(
+        rect.x + (rect.width - width) / 2,
+        rect.y + (rect.height - height) / 2,
+        width,
+        height,
+    )
+}
+
+fn button_background(palette: &Palette, kind: &str) -> String {
+    let c = colors(palette);
+    match kind {
+        "button-pressed" => c.title,
+        "button-hover" if *palette == REFERENCE_PALETTE => "#383d49".into(),
+        "button-hover" => {
+            use starkit::theme::color::Rgb;
+            Rgb::parse_hex(&c.panel)
+                .unwrap()
+                .mix(Rgb::parse_hex(&c.ink).unwrap(), 0.06)
+                .to_hex()
+        }
+        _ => c.panel,
+    }
+}
+
+fn transport_button(action: &str) -> bool {
+    matches!(action, "previous" | "play" | "pause" | "stop" | "next")
+}
+
+/// Three satin planes across the blue-gray chassis, behind the original
+/// fixed-corner bitmap outline. Bounded strips scale with native pixel density.
+pub(crate) fn silver_panel_color(y: u16, height: u16) -> starkit::theme::color::Rgb {
+    use starkit::theme::color::Rgb;
+    let inner_height = height.saturating_sub(2).max(1);
+    let step = inner_height.div_ceil(96);
+    let row = y.saturating_sub(1).min(inner_height - 1) / step * step;
+    let t = f64::from(row) / f64::from(inner_height.saturating_sub(1).max(1));
+    let top = Rgb::new(33, 33, 50);
+    let mid = Rgb::new(53, 53, 77);
+    let bottom = Rgb::new(32, 32, 48);
+    if t <= 0.48 {
+        top.mix(mid, t / 0.48)
+    } else {
+        mid.mix(bottom, (t - 0.48) / 0.52)
+    }
+}
+fn silver_panel(s: &mut Surface, rect: PixelRect, rigid: bool) {
+    if rect.width <= 8 || rect.height <= 8 {
+        return;
+    }
+    let radius = if rigid { 0 } else { 3 };
+    let inner = PixelRect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2);
+    // Rounded caps let the gradient reach the single-pixel outline while
+    // retaining the fixed corner shape. Middle strips meet its straight sides.
+    s.fill(inner, &silver_panel_color(1, rect.height).to_hex(), radius);
+    s.fill(
+        PixelRect::new(inner.x, rect.y + rect.height - 7, inner.width, 6),
+        &silver_panel_color(rect.height - 2, rect.height).to_hex(),
+        radius,
+    );
+    let step = (rect.height - 2).div_ceil(96);
+    for row in (1..rect.height - 1).step_by(usize::from(step)) {
+        let start = row.max(4);
+        let end = (row + step).min(rect.height - 4);
+        if end <= start {
+            continue;
+        }
+        let shade = silver_panel_color(start, rect.height);
+        s.fill(
+            PixelRect::new(inner.x, rect.y + start, inner.width, end - start),
+            &shade.to_hex(),
+            0,
+        );
+    }
+}
+
+/// Give wide instrument displays a recessed glass surface. The original
+/// bitmap bevel remains at the outside; all shading sits behind the content.
+fn display_relief(s: &mut Surface, rect: PixelRect, palette: &Palette) {
+    if rect.width < 320 || rect.height < 64 {
+        return;
+    }
+    use starkit::theme::color::Rgb;
+    let c = colors(palette);
+    let base = Rgb::parse_hex(&c.inset).unwrap();
+    let accent = Rgb::new(palette.accent[0], palette.accent[1], palette.accent[2]);
+    let black = Rgb::new(0, 0, 0);
+    let inner = PixelRect::new(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4);
+    let shade = |row: u16| {
+        let t = f64::from(row) / f64::from(inner.height - 1);
+        let glow = (1. - (2. * t - 1.).powi(2)) * 0.045;
+        let shadow = (1. - t).powi(4) * 0.45 + t.powi(6) * 0.18;
+        base.mix(accent, glow).mix(black, shadow)
+    };
+    // Bound node counts even for a tall embedded player. Geometry is logical
+    // pixels and is scaled with the rest of the original-density artwork.
+    let step = inner.height.div_ceil(64);
+    for row in (0..inner.height).step_by(usize::from(step)) {
+        s.fill(
+            PixelRect::new(
+                inner.x,
+                inner.y + row,
+                inner.width,
+                step.min(inner.height - row),
+            ),
+            &shade(row).to_hex(),
+            0,
+        );
+    }
+    for row in (2..inner.height).step_by(usize::from(step.max(4))) {
+        s.fill(
+            PixelRect::new(inner.x, inner.y + row, inner.width, 1),
+            &shade(row).mix(black, 0.06).to_hex(),
+            0,
+        );
+    }
+    for (edge, amount) in [0.50, 0.34, 0.20, 0.10].into_iter().enumerate() {
+        let edge = edge as u16;
+        let shadow = base.mix(black, amount).to_hex();
+        s.fill(
+            PixelRect::new(inner.x + edge, inner.y, 1, inner.height),
+            &shadow,
+            0,
+        );
+        s.fill(
+            PixelRect::new(inner.x, inner.y + edge, inner.width, 1),
+            &shadow,
+            0,
+        );
+    }
+    let lip = base
+        .mix(Rgb::parse_hex(&c.highlight).unwrap(), 0.20)
+        .to_hex();
+    s.fill(
+        PixelRect::new(inner.x, inner.y + inner.height - 1, inner.width, 1),
+        &lip,
+        0,
+    );
+    s.fill(
+        PixelRect::new(inner.x + inner.width - 1, inner.y, 1, inner.height),
+        &lip,
+        0,
+    );
 }
 fn role_color(role: &str, original: &str, palette: &Palette) -> String {
     if *palette != REFERENCE_PALETTE {
@@ -169,6 +354,13 @@ struct Prepared {
 struct GlyphAsset {
     id: String,
     png: String,
+    label_ink: BTreeMap<&'static str, PixelRect>,
+    readouts: BTreeMap<(u16, char), ReadoutGlyph>,
+}
+struct ReadoutGlyph {
+    source: PixelRect,
+    bearing: u16,
+    advance: u16,
 }
 pub(crate) struct PlayerSkin {
     source: AssetCache,
@@ -192,8 +384,88 @@ impl PlayerSkin {
         let mut glyphs = BTreeMap::new();
         for (density, name, png) in super::skin_assets::GLYPHS {
             let pixels = starkit::image::load_from_memory(png)?.to_rgba8();
+            let mut label_ink = BTreeMap::new();
+            let mut readouts = BTreeMap::new();
+            if *name == "minimal-labels" {
+                for (label, y, width, height) in super::skin_assets::MINIMAL_LABELS {
+                    let (mut left, mut top) = (width * density, height * density);
+                    let (mut right, mut bottom) = (0, 0);
+                    for yy in 0..height * density {
+                        for xx in 0..width * density {
+                            if pixels
+                                .get_pixel(u32::from(xx), u32::from(y * density + yy))
+                                .0[3]
+                                > 0
+                            {
+                                left = left.min(xx);
+                                top = top.min(yy);
+                                right = right.max(xx + 1);
+                                bottom = bottom.max(yy + 1);
+                            }
+                        }
+                    }
+                    anyhow::ensure!(right > left && bottom > top, "Empty button label: {label}");
+                    // Keep source rectangles in whole logical pixels so the
+                    // original 1x/2x lettering is never stretched or resampled.
+                    label_ink.insert(
+                        *label,
+                        PixelRect::new(
+                            left / density,
+                            y + top / density,
+                            right.div_ceil(*density) - left / density,
+                            bottom.div_ceil(*density) - top / density,
+                        ),
+                    );
+                }
+            }
+            if *name == "readout-glyphs" {
+                for cell in super::skin_assets::READOUT_CELLS {
+                    let r = cell.rect;
+                    let (mut left, mut top) = (r.width * density, r.height * density);
+                    let (mut right, mut bottom) = (0, 0);
+                    for y in 0..r.height * density {
+                        for x in 0..r.width * density {
+                            if pixels
+                                .get_pixel(
+                                    u32::from(r.x * density + x),
+                                    u32::from(r.y * density + y),
+                                )
+                                .0[3]
+                                > 0
+                            {
+                                left = left.min(x);
+                                top = top.min(y);
+                                right = right.max(x + 1);
+                                bottom = bottom.max(y + 1);
+                            }
+                        }
+                    }
+                    anyhow::ensure!(right > left && bottom > top, "Empty readout glyph");
+                    readouts.insert(
+                        (cell.size, cell.character),
+                        ReadoutGlyph {
+                            source: PixelRect::new(
+                                r.x + left / density,
+                                r.y + top / density,
+                                right.div_ceil(*density) - left / density,
+                                bottom.div_ceil(*density) - top / density,
+                            ),
+                            bearing: left / density,
+                            advance: cell.advance,
+                        },
+                    );
+                }
+            }
             let (id, png) = starkit::terminal_graphics::assets::encode_skin(&pixels)?;
-            glyphs.insert((*density, *name), GlyphAsset { id, png });
+            glyphs.insert(
+                (*density, *name),
+                GlyphAsset {
+                    id,
+                    png,
+                    label_ink,
+                    readouts,
+                },
+            );
         }
         Ok(Self {
             source,
@@ -233,6 +505,7 @@ impl PlayerSkin {
             "panel",
             "panel-rigid",
             "well",
+            "well-pane",
             "button-normal",
             "button-active",
             "button-hover",
@@ -240,7 +513,10 @@ impl PlayerSkin {
             "button-focus",
             "button-disabled",
         ] {
-            let key = format!("{density}/{name}");
+            let key = format!(
+                "{density}/{}",
+                if name == "well-pane" { "well" } else { name }
+            );
             let sprite = self
                 .manifest
                 .sprites
@@ -251,9 +527,29 @@ impl PlayerSkin {
                 .layers
                 .get(&key)
                 .context("Missing skin layers")?;
+            let mut pane_roles;
+            let sprite_roles = if name == "well-pane" {
+                pane_roles = roles.clone();
+                let inset = colors(&Palette {
+                    inset_bg: None,
+                    ..*palette
+                })
+                .inset;
+                pane_roles.insert(
+                    "well".into(),
+                    [
+                        u8::from_str_radix(&inset[1..3], 16)?,
+                        u8::from_str_radix(&inset[3..5], 16)?,
+                        u8::from_str_radix(&inset[5..7], 16)?,
+                    ],
+                );
+                &pane_roles
+            } else {
+                &roles
+            };
             let pixels = self
                 .source
-                .compose(24 * density, 24 * density, layers, &roles)?;
+                .compose(24 * density, 24 * density, layers, sprite_roles)?;
             // encode_png does not thumbnail or resize these original assets.
             let (id, png) = starkit::terminal_graphics::assets::encode_skin(&pixels)?;
             let i = sprite.nine_slice.context("Missing slice metadata")?.insets;
@@ -302,11 +598,61 @@ impl PlayerSkin {
     pub(crate) fn frame(&self, s: &mut Surface, rect: PixelRect, inset: bool) {
         <Self as native::PlayerArtwork>::frame(self, s, rect, inset);
     }
+    pub(crate) fn pane_well(&self, s: &mut Surface, rect: PixelRect) {
+        self.paint(s, rect, "well-pane");
+    }
+    pub(crate) fn focus_outline(&self, s: &mut Surface, accent: &str) {
+        let name = if self.rigid {
+            "focus-rigid"
+        } else {
+            "focus-rounded"
+        };
+        let asset = &self.glyphs[&(self.density, name)];
+        s.assets.insert(asset.id.clone(), Some(asset.png.clone()));
+        s.nodes.push(Primitive::Sprite {
+            rect: PixelRect::new(0, 0, s.width, s.height),
+            asset: asset.id.clone(),
+            source: PixelRect::new(0, 0, 24 * self.density, 24 * self.density),
+            insets: Some([6 * self.density; 4]),
+            tint: Some(accent.into()),
+        });
+    }
     pub(crate) fn button(&self, s: &mut Surface, rect: PixelRect, action: &str, active: bool) {
         <Self as native::PlayerArtwork>::button(self, s, rect, action, active);
     }
     pub(crate) fn ink(&self, action: &str, active: bool) -> String {
         <Self as native::PlayerArtwork>::button_ink(self, action, active)
+    }
+    pub(crate) fn button_label(
+        &self,
+        s: &mut Surface,
+        rect: PixelRect,
+        text: &str,
+        tint: &str,
+    ) -> bool {
+        let Some(source) = self.glyphs[&(self.density, "minimal-labels")]
+            .label_ink
+            .get(text)
+        else {
+            return false;
+        };
+        if source.width > rect.width || source.height > rect.height {
+            return false;
+        }
+        // Center the actual ink, rather than the atlas cell's transparent padding.
+        self.glyph(
+            s,
+            PixelRect::new(
+                rect.x + (rect.width - source.width) / 2,
+                rect.y + (rect.height - source.height) / 2,
+                source.width,
+                source.height,
+            ),
+            "minimal-labels",
+            *source,
+            tint,
+        );
+        true
     }
     pub(crate) fn label(
         &self,
@@ -474,6 +820,59 @@ pub(crate) fn density(width: u16, height: u16, graphics: GraphicsConfig) -> u16 
     }
 }
 impl native::PlayerArtwork for PlayerSkin {
+    fn readout_advance(&self, size: u16) -> Option<u16> {
+        self.glyphs[&(self.density, "readout-glyphs")]
+            .readouts
+            .get(&(size, '0'))
+            .map(|glyph| glyph.advance)
+    }
+    fn readout_width(&self, text: &str, size: u16) -> Option<u16> {
+        let glyphs = &self.glyphs[&(self.density, "readout-glyphs")].readouts;
+        let first = glyphs.get(&(size, text.chars().next()?))?;
+        let mut advance = 0;
+        let mut right = 0;
+        for character in text.chars() {
+            let glyph = glyphs.get(&(size, character))?;
+            right = advance + glyph.bearing + glyph.source.width;
+            advance += glyph.advance;
+        }
+        Some(right - first.bearing)
+    }
+    fn readout(
+        &self,
+        s: &mut Surface,
+        rect: PixelRect,
+        text: &str,
+        color: &str,
+        size: u16,
+    ) -> bool {
+        let Some(width) = self.readout_width(text, size) else {
+            return false;
+        };
+        if width > rect.width {
+            return false;
+        }
+        let glyphs = &self.glyphs[&(self.density, "readout-glyphs")].readouts;
+        let first = glyphs[&(size, text.chars().next().unwrap())].bearing;
+        let mut advance = 0;
+        for character in text.chars() {
+            let glyph = &glyphs[&(size, character)];
+            self.glyph(
+                s,
+                PixelRect::new(
+                    rect.x + advance + glyph.bearing - first,
+                    rect.y + rect.height.saturating_sub(24) / 2 + glyph.source.y % 24,
+                    glyph.source.width,
+                    glyph.source.height,
+                ),
+                "readout-glyphs",
+                glyph.source,
+                color,
+            );
+            advance += glyph.advance;
+        }
+        true
+    }
     fn fixed_label(
         &self,
         s: &mut Surface,
@@ -482,7 +881,8 @@ impl native::PlayerArtwork for PlayerSkin {
         color: &str,
         centered: bool,
     ) -> bool {
-        self.label(s, rect, text, color, centered)
+        let _ = centered;
+        self.button_label(s, rect, text, color)
     }
     fn clock(&self, s: &mut Surface, origin: [u16; 2], value: &str, color: &str) {
         let p = self.palette.expect("prepared skin palette");
@@ -499,7 +899,9 @@ impl native::PlayerArtwork for PlayerSkin {
                 0.14,
             )
             .to_hex();
-        let inactive = if p == REFERENCE_PALETTE {
+        let inactive = if p == SILVER_PALETTE {
+            "#203226".into()
+        } else if p == REFERENCE_PALETTE {
             calibrated("#203226", &reference, &inactive)
         } else {
             inactive_led(&p)
@@ -540,39 +942,75 @@ impl native::PlayerArtwork for PlayerSkin {
         );
     }
     fn frame(&self, s: &mut Surface, rect: PixelRect, inset: bool) {
-        self.paint(
-            s,
-            rect,
-            if inset {
-                "well"
-            } else if self.rigid {
-                "panel-rigid"
+        if !inset && self.palette == Some(SILVER_PALETTE) {
+            let name = if self.rigid {
+                "silver-panel-rigid"
             } else {
-                "panel"
-            },
-        );
+                "silver-panel-rounded"
+            };
+            let asset = &self.glyphs[&(self.density, name)];
+            s.assets.insert(asset.id.clone(), Some(asset.png.clone()));
+            s.nodes.push(Primitive::Sprite {
+                rect,
+                asset: asset.id.clone(),
+                source: PixelRect::new(0, 0, 24 * self.density, 24 * self.density),
+                insets: Some([6 * self.density; 4]),
+                tint: None,
+            });
+        } else {
+            self.paint(
+                s,
+                rect,
+                if inset {
+                    "well"
+                } else if self.rigid {
+                    "panel-rigid"
+                } else {
+                    "panel"
+                },
+            );
+        }
+        if inset {
+            display_relief(s, rect, &self.palette.expect("prepared skin palette"));
+        } else if self.palette == Some(SILVER_PALETTE) {
+            silver_panel(s, rect, self.rigid);
+        }
     }
     fn button_ink(&self, action: &str, active: bool) -> String {
         use starkit::theme::color::Rgb;
         let p = self.palette.expect("prepared skin palette");
         let kind = self.button_kind(action, active);
+        if p == SILVER_PALETTE && transport_button(action) {
+            return if kind == "button-disabled" {
+                "#404f5e"
+            } else {
+                "#273743"
+            }
+            .into();
+        }
         if kind == "button-disabled" {
             // Disabled controls are intentionally subdued, not promoted to
             // bright active ink by the enabled-control contrast correction.
             return native::hex(p.muted);
         }
-        let role = match kind {
-            "button-pressed" => "pressed",
-            "button-hover" => "hover",
-            "button-active" => "active",
-            _ => "control",
-        };
-        let color = role_color(role, &self.manifest.roles[role], &p);
-        let background = Rgb::parse_hex(&color).expect("derived skin color");
-        let ink = if p != REFERENCE_PALETTE {
-            Rgb::new(p.fg[0], p.fg[1], p.fg[2])
+        let color = if transport_button(action) {
+            let role = match kind {
+                "button-pressed" => "pressed",
+                "button-hover" => "hover",
+                "button-active" => "active",
+                _ => "control",
+            };
+            role_color(role, &self.manifest.roles[role], &p)
         } else {
+            button_background(&p, kind)
+        };
+        let background = Rgb::parse_hex(&color).expect("derived skin color");
+        let ink = if transport_button(action) && p == REFERENCE_PALETTE {
             Rgb::parse_hex(if active { "#10161a" } else { "#e0e2d5" }).unwrap()
+        } else if active && !transport_button(action) {
+            Rgb::new(p.accent[0], p.accent[1], p.accent[2])
+        } else {
+            Rgb::new(p.fg[0], p.fg[1], p.fg[2])
         };
         if background.contrast(ink) >= 4.5 {
             ink.to_hex()
@@ -583,8 +1021,53 @@ impl native::PlayerArtwork for PlayerSkin {
         }
     }
     fn button(&self, s: &mut Surface, rect: PixelRect, action: &str, active: bool) {
-        let name = self.button_kind(action, active);
-        self.paint(s, rect, name);
+        let kind = self.button_kind(action, active);
+        if transport_button(action) {
+            if self.palette == Some(SILVER_PALETTE) {
+                let name = format!("silver-{kind}");
+                let asset = &self.glyphs[&(self.density, name.as_str())];
+                s.assets.insert(asset.id.clone(), Some(asset.png.clone()));
+                s.nodes.push(Primitive::Sprite {
+                    rect,
+                    asset: asset.id.clone(),
+                    source: PixelRect::new(0, 0, 29 * self.density, 29 * self.density),
+                    insets: None,
+                    tint: None,
+                });
+                return;
+            }
+            self.paint(s, rect, kind);
+            return;
+        }
+        if kind == "button-disabled" {
+            return;
+        }
+        let p = self.palette.expect("prepared skin palette");
+        let rect = button_rect(rect);
+        if matches!(kind, "button-hover" | "button-pressed") {
+            s.fill(rect, &button_background(&p, kind), 0);
+            s.nodes.push(Primitive::Border {
+                rect,
+                color: if p == REFERENCE_PALETTE {
+                    if kind == "button-pressed" {
+                        "#11131a"
+                    } else {
+                        "#555c6b"
+                    }
+                    .into()
+                } else {
+                    native::hex(p.border)
+                },
+                radius: 0,
+            });
+        }
+        if active || self.focused.as_deref() == Some(action) {
+            s.nodes.push(Primitive::Border {
+                rect,
+                color: native::hex(p.accent),
+                radius: 0,
+            });
+        }
     }
 }
 
@@ -624,6 +1107,7 @@ mod tests {
     fn palette() -> Palette {
         Palette {
             bg: [23, 24, 32],
+            inset_bg: None,
             fg: [215, 217, 207],
             muted: [152, 158, 172],
             accent: [164, 215, 145],
@@ -633,7 +1117,75 @@ mod tests {
         }
     }
     #[test]
-    fn reference_palette_keeps_the_original_artwork_colors() {
+    fn silver_shading_and_metal_buttons_render_at_both_densities() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut renderer =
+            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace");
+        for density in [1, 2] {
+            skin.prepare(&SILVER_PALETTE, density, false).unwrap();
+            let mut surface = Surface::new(300, 240, "#000000".into());
+            skin.frame(&mut surface, PixelRect::new(0, 0, 300, 240), false);
+            for (i, kind) in ["normal", "hover", "pressed", "focus", "active", "disabled"]
+                .iter()
+                .enumerate()
+            {
+                skin.hovered = (*kind == "hover").then(|| "play".into());
+                skin.pressed = (*kind == "pressed").then(|| "play".into());
+                skin.focused = (*kind == "focus").then(|| "play".into());
+                skin.disabled.clear();
+                if *kind == "disabled" {
+                    skin.disabled.insert("play");
+                }
+                skin.button(
+                    &mut surface,
+                    PixelRect::new(10 + i as u16 * 40, 180, 29, 29),
+                    "play",
+                    *kind == "active",
+                );
+            }
+            let surface = surface.at_density(density).unwrap();
+            surface.validate().unwrap();
+            let scale = u32::from(density);
+            let image = renderer
+                .render(
+                    &starkit::image::RgbaImage::new(300 * scale, 240 * scale),
+                    &surface,
+                )
+                .unwrap();
+            let pixel = |x, y| image.get_pixel(x * scale, y * scale).0;
+            for (x, y, color) in [
+                (280, 0, [96, 101, 124, 255]),
+                (280, 239, [96, 101, 124, 255]),
+                (0, 130, [96, 101, 124, 255]),
+                (299, 130, [96, 101, 124, 255]),
+                (280, 1, [33, 33, 50, 255]),
+                (280, 2, [33, 33, 50, 255]),
+                (280, 3, [33, 33, 50, 255]),
+            ] {
+                assert_eq!(pixel(x, y), color, "thin outline at {x},{y}");
+            }
+            for y in [12, 130, 230] {
+                assert_eq!(pixel(1, y), pixel(280, y), "left body reaches outline");
+                assert_eq!(pixel(298, y), pixel(280, y), "right body reaches outline");
+            }
+            let top = pixel(280, 12);
+            let middle = pixel(280, 115);
+            let bottom = pixel(280, 230);
+            assert!(middle[0] > top[0] + 12 && middle[0] > bottom[0] + 12);
+            assert!(top[2] > top[0] && middle[2] > middle[0] && bottom[2] > bottom[0]);
+            let face_fall = pixel(24, 185)[0].saturating_sub(pixel(24, 203)[0]);
+            assert!((10..=30).contains(&face_fall), "restrained silver gradient");
+            assert_eq!(pixel(10, 180), [16, 20, 30, 255], "opaque square corner");
+            assert!(
+                pixel(11, 181)[0] > pixel(37, 207)[0] + 100,
+                "hard one-pixel bevel"
+            );
+            assert!(pixel(24, 203)[0] > 100, "button face should remain silver");
+            assert_eq!(pixel(184, 206), [107, 152, 91, 255], "active underline");
+        }
+    }
+    #[test]
+    fn reference_palette_keeps_original_chrome_with_recessed_display() {
         let mut skin = PlayerSkin::new().unwrap();
         let surface = skin
             .surface_at_density(
@@ -654,7 +1206,7 @@ mod tests {
             .unwrap();
         for (x, y, color) in [
             (700, 180, [48, 51, 64, 255]),
-            (700, 104, [16, 24, 19, 255]),
+            (700, 104, [20, 30, 23, 255]),
             (20, 210, [71, 77, 93, 255]),
             (55, 210, [107, 114, 130, 255]),
         ] {
@@ -720,6 +1272,7 @@ mod tests {
         let rgb = |c: starkit::theme::color::Rgb| [c.r, c.g, c.b];
         let p = Palette {
             bg: rgb(t.bg),
+            inset_bg: None,
             fg: rgb(t.fg),
             muted: rgb(t.dim),
             accent: rgb(t.accent),
@@ -763,9 +1316,17 @@ mod tests {
             .render(&starkit::image::RgbaImage::new(1352, 230), &surface)
             .unwrap();
         let expected = starkit::theme::color::Rgb::parse_hex(&c.inset).unwrap();
-        assert_eq!(
-            image.get_pixel(700, 104).0,
-            [expected.r, expected.g, expected.b, 255]
+        let body = image.get_pixel(700, 104).0;
+        let top = image.get_pixel(700, 45).0;
+        assert_ne!(body, [expected.r, expected.g, expected.b, 255]);
+        assert!(
+            body[2] > body[0] && body[2] > body[1],
+            "display relief retains Kanagawa's blue hue"
+        );
+        assert!(
+            top[..3].iter().map(|v| u16::from(*v)).sum::<u16>()
+                < body[..3].iter().map(|v| u16::from(*v)).sum::<u16>(),
+            "the inset's top shadow must be darker than its glass"
         );
     }
     #[test]
@@ -881,6 +1442,93 @@ mod tests {
         assert!(focused.assets.is_empty());
     }
     #[test]
+    fn eq_button_ink_is_centered_in_hover_outlines_at_both_densities() {
+        let mut skin = PlayerSkin::new().unwrap();
+        for density in [1, 2] {
+            skin.prepare(&SILVER_PALETTE, density, true).unwrap();
+            let png = super::super::skin_assets::GLYPHS
+                .iter()
+                .find(|(d, name, _)| *d == density && *name == "minimal-labels")
+                .unwrap()
+                .2;
+            let atlas = starkit::image::load_from_memory(png).unwrap().to_rgba8();
+            for (text, width) in [
+                ("SAVE", 64),
+                ("SAVE AS", 88),
+                ("IMPORT", 82),
+                ("EXPORT", 96),
+                ("NEW", 60),
+                ("LOAD", 152),
+                ("RENAME", 80),
+                ("REVERT", 80),
+                ("CANCEL", 96),
+                ("APPLY", 100),
+                ("BYPASS", 100),
+                ("DELETE", 100),
+            ] {
+                let rect = PixelRect::new(12, 12, width, 29);
+                let mut surface = Surface::new(200, 80, "#000000".into());
+                skin.hovered = Some("eq-action".into());
+                skin.button(&mut surface, rect, "eq-action", false);
+                assert!(
+                    skin.button_label(&mut surface, button_rect(rect), text, "#ffffff"),
+                    "{text} must use the common lettering"
+                );
+                let physical = surface.at_density(density).unwrap();
+                let outline = physical
+                    .nodes
+                    .iter()
+                    .find_map(|n| match n {
+                        Primitive::Border { rect, .. } => Some(*rect),
+                        _ => None,
+                    })
+                    .unwrap();
+                let (drawn, source) = physical
+                    .nodes
+                    .iter()
+                    .find_map(|n| match n {
+                        Primitive::Sprite { rect, source, .. } => Some((*rect, *source)),
+                        _ => None,
+                    })
+                    .unwrap();
+                assert_eq!(
+                    (drawn.width, drawn.height),
+                    (source.width, source.height),
+                    "lettering must retain original density pixels"
+                );
+                let mut ink = Vec::new();
+                for y in 0..source.height {
+                    for x in 0..source.width {
+                        if atlas
+                            .get_pixel(u32::from(source.x + x), u32::from(source.y + y))
+                            .0[3]
+                            > 0
+                        {
+                            ink.push((drawn.x + x, drawn.y + y));
+                        }
+                    }
+                }
+                let left = ink.iter().map(|p| p.0).min().unwrap();
+                let right = ink.iter().map(|p| p.0).max().unwrap() + 1;
+                let top = ink.iter().map(|p| p.1).min().unwrap();
+                let bottom = ink.iter().map(|p| p.1).max().unwrap() + 1;
+                for (a, b, origin, size) in [
+                    (left, right, outline.x, outline.width),
+                    (top, bottom, outline.y, outline.height),
+                ] {
+                    let error =
+                        (i32::from(a) + i32::from(b) - i32::from(origin) * 2 - i32::from(size))
+                            .abs();
+                    assert!(
+                        error <= i32::from(density),
+                        "{text} at {density}x is off-center by {error}/2 physical pixels"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn active_hover_pressed_and_focus_ink_remains_readable_across_palettes() {
         use native::PlayerArtwork;
         use starkit::theme::color::Rgb;
@@ -896,33 +1544,176 @@ mod tests {
             for accent in [[164, 215, 145], [20, 60, 220], [250, 170, 210]] {
                 palette.accent = accent;
                 skin.prepare(&palette, 1, false).unwrap();
-                for kind in [
-                    "button-normal",
-                    "button-active",
-                    "button-hover",
-                    "button-focus",
-                    "button-pressed",
-                ] {
-                    skin.hovered = (kind == "button-hover").then(|| "play".into());
-                    skin.focused = (kind == "button-focus").then(|| "play".into());
-                    skin.pressed = (kind == "button-pressed").then(|| "play".into());
-                    let color = skin.button_ink("play", kind == "button-active");
-                    let foreground = Rgb::parse_hex(&color).unwrap();
-                    let mut surface = Surface::new(24, 24, "#000000".into());
-                    skin.button(
-                        &mut surface,
-                        PixelRect::new(0, 0, 24, 24),
-                        "play",
-                        kind == "button-active",
-                    );
-                    let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new(
-                        "monospace",
-                    )
-                    .render(&starkit::image::RgbaImage::new(24, 24), &surface)
+                for action in ["play", "shuffle"] {
+                    for kind in [
+                        "button-normal",
+                        "button-active",
+                        "button-hover",
+                        "button-focus",
+                        "button-pressed",
+                    ] {
+                        skin.hovered = (kind == "button-hover").then(|| action.into());
+                        skin.focused = (kind == "button-focus").then(|| action.into());
+                        skin.pressed = (kind == "button-pressed").then(|| action.into());
+                        let color = skin.button_ink(action, kind == "button-active");
+                        let foreground = Rgb::parse_hex(&color).unwrap();
+                        let mut surface = Surface::new(24, 24, colors(&palette).panel);
+                        skin.button(
+                            &mut surface,
+                            PixelRect::new(0, 0, 24, 24),
+                            action,
+                            kind == "button-active",
+                        );
+                        if action == "play" {
+                            assert!(
+                                matches!(surface.nodes.as_slice(), [Primitive::Sprite { asset, .. }] if asset == &skin.prepared[kind].id),
+                                "transport artwork changed: {kind}"
+                            );
+                        } else if kind == "button-normal" {
+                            assert!(surface.nodes.is_empty(), "idle buttons must be transparent");
+                        } else if action == "shuffle"
+                            && matches!(kind, "button-active" | "button-focus")
+                        {
+                            assert!(matches!(
+                                surface.nodes.as_slice(),
+                                [Primitive::Border { .. }]
+                            ));
+                        }
+                        let bg =
+                            starkit::theme::color::Rgb::parse_hex(&colors(&palette).panel).unwrap();
+                        let base = starkit::image::RgbaImage::from_pixel(
+                            24,
+                            24,
+                            starkit::image::Rgba([bg.r, bg.g, bg.b, 255]),
+                        );
+                        let image =
+                            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new(
+                                "monospace",
+                            )
+                            .render(&base, &surface)
+                            .unwrap();
+                        let pixel = image.get_pixel(12, 12);
+                        let background = Rgb::new(pixel[0], pixel[1], pixel[2]);
+                        assert!(foreground.contrast(background) >= 4.5, "{kind}");
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn readout_ink_has_equal_track_gaps_at_both_densities() {
+        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        let mut skin = PlayerSkin::new().unwrap();
+        let graphics = GraphicsConfig {
+            cell_width: 8,
+            cell_height: 16,
+        };
+        let mut state = state();
+        for density in [1, 2] {
+            let mut previous_volume = None;
+            for (position, duration, volume_level) in
+                [(117., 584., 0.08), (599., 600., 0.42), (600., 6222., 1.)]
+            {
+                state.position = position;
+                state.duration = duration;
+                state.volume = volume_level;
+                let surface = skin
+                    .logical_surface(1200, 230, graphics, &palette(), &state, 8, density)
+                    .unwrap()
+                    .at_density(density)
                     .unwrap();
-                    let pixel = image.get_pixel(12, 12);
-                    let background = Rgb::new(pixel[0], pixel[1], pixel[2]);
-                    assert!(foreground.contrast(background) >= 4.5, "{kind}");
+                let seek = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "seek")
+                    .unwrap()
+                    .rect;
+                let volume = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "volume")
+                    .unwrap()
+                    .rect;
+                if let Some(before) = previous_volume {
+                    assert_eq!(before, volume);
+                }
+                previous_volume = Some(volume);
+                let id = &skin.glyphs[&(density, "readout-glyphs")].id;
+                let mut readouts = surface.clone();
+                readouts.background = "transparent".into();
+                readouts
+                    .nodes
+                    .retain(|n| matches!(n, Primitive::Sprite { asset, .. } if asset == id));
+                assert!(!readouts.nodes.is_empty());
+                for node in &readouts.nodes {
+                    if let Primitive::Sprite { rect, source, .. } = node {
+                        assert_eq!(
+                            (rect.width, rect.height),
+                            (source.width, source.height),
+                            "resampled readout glyph"
+                        );
+                    }
+                }
+                let mut previous_pixels = None;
+                for family in ["Liberation Mono", "JetBrainsMono Nerd Font"] {
+                    let base = starkit::image::RgbaImage::new(
+                        u32::from(surface.width),
+                        u32::from(surface.height),
+                    );
+                    let image = SurfaceOverlayRenderer::new(family)
+                        .render(&base, &readouts)
+                        .unwrap();
+                    if let Some(before) = previous_pixels {
+                        assert!(before == image, "terminal font changed the readout");
+                    }
+                    previous_pixels = Some(image.clone());
+                    let bounds = |r: PixelRect| {
+                        let mut left = u16::MAX;
+                        let mut right = 0;
+                        for y in r.y..r.y + r.height {
+                            for x in r.x..r.x + r.width {
+                                if image.get_pixel(u32::from(x), u32::from(y)).0[3] > 0 {
+                                    left = left.min(x);
+                                    right = right.max(x + 1);
+                                }
+                            }
+                        }
+                        assert!(right > left, "readout is empty");
+                        (left, right)
+                    };
+                    let elapsed = bounds(PixelRect::new(0, seek.y, seek.x, seek.height));
+                    let total = bounds(PixelRect::new(
+                        seek.x + seek.width,
+                        seek.y,
+                        surface.width - seek.x - seek.width,
+                        seek.height,
+                    ));
+                    let caption = bounds(PixelRect::new(0, volume.y, volume.x, volume.height));
+                    let value = bounds(PixelRect::new(
+                        volume.x + volume.width,
+                        volume.y,
+                        surface.width - volume.x - volume.width,
+                        volume.height,
+                    ));
+                    for (gap, expected) in [
+                        (seek.x - elapsed.1, 24),
+                        (total.0 - seek.x - seek.width, 24),
+                        (volume.x - caption.1, 18),
+                        (value.0 - volume.x - volume.width, 18),
+                    ] {
+                        assert!(
+                            gap.abs_diff(expected * density) < density,
+                            "unequal visible ink gap: {gap}, density {density}"
+                        );
+                    }
+                    assert!(
+                        (16 * density..20 * density).contains(&elapsed.0),
+                        "elapsed field overflows its inset"
+                    );
+                    assert!(
+                        (surface.width - total.1).abs_diff(16 * density) < density,
+                        "total timestamp lost its outer inset"
+                    );
                 }
             }
         }

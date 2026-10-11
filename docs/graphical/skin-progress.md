@@ -9,6 +9,311 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+
+### Reference EQ and profile management · October 10
+
+Player readouts now use original 11px/13px bitmap lettering with cached ink bounds
+instead of estimated terminal-font advances. Progress has 24px clear space at
+both text ends, volume has 18px, and timestamps sit within 16px outer insets. The
+elapsed field has fixed digit advances, keeping the bar stationary as the clock
+ticks; volume stays fixed across one-, two- and three-digit values. A raster
+regression measures actual alpha coverage at 1x/2x, checks equal gaps and original
+one-to-one source pixels, and verifies independence from terminal font choice.
+Silver transport buttons have square one-pixel bevels and a narrower metallic
+gradient. Playlist number, album-index and duration columns use muted blue, warm
+stone and blue-gray ink; titles retain the primary ink. Album track-count fields
+have additional room for the presenting terminal's glyph advances.
+Formatting, strict Clippy, 887 unit tests (5 ignored), 11 embed tests and the
+native rack integration check passed with these changes.
+The Nix graphical release was rebuilt and the desktop frontend, relay and
+controller verified against its executable inode. A stale reconnecting frontend
+needed explicit detach before reopening. Live Kitty inspection confirmed balanced
+visible progress/volume gaps, the sharper silver faces, column colors and full
+12 tracks / 14 hidden / 11 tracks labels. The 29,615-track queue, paused position,
+EQ settings and all saved profile/draft hashes were preserved. Native treatment
+captures were refreshed; the frozen reference SVG/PNG hashes remain unchanged.
+
+The initial balanced-track spacing used a nominal 0.6em label width, which was
+too narrow after KIT applied the presenting terminal's font scale: VOL, 100 and
+the elapsed/total readouts became ellipses. Short readout boxes temporarily used a
+0.75em advance plus two pixels of raster slack, retaining equal 14px track gaps.
+A production-surface regression compares bounded labels with unrestricted
+shaping in Liberation Mono and JetBrains Mono Nerd Font at the desktop's 12/11
+scale, at both densities, including a duration over 100 minutes.
+Playlist selection now blends its theme color into the actual playlist well at
+50% opacity, softening the row fill while preserving text and active-track ink.
+The decorative dash before each album's expand/collapse control is removed.
+Winamp Silver uses its brighter silver ink for focused-pane outlines and the
+playlist scrollbar thumb instead of green.
+Formatting, strict Clippy, 887 unit tests (5 ignored), 11 embed tests and the
+native rack integration check passed for these corrections.
+The graphical release was rebuilt and the desktop frontend/relay/controller
+reloaded from that executable. A live Kitty capture verified complete elapsed,
+total, VOL and 100 readouts, the 50% row fill, silver outline/scrollbar and no
+decorative heading dash. The existing playback owner retained its 29,615-track
+queue and paused position; EQ settings and every saved profile/draft hash matched.
+Native treatment captures were refreshed.
+
+EQ action labels now centre their actual bitmap ink within the Minimal hover
+face, rather than centring an atlas rectangle with extra transparent padding.
+Save and the other profile actions use the same 11px bitmap lettering as Save As,
+Import and Export. Bounds are cached from each density's alpha coverage; source
+and destination pixels remain one-to-one. A regression checks horizontal and
+vertical ink centring for all EQ/profile actions at 1x/2x. Formatting, strict
+Clippy, 886 unit tests (5 ignored), 11 embed tests and the native integration check
+passed. The graphical release was rebuilt and the running desktop restarted on
+that executable, preserving playback, all 29,615 queued tracks, view/folds, EQ
+settings and saved profiles/drafts. Native EQ preview captures were refreshed.
+
+The initial relative-drag change did not remove character-cell stepping in the
+frontend: KIT was synthesizing `Input::Pointer.pixel` from cell centres. KIT
+revision f569f00 enables SGR 1016 on known Kitty terminals with measured geometry,
+passes exact mouse pixels through the relay, and computes logical coordinates
+separately. The optional `pixel_mouse` capability leaves legacy reports readable;
+other terminals/multiplexers keep their cell path. Normal/panic restoration turns
+1016 off. A real-frontend PTY harness delivered four distinct one-pixel drag events
+inside the same logical cell and checked mode restoration. KIT strict Clippy and
+its all-feature/no-default-feature suites passed (490/305 unit tests).
+
+The native player's timestamp widths now follow their text, with a shared 14px
+gap between each end label and the progress bar. Volume uses the same gap before
+and after its track, with a reserved three-digit value field to keep the bar
+stationary while volume changes. Playback button artwork is unchanged.
+AMP formatting, strict Clippy, 885 unit tests (5 ignored), 11 embed tests and the
+native integration check passed. Updated 1x/2x gallery captures were inspected.
+The Nix release was reopened and the desktop frontend reported `pixel_mouse:
+true` with measured Kitty geometry. Saved profiles, recovery drafts, EQ settings,
+29,615-track queue/order, paused position and shared view/folds were preserved.
+
+EQ dragging now anchors the band's original frequency/gain and pointer position.
+It applies continuous logarithmic frequency and dB deltas instead of setting the
+band's gain to the total response under the pointer. Preamp, neighboring filters
+and off-center pickup no longer cause an initial jump. Parameters retain full
+precision; returning to the pickup restores them exactly. Release, pointer
+cancellation and presentation changes end capture. The native workflow fixture
+checks stationary pickup, one-pixel motion, dragging beyond the handle, repainting
+during capture, return to origin and release/cancel at 1x and 2x. Formatting,
+strict Clippy, 885 unit tests (5 ignored), 11 embed tests and the graphical
+integration check passed. The Nix release was reopened on the desktop; EQ
+settings, saved profiles and recovery drafts, queue order, paused position and
+shared view/folds were preserved.
+
+
+A restored profile's graph previously retained coefficients compiled at the
+startup fallback of 8 kHz after the audio worker rebuilt for playback. This
+particularly distorted high-frequency bands until manually loading again.
+Compiled EQ settings now retain their actual device rate, and the display
+refreshes when that rate changes. Startup, edits and IPC loads use the device
+rate, including resampled output, and retain it while stopped. The profile field
+uses a separate raster dropdown chevron rather than appending a letter to its
+name. The bit-perfect indicator, selected profile name and band-field values
+use smaller 10px text; field labels retain their existing size. A Bob-like
+regression compares low/mid/high responses to audio settings
+at 44.1/48/96 kHz, checks that reapplying cannot change the restored graph, and
+verifies the saved file is unchanged. The IPC test covers source/output rate
+mismatch as well. Formatting, strict Clippy, 885 unit tests (5 ignored),
+11 embed tests and the graphical integration check passed after these changes.
+The Nix release was reopened on the desktop with Bob enabled, all saved profile
+bytes unchanged, and playback/position plus the 29,615-track queue and shared
+view/folds preserved. Native gallery captures include the smaller text.
+
+
+The EQ now follows the selected rack's geometry more closely: a broad recessed
+#101813 graph, subtle logarithmic grid, dB labels padded inside the dark well, muted green
+numbered handles, right-hand
+band inspector, matching dark-green value fields, and inline clickable filter
+summaries. Preamp is separate from band numbering and remains visible at 900px.
+The curve comes from the compiled audio chain. Thin Outline frames, common EQ
+headers and Minimal action buttons remain the selected theme treatments.
+
+Profile selection opens a searchable native library with Load, Save, named Save
+As, New, Rename, confirmed Delete/Revert, Import and Export. Saved custom profiles
+sort before built-ins. Selecting a row does not alter playback until Load.
+Built-ins use Save As; naming collisions remain visible in the form. Explicit
+Save replaces the former per-edit overwriting of managed profile files. Working
+curves are private atomic recovery drafts, retained across profile switches and
+restart, with saved baselines kept for Revert and external-change checks.
+Save As publishes without replacing existing files. Existing modified files are
+protected from Save/Rename/Delete. The lifecycle is shared with cell presentation;
+native exact-value/name forms consume navigation keys and block background input.
+
+Formatting, strict Clippy, 885 unit tests (5 ignored), 11 embed tests and the
+production graphical integration check passed. The fixture covers named saving,
+duplicate files, edits not changing saved bytes, restart draft recovery, switching,
+inactive rename, delete/revert cancellation and confirmation, external-change
+protection, keyboard input ownership, and native modal hit targets at 1x/2x.
+Wide/narrow EQ, library and Save As captures are in `treatments/equalizer.html`.
+The LAN preview and all linked assets return HTTP 200 on port 3000.
+The optimized release was built through Nix and reopened using the existing
+ALSA-aware `~/.local/bin/staramp` launcher. The graphical client, relay and server
+all resolve to the new executable. Refresh preserved the 29,615-track queue and
+order, paused state and position, shared view/folds, Winamp Silver theme, EQ
+configuration and every existing managed profile's bytes. Physical listening
+and macOS presentation remain separate checks.
+
+
+After reviewing the stronger stepped border, the user requested another HTML
+review rather than accepting that version. `treatments/borders.html` offers four
+outer-frame treatments over unchanged native content: Previous bevel, Fine bevel,
+Soft contour and Thin outline. Player and Album/Activity contexts, 1:1 sizing,
+3x corner details and the latest production frame can be compared. Chromium
+checks passed for context/filter controls, keyboard/hash navigation, responsive
+bounds, equal comparison sizing and 24 self-contained SVG/PNG exports. These
+remain the original review alternatives. The user selected **D — Thin outline**
+after reviewing Fine Bevel with silver outlines. Native Silver frames now use
+one muted silver #60657c outline with no bevel strokes; the blue-gray body
+gradient reaches the outline. The common EQ header treatment is retained.
+Player, EQ, Album, Activity and Playlist share a single header painter and
+canonical chrome palette; Album/Activity content colors no longer alter their
+header background. Production raster checks compare all five header strips,
+including highlight and shadow, across all themes at 1x and Silver at 2x.
+
+Winamp Silver is an additional AMP theme, inspired by the user's original
+Winamp reference. It has three-stop blue-gray panel shading, original six-state
+silver transport plates exported independently at 1x/2x, and muted #a4d791
+display accents. Minimal action buttons and Compact Ledger geometry are kept.
+The original Winamp Classic palette and selected reference files are unchanged.
+The user preferred the earlier sage green after reviewing the neon variant;
+text, clock, visualizer and control indicators now use that muted treatment.
+The playlist restores Classic’s #101813 dark well, with Silver chrome retained.
+Silver panel frames use the selected Thin Outline. Original rounded/rigid
+1x/2x frame exports keep fixed corners; raster checks cover the single outline
+on all four sides and uninterrupted body shading immediately inside it.
+Artwork padding and transparent pixels follow the panel gradient, including
+fractional cell grids. Theme selection uses the existing registry and Alt+T.
+Native fixtures cover all 17 themes, the new full rack at 1x/2x, button states,
+gradient pixels and artwork outline/background continuity. Formatting, strict
+Clippy, 881 unit tests (5 ignored), 11 embed tests and the production graphical
+integration test passed. Native captures are in `treatments/winamp-silver.html`.
+The optimized Linux build was installed through the existing ALSA-aware local
+launcher; client, relay and server were reopened on that executable. Alt+T
+activated and persisted Winamp Silver. The 29,615-track queue, current playback
+position, playing state, pane visibility and folded records were preserved.
+
+Album/Activity layout studies are available in `treatments/panes.html`: Refined
+classic, Compact ledger, Artwork first and Split rail. They keep the palette
+and Minimal action buttons, use sample history/provider states, and expose
+paired or individual panes at 1:1 size plus 1x/2x PNG/SVG exports. Chromium
+checks cover text bounds, artwork navigation, hover/focus, pane filtering,
+desktop/mobile layouts and export links. The user selected **B — Compact ledger**
+and requested larger art. Album now reserves a 160px slot, with selection arrows
+and counter beside it, aligned release/count/duration facts and footer actions.
+Artwork retains its fitted aspect ratio and two-pixel outline. Activity shows
+real cached local/provider state, six compact listened/track/delivery rows and
+pending/error context. Unconfigured providers say Set up rather than Off or
+Enabled. Native scrolling accounts for six visible rows; ordinary cell clients
+retain their existing geometry. Original playback button artwork is unchanged.
+Unit (879), embed (11), production graphical integration and strict Clippy checks
+pass. Production captures verify artwork geometry and populated/empty Activity
+at 1x/2x, including provider state and scroll clamping.
+The optimized release was reopened through the existing local launcher. Client,
+relay and server use the new executable; playback resumed with all 29,615 queue
+entries in order, the user's shared view/folds and EQ visibility preserved.
+
+Four alternative button studies are available in `treatments/buttons.html`:
+Compact Classic, Quiet bevel, Thin outline and Minimal. They compare 22px
+controls with the current 29px buttons using the supplied Album reference and
+matching Player/Playlist/EQ examples. Desktop/mobile browser checks cover the
+gallery layout, artwork-counter demo, hover, keyboard focus and transport-state
+demo. On October 10 the user selected **D — Minimal**, then explicitly kept the
+previous/play/pause/stop/next controls unchanged. Production action buttons use
+transparent idle faces, 22px visual height, 11px lettering from fresh 1x/2x
+atlases, subdued hover/pressed framing and accent outlines for focus/active
+states. Existing larger pointer targets remain intact. Album, EQ, Activity,
+Playlist, Resume and Filter share the treatment; album fold signs lose their
+idle box. Playback transport faces, symbols, state colors and geometry retain
+their previous assets.
+All 879 unit checks, 11 embed checks, graphical integration, formatting and
+strict Clippy pass. Production captures cover the rack and dialogs at 1x/2x;
+palette tests check action-button readability and original transport assets.
+The optimized release was reopened through the existing local launcher with
+29,615 queue entries in order, the shared view/folds and paused position
+preserved (within 0.06 seconds of the decoder seek boundary).
+
+Pane focus uses the accent border alone. Focused title strips retain their
+ordinary theme color, without the previous green accent tint.
+Existing 1x/2x focus raster and pointer checks, formatting and strict Clippy
+pass. The optimized build was reopened with the paused session and shared
+view preserved.
+
+The earlier Playlist divider cleanup flattened its title strip; the later
+common-header request restores the EQ title relief. The track-list background begins at the first row, removing the exposed dark strip
+that combined with the header shadow into an extra horizontal divider.
+Production preview, graphical integration and strict Clippy checks pass. The
+release was reopened with paused position, queue order and shared view intact.
+
+Large instrument displays use a recessed glass treatment: a soft theme-derived
+vertical gradient, quiet scan lines, a four-pixel top/left inner shadow and a
+thin bottom/right reflected edge. The treatment is drawn behind the player's
+contents and EQ plot inside the existing bitmap bevel, scales at 1x/2x and
+keeps a bounded primitive count for large embedded players.
+All 879 unit tests, 11 embed checks and the production graphical integration
+check pass with this treatment. Palette checks cover the new recessed tones
+and preservation of Kanagawa's blue hue.
+The optimized build was reopened in the user's Kitty window; paused position,
+all 29,615 queue entries in order, cursor, open panels and album folds were
+verified after restoration.
+
+Playlist album expand/collapse controls now draw at 14x14 logical pixels rather
+than 18x18, with proportionally smaller signs centred in the heading row. Their
+18x18 pointer targets remain intact. Existing 1x/2x production rendering and
+album-fold interaction checks pass.
+The release build was reopened in the user's Kitty window, preserving all
+29,615 queue entries in order, album folds and paused playback. Restoring
+the position landed within 0.06 seconds, at the decoder's seek boundary.
+
+Resume now uses a native dialog with wrapped artist/title metadata, queue and
+position details, saved age, folded-record context and an unavailable-playlist
+message. Resume and Start fresh are explicit pointer and keyboard controls;
+long content scrolls without accepting or declining the offer. Both choices
+still call the ordinary application's resume actions. Playlist availability is
+captured when the session is offered rather than queried during drawing.
+Production captures cover the dialog at 1x/2x, including long titles, saved
+position, folded records and a missing playlist. Regression checks exercise
+keyboard selection, both pointer actions, session restoration and scrolling a
+long Unicode title without answering the prompt.
+Resume buttons reserve extra text width for the presenting terminal's font
+metrics. A raster comparison at a larger glyph size checks both full labels
+against unrestricted text at 1x/2x; the generic button's tight text estimate had
+ellipsized Start fresh in the user's Kitty window despite passing the default
+reference capture.
+The optimized Linux build was installed through the existing local launcher and
+the running graphical window reopened. Client, relay and server use the new
+executable; the pending saved-session file remained byte-for-byte unchanged.
+
+The native Album pane now requests artwork when it opens, including when joining
+an already paused playback owner. Previously only a track-revision change or the
+text renderer started that lookup, leaving native artwork empty until Retry.
+The request still runs through the existing background worker and is deduplicated
+per track; a closed pane remains idle.
+
+Loaded album artwork is centered at its own aspect ratio on the pane color,
+with a two-logical-pixel border following the image edges. The empty dark well
+and NO COVER placeholder are drawn only while there is no image. The transported
+raster accounts for terminal-cell rounding and uses one-to-one presentation so
+the border stays sharp at fractional cell sizes. Resizing, density and theme
+changes invalidate the artwork raster and its transport ID.
+
+Clicking an unfocused pane now only selects it. The consumed press cannot
+activate a button, move a playlist selection, open a context menu, or start a
+slider/scrollbar drag. Subsequent clicks in the selected pane operate normally.
+This applies to both the native rack and text presentation; modal controls keep
+their existing routing. Regression checks exercise settings in all five panes
+at 1x/2x density, playlist selection/right-clicks, and volume selection/dragging
+in the native and text views.
+
+Selecting **Winamp Classic** in the graphical theme picker now uses the selected
+stacked-rack artwork palette, just like the initial Classic presentation. The
+named theme previously recolored that artwork with the legacy terminal theme's
+black panels, neon green displays and blue selection. The graphical theme now
+keeps the study's slate beveled frames, recessed green displays, soft green
+phosphor, raised buttons and muted green selection. Other named themes retain
+their palette treatments. The Classic footer's enabled/disabled indicators also
+use its phosphor/muted colors rather than the legacy terminal toggle colors.
+Production raster verification compares the named
+Winamp Classic rack with Classic reference mode at full and compact widths,
+excluding only the footer's differing theme name.
+
 The standalone application now composes the complete rack from original 1x/2x
 artwork: Player, parametric EQ, Album, Activity, and Playlist. Bitmap clock
 segments, transport symbols and fixed-label lettering come from the selected
@@ -31,17 +336,60 @@ embedding. Small/older hosts retain the compatibility player.
 
 ## Verification
 
+October 10 artwork framing fix: production raster checks cover a non-square
+indexed cover in Winamp Classic and Kanagawa at 1x/2x, including a 2737×1801
+viewport with fractional cells. They verify the pane-colored space above the
+image, all four border edges, centering, and fresh transport IDs after resize or
+theme changes. Nix formatting, all-target Clippy, 879 unit tests, 11 embed checks
+and the graphical integration fixture passed.
+
+October 10 artwork startup fix: the graphical integration fixture reproduced the
+missing initial request before the fix. It now checks opening Album without a
+playback revision, loading a real indexed cover without Retry, publishing its
+image in the native scene, and reopening without repeating the lookup. Nix
+formatting, all-target Clippy, 879 unit tests, 11 embed checks and the graphical
+integration fixture passed.
+The optimized build also joined the user's paused Black Sabbath session and
+published its embedded cover as a native image on initial startup without any
+Retry input. Both graphical views were reopened through the existing local
+launcher; the playback owner's track, pause, position, volume and queue remained
+unchanged. Remote-library startup and macOS were not exercised for this fix.
+
+October 10 pane-selection update: Nix formatting, all-target Clippy, 879 unit
+tests, 11 embed checks and the graphical integration fixture passed, including
+the new selection-only mouse regressions.
+The optimized build completed and both running graphical views were reopened;
+the playback owner retained its paused track, position and volume.
+
+October 10 Winamp Classic update: Nix formatting and all-target Clippy passed;
+879 unit tests, 11 embed checks and the graphical integration fixture passed.
+The footer refinement also passed a fresh graphical integration run. The
+optimized build was installed through the existing local launcher, and both
+graphical views were reopened with Winamp Classic selected. A live Kitty
+capture confirmed panel #303340, display #101813, accent #a4d791 and selection
+#303f3d. The playback owner retained its paused state, track and 134.55-second
+position. This verifies the named graphical theme's treatment on Linux, not
+acceptance of every layout detail against the study.
+
 Theme mode uses the selected palette directly, without carrying Classic's
 channel offsets into pane backgrounds, controls or active states. Panes match
 the theme background, wells sit 6% darker, and raised controls/title strips use
 restrained neutral highlights. Kanagawa's graphical panes use its raised
-background (#2a2a37) instead of its terminal base (#1f1f28), with the queue
-slightly darker (#272734). Kanagawa uses its blue accent; Everforest keeps
-its own teal accent. The Classic study retains its original artwork colors.
+background (#2a2a37) instead of its terminal base (#1f1f28). Its player display,
+EQ graph and playlist use a darker #1b1b23 inset for clearer separation from
+the frames. Album and Activity keep their existing surfaces. Kanagawa uses
+its blue accent; Everforest keeps its own teal accent. The Classic study
+retains its original artwork colors.
 Album names now use 14px text at every pane width instead of 18–22px. The
 release checks passed 879 unit tests, 11 embedding tests and the all-theme
 graphical integration fixture; Kanagawa, Everforest and Classic captures were
 also inspected for this treatment.
+
+The darker Kanagawa inset update was checked through production `render-rack`
+captures: Album and Activity match the previous build pixel for pixel, including
+the artwork well and compact Album. The other 30 theme captures and Classic
+remain unchanged. Legacy embedding palettes and the optional native inset
+override both passed process protocol checks.
 
 Native LED and dot analyzers now draw every segment once on a fixed grid,
 choosing lit or unlit color per cell. Lit segments no longer originate at a
@@ -65,15 +413,16 @@ passed. Both running graphical clients were reloaded with the installed
 binary; a live Kitty capture confirmed Help, the resolved theme name and all
 right-hand status indicators were visible over the terminal background.
 
-Theme-mode queue interiors now sit just 6% darker than the surrounding pane
-surface, keeping Kanagawa consistent with Album, Activity and EQ instead of
-using the much darker analyzer well. The queue background is flat to its edges,
+Theme-mode queue interiors use the theme's inset color. Kanagawa shares its
+darker display well; other themes retain the 6% darker surface. The queue
+background is flat to its edges,
 with no recessed dark frame around it. Album fold buttons draw centered plus/minus
 geometry rather than font glyphs. Pane title strips and album sections have
 subtle theme-derived highlight/shadow edges.
 
-The focused native pane has a two logical pixel accent outline with unchanged
-layout bounds. Pointer presses focus the containing pane even in blank space;
+The focused native pane has a one logical pixel bitmap accent outline matching
+the pane's rounded or rigid contours, with unchanged layout bounds. Pointer
+presses focus the containing pane even in blank space;
 keyboard focus uses the same outline. Production raster checks exercise all
 five panes at 1x/2x, including paired Album/Activity and their actual pointer
 coordinates.
@@ -218,7 +567,7 @@ or physical SSH visual parity.
 | Kitty application | Isolated Linux Kitty launch, keyboard/theme changes, F9 round trip, clean quit and config persistence passed | Real user sessions on Linux/macOS and authenticated SSH |
 | Startup | Fresh graphical configuration without a library index opens the empty player and Library/Playlist controls | Intermittent activity-database contention; decoder loading/error visual references |
 | Shared embed | Existing child-process control checks and shared player state/surface tests pass | Audible FOLD embedding and physical macOS/SSH review |
-| Build gates | Rust formatting, strict Clippy, 878 unit tests (5 ignored), 11 embed tests, 1 graphical integration test passed | Cross-platform CI and live platform validation |
+| Build gates | Rust formatting, strict Clippy, 879 unit tests (5 ignored), 11 embed tests, 1 graphical integration test passed | Cross-platform CI and live platform validation |
 
 The gallery's production captures are generated by `staramp render-rack` using
 isolated fixture data. They are not the independent `skin-proof` example.

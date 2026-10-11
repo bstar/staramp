@@ -2,6 +2,7 @@
 //! playback owner, state, actions, services and modal key dispatch.
 use super::*;
 use unicode_width::UnicodeWidthStr;
+mod eq_profiles;
 mod popup;
 use crate::audio::dsp::apo::{Filter, Width};
 use crate::embed::{native, render::PlayerRenderState, GraphicsConfig, Palette};
@@ -14,6 +15,45 @@ use starkit::terminal_graphics::{
     session::{self, Controller},
 };
 
+const LEDGER_HEIGHT: u16 = 320;
+const LEDGER_ROWS: usize = 6;
+const ALBUM_COVER: u16 = 160;
+const ALBUM_COVER_Y: u16 = 50;
+
+fn filter_caption(filter: &Filter) -> &'static str {
+    use crate::audio::dsp::apo::BiquadKind as K;
+    match filter {
+        Filter::Preamp { .. } => "GAIN",
+        Filter::Biquad { kind, .. } => match kind {
+            K::Peaking => "PEAKING",
+            K::LowShelf => "LOW SHELF",
+            K::HighShelf => "HIGH SHELF",
+            K::LowPass => "LOW PASS",
+            K::HighPass => "HIGH PASS",
+            K::BandPass => "BAND PASS",
+            K::Notch => "NOTCH",
+            K::AllPass => "ALL PASS",
+        },
+        Filter::GraphicEq { .. } => "GRAPHIC EQ",
+        Filter::Iir { .. } => "CUSTOM IIR",
+    }
+}
+
+fn provider_state(
+    snapshot: &crate::activity::Snapshot,
+    provider: crate::activity::Provider,
+) -> (&'static str, bool) {
+    match snapshot
+        .providers
+        .iter()
+        .find(|status| status.provider == provider)
+    {
+        Some(status) if status.configured && status.enabled => ("Enabled", true),
+        Some(status) if status.configured => ("Off", false),
+        _ => ("Set up", false),
+    }
+}
+
 struct Curve {
     profile: crate::audio::dsp::apo::Profile,
     rate: u32,
@@ -22,6 +62,114 @@ struct Curve {
     width: u16,
     points: Vec<[u16; 2]>,
 }
+#[derive(PartialEq, Eq)]
+struct CoverKey {
+    serial: u64,
+    canvas: [u32; 2],
+    bounds: R,
+    border: u16,
+    background: String,
+    silver_gradient: bool,
+    outline: String,
+}
+struct CoverCache {
+    key: CoverKey,
+    id: String,
+    png: String,
+}
+
+/// Enclose the physical artwork slot in cells, retaining its exact position
+/// inside the transported raster. One-to-one image presentation avoids another
+/// resampling pass that would blur the two-pixel outline on fractional grids.
+fn cover_layout(v: Viewport, slot: R) -> (starkit::terminal_graphics::protocol::Rect, [u32; 2], R) {
+    let x = u32::from(slot.x) * u32::from(v.columns) / v.width;
+    let y = u32::from(slot.y) * u32::from(v.rows) / v.height;
+    let right = (u32::from(slot.x + slot.width) * u32::from(v.columns)).div_ceil(v.width);
+    let bottom = (u32::from(slot.y + slot.height) * u32::from(v.rows)).div_ceil(v.height);
+    let rect = starkit::terminal_graphics::protocol::Rect {
+        x: x as u16,
+        y: y as u16,
+        width: (right - x) as u16,
+        height: (bottom - y) as u16,
+    };
+    let cw = v.width as f32 / f32::from(v.columns);
+    let ch = v.height as f32 / f32::from(v.rows);
+    let width = (f32::from(rect.width) * cw).floor() as u32;
+    let height = (f32::from(rect.height) * ch).floor() as u32;
+    let left = (x as f32 * cw + (f32::from(rect.width) * cw - width as f32) / 2.).round();
+    let top = (y as f32 * ch + (f32::from(rect.height) * ch - height as f32) / 2.).round();
+    (
+        rect,
+        [width, height],
+        R::new(
+            slot.x - left as u16,
+            slot.y - top as u16,
+            slot.width,
+            slot.height,
+        ),
+    )
+}
+
+fn cover_raster(image: &starkit::image::RgbaImage, key: &CoverKey) -> starkit::image::RgbaImage {
+    use starkit::image::{imageops, Rgba, RgbaImage};
+    let color = |s: &str| {
+        let c = crate::theme::color::Rgb::parse_hex(s).expect("artwork theme color");
+        Rgba([c.r, c.g, c.b, 255])
+    };
+    let border = u32::from(key.border);
+    let bounds = key.bounds;
+    let ratio = ((u32::from(bounds.width) - 2 * border) as f32 / image.width() as f32)
+        .min((u32::from(bounds.height) - 2 * border) as f32 / image.height() as f32);
+    let width = (image.width() as f32 * ratio).round().max(1.) as u32;
+    let height = (image.height() as f32 * ratio).round().max(1.) as u32;
+    let x = u32::from(bounds.x) + (u32::from(bounds.width) - width) / 2;
+    let y = u32::from(bounds.y) + (u32::from(bounds.height) - height) / 2;
+    let mut canvas = RgbaImage::new(key.canvas[0], key.canvas[1]);
+    let well = RgbaImage::from_fn(u32::from(bounds.width), u32::from(bounds.height), |_, y| {
+        if key.silver_gradient {
+            let shade = crate::embed::skin::silver_panel_color(
+                ALBUM_COVER_Y + y as u16 / (key.border / 2),
+                LEDGER_HEIGHT,
+            );
+            Rgba([shade.r, shade.g, shade.b, 255])
+        } else {
+            color(&key.background)
+        }
+    });
+    imageops::overlay(&mut canvas, &well, i64::from(bounds.x), i64::from(bounds.y));
+    let outline =
+        RgbaImage::from_pixel(width + 2 * border, height + 2 * border, color(&key.outline));
+    imageops::overlay(
+        &mut canvas,
+        &outline,
+        i64::from(x - border),
+        i64::from(y - border),
+    );
+    let image = imageops::resize(image, width, height, imageops::FilterType::Triangle);
+    // Transparent artwork composites onto the pane color, not the outline.
+    let backdrop = imageops::crop_imm(
+        &well,
+        x - u32::from(bounds.x),
+        y - u32::from(bounds.y),
+        width,
+        height,
+    )
+    .to_image();
+    imageops::overlay(&mut canvas, &backdrop, i64::from(x), i64::from(y));
+    imageops::overlay(&mut canvas, &image, i64::from(x), i64::from(y));
+    canvas
+}
+
+// Pointer-relative parameters avoid jumping from a band's own gain to the
+// combined response (preamp and neighboring filters) drawn under its handle.
+struct EqDrag {
+    stage: usize,
+    origin: [u16; 2],
+    plot: R,
+    frequency: f64,
+    gain_db: f64,
+}
+
 pub struct Rack<'a> {
     app: &'a mut App,
     revision: u64,
@@ -34,19 +182,22 @@ pub struct Rack<'a> {
     offset: u16,
     radius: u16,
     drag: Option<String>,
+    eq_drag: Option<EqDrag>,
     max_offset: u16,
     overlay: bool,
     context_anchor: Option<[u32; 2]>,
     playlist_bars: Scrollbars<()>,
     playlist_visible: usize,
     playlist_scrolled: Option<usize>,
-    cover_cache: Option<(u64, String)>,
+    cover_cache: Option<CoverCache>,
     modules: Vec<(Focus, i32, u16)>,
     folded: std::collections::HashSet<String>,
     skin: crate::embed::skin::PlayerSkin,
     skins: bool,
     reference_colors: bool,
     density: u16,
+    resume_scroll: usize,
+    resume_fresh: bool,
 }
 fn color(c: crate::theme::color::Rgb) -> [u8; 3] {
     [c.r, c.g, c.b]
@@ -129,6 +280,7 @@ impl App {
                 offset: 0,
                 radius: if cfg.ui.corners == "rounded" { 8 } else { 0 },
                 drag: None,
+                eq_drag: None,
                 max_offset: 0,
                 overlay: false,
                 context_anchor: None,
@@ -141,6 +293,8 @@ impl App {
                 skins: false,
                 reference_colors: cfg.ui.graphical_palette == "classic",
                 density: 1,
+                resume_scroll: 0,
+                resume_fresh: false,
                 folded: Default::default(),
             },
         )
@@ -151,7 +305,14 @@ pub fn graphical_root() -> Result<PathBuf> {
 }
 impl Rack<'_> {
     fn palette(&self) -> Palette {
-        if self.reference_colors {
+        if self.app.look.theme.id == "winamp-silver" {
+            return crate::embed::skin::SILVER_PALETTE;
+        }
+        // Winamp Classic is the selected stacked-rack treatment, including its
+        // original bitmap colors. Passing the legacy terminal palette through
+        // the generic recoloring path turns its slate panels black, its green
+        // phosphor neon, and its selected rows blue.
+        if self.reference_colors || self.app.look.theme.id == "winamp-classic" {
             return crate::embed::skin::REFERENCE_PALETTE;
         }
         let t = &self.app.look.theme;
@@ -163,6 +324,8 @@ impl Rack<'_> {
             } else {
                 t.bg
             }),
+            inset_bg: (t.name == "Kanagawa")
+                .then(|| color(t.bg.mix(crate::theme::color::Rgb::new(0, 0, 0), 0.12))),
             fg: color(t.fg),
             muted: color(t.dim),
             accent: color(t.accent),
@@ -230,6 +393,22 @@ impl Rack<'_> {
             classic::frame(s, r, c, radius, inset);
         }
     }
+    fn selection_color(&self) -> String {
+        let palette = self.palette();
+        native::hex(if palette == crate::embed::skin::SILVER_PALETTE {
+            palette.fg
+        } else {
+            palette.accent
+        })
+    }
+    fn focus_outline(&self, s: &mut Surface) {
+        let accent = self.selection_color();
+        if self.skins {
+            self.skin.focus_outline(s, &accent);
+        } else {
+            native::focus_outline(s, &accent, self.radius);
+        }
+    }
     #[allow(clippy::too_many_arguments)]
     fn button(
         &self,
@@ -247,14 +426,21 @@ impl Rack<'_> {
         }
         self.skin.button(s, r, action, active);
         let ink = self.skin.ink(action, active);
-        if !self.skin.label(s, r, text, &ink, true) {
-            let width = (text.chars().count() as u16 * font * 3 / 5).min(r.width);
+        let face = crate::embed::skin::button_rect(r);
+        if !self.skin.button_label(s, face, text, &ink) {
+            // Keep room for the presenting terminal's wider monospace font.
+            let width = (text.chars().count() as u16 * 8 + 10).min(face.width);
             classic::label(
                 s,
-                R::new(r.x + (r.width - width) / 2, r.y, width, r.height),
+                R::new(
+                    face.x + (face.width - width) / 2,
+                    face.y,
+                    width,
+                    face.height,
+                ),
                 text,
                 &ink,
-                font,
+                11,
                 true,
             );
         }
@@ -272,28 +458,11 @@ impl Rack<'_> {
             "ACTIVITY" => Focus::History,
             _ => Focus::Playlist,
         };
-        let mut frame_colors = c.clone();
-        if self.app.panels.focus == focus {
-            use starkit::theme::color::Rgb;
-            frame_colors.title = Rgb::parse_hex(&c.title)
-                .unwrap()
-                .mix(Rgb::parse_hex(&c.accent).unwrap(), 0.10)
-                .to_hex();
-        }
-        self.frame(
-            &mut s,
-            R::new(0, 0, w, h),
-            &frame_colors,
-            self.radius,
-            false,
-        );
-        s.fill(R::new(7, 7, w - 14, 24), &frame_colors.title, 2);
-        native::heading_depth(
-            &mut s,
-            R::new(7, 7, w - 14, 24),
-            &frame_colors.title,
-            &c.ink,
-        );
+        self.frame(&mut s, R::new(0, 0, w, h), c, self.radius, false);
+        // Pane content may use a different well palette; chrome always uses
+        // the same title strip as EQ and the shared native player.
+        let header_colors = crate::embed::skin::colors(&self.palette());
+        native::panel_header(&mut s, w, &header_colors);
         let title_rect = R::new(18, 7, w.saturating_sub(166), 24);
         if !self.skins
             || !self.skin.label(
@@ -304,7 +473,7 @@ impl Rack<'_> {
                 false,
             )
         {
-            label(&mut s, c, title_rect, title, 12, true);
+            label(&mut s, &header_colors, title_rect, title, 12, true);
         }
         classic::label(
             &mut s,
@@ -376,11 +545,20 @@ impl Rack<'_> {
             },
         );
         if self.app.panels.focus == focus {
-            native::focus_outline(&mut s, &c.accent, self.radius);
+            self.focus_outline(&mut s);
         }
         s
     }
     fn eq(&mut self, w: u16, c: &Colors, font: u16) -> Surface {
+        let eq_colors = Colors {
+            inset: if self.palette() == crate::embed::skin::SILVER_PALETTE {
+                crate::embed::skin::colors(&crate::embed::skin::REFERENCE_PALETTE).inset
+            } else {
+                c.inset.clone()
+            },
+            ..c.clone()
+        };
+        let c = &eq_colors;
         let h = 294;
         let mut s = self.window(w, h, c, "PARAMETRIC EQUALIZER", font);
         let e = &self.app.eq;
@@ -396,34 +574,57 @@ impl Rack<'_> {
         let profile_width = w.saturating_sub(570).clamp(100, 420);
         let profile = R::new(76, 40, profile_width, 29);
         self.frame(&mut s, profile, c, 0, true);
+        s.fill(
+            R::new(
+                profile.x + 2,
+                profile.y + 2,
+                profile.width - 4,
+                profile.height - 4,
+            ),
+            &c.inset,
+            0,
+        );
         classic::label(
             &mut s,
-            R::new(88, 40, profile_width - 24, 29),
-            format!("Profile: {}  ›", e.active().name),
+            R::new(88, 40, profile_width - 48, 29),
+            format!(
+                "Profile: {}{}",
+                e.active().name,
+                if e.modified(e.profile) { " *" } else { "" }
+            ),
             &c.accent,
-            font,
+            font.saturating_sub(2).max(1),
             false,
         );
+        // A separate raster chevron cannot be mistaken for part of the name
+        // and does not depend on the text font having a dropdown glyph.
+        for row in 0..4 {
+            s.fill(
+                R::new(
+                    profile.x + profile.width - 20 + row,
+                    profile.y + 12 + row,
+                    8 - row * 2,
+                    1,
+                ),
+                &c.accent,
+                0,
+            );
+        }
         s.hits.push(HitRegion {
             rect: profile,
-            action: "eq-next".into(),
+            action: "eq-profiles".into(),
         });
-        for (i, (text, action)) in [
-            ("IMPORT", "eq-import"),
-            ("EXPORT", "eq-export"),
-            ("SAVE AS", "eq-save"),
+        for (offset, width, text, action) in [
+            (370, 64, "SAVE", "eq-save-current"),
+            (298, 88, "SAVE AS", "eq-save"),
+            (202, 82, "IMPORT", "eq-import"),
+            (110, 96, "EXPORT", "eq-export"),
         ]
         .into_iter()
-        .enumerate()
         {
             self.button(
                 &mut s,
-                R::new(
-                    w - 294 + i as u16 * 92,
-                    40,
-                    if i == 2 { 96 } else { 82 },
-                    29,
-                ),
+                R::new(w - offset, 40, width, 29),
                 c,
                 text,
                 action,
@@ -443,34 +644,45 @@ impl Rack<'_> {
                 }
             })
             .unwrap_or(0.);
-        if w > 1100 {
-            let rect = R::new(520, 40, 170, 29);
-            classic::label(
-                &mut s,
-                rect,
-                format!("Preamp  {preamp:+.1} dB"),
-                &c.dim,
-                12,
-                false,
-            );
-            s.hits.push(HitRegion {
-                rect,
-                action: "eq-preamp".into(),
-            });
-        }
-        let plot = R::new(48, 86, w.saturating_sub(410).max(80), 132);
-        self.frame(&mut s, R::new(22, 78, plot.width + 38, 167), c, 0, true);
+        let preamp_x = profile.x + profile.width + 20;
+        let preamp_width = w.saturating_sub(390 + preamp_x);
+        let rect = R::new(preamp_x, 40, preamp_width, 29);
+        classic::label(
+            &mut s,
+            rect,
+            if preamp_width > 260 {
+                format!("Preamp {preamp:+.1} dB · {}", e.profile_status(e.profile))
+            } else if preamp_width > 130 {
+                format!("Preamp {preamp:+.1} dB")
+            } else {
+                format!("Pre {preamp:+.1}dB")
+            },
+            &c.dim,
+            if preamp_width > 130 { 12 } else { 10 },
+            false,
+        );
+        s.hits.push(HitRegion {
+            rect,
+            action: "eq-preamp".into(),
+        });
+        let plot = R::new(55, 86, w.saturating_sub(410).max(80), 132);
+        self.frame(&mut s, R::new(22, 78, plot.width + 44, 167), c, 0, true);
+        s.fill(R::new(24, 80, plot.width + 40, 163), &c.inset, 0);
+        let well = crate::theme::color::Rgb::parse_hex(&c.inset).unwrap();
+        let green = crate::theme::color::Rgb::parse_hex(&c.accent).unwrap();
+        let grid = well.mix(green, 0.12).to_hex();
+        let zero = well.mix(green, 0.28).to_hex();
 
         for db in [-12, -6, 0, 6, 12] {
             let y = plot.y + ((12 - db) as u16 * (plot.height - 1) / 24);
             s.fill(
                 R::new(plot.x, y, plot.width, 1),
-                if db == 0 { &c.dim } else { &c.shadow },
+                if db == 0 { &zero } else { &grid },
                 0,
             );
             classic::label(
                 &mut s,
-                R::new(14, y.saturating_sub(7), 26, 16),
+                R::new(28, y.saturating_sub(7).max(82), 22, 16),
                 format!("{db:+}"),
                 &c.dim,
                 font.saturating_sub(2),
@@ -493,7 +705,7 @@ impl Rack<'_> {
         .enumerate()
         {
             let x = plot.x + ((f64::log10(f / 20.) / 3.) * f64::from(plot.width - 1)) as u16;
-            s.fill(R::new(x, plot.y, 1, plot.height), &c.shadow, 0);
+            s.fill(R::new(x, plot.y, 1, plot.height), &grid, 0);
             classic::label(
                 &mut s,
                 R::new(
@@ -563,17 +775,27 @@ impl Rack<'_> {
                     .magnitude_db_at_channel(frequency, e.compiled_rate, channel)
                     .clamp(-12., 12.);
                 let cy = plot.y + ((12. - db) / 24. * f64::from(plot.height - 1)) as u16;
-                let r = R::new(cx.saturating_sub(8), cy.saturating_sub(8), 16, 16);
-                s.fill(r, if i == e.stage { &c.accent } else { &c.dim }, 8);
+                let size = if i == e.stage { 18 } else { 16 };
+                let r = R::new(
+                    cx.saturating_sub(size / 2),
+                    cy.saturating_sub(size / 2),
+                    size,
+                    size,
+                );
+                s.fill(r, if stage.enabled { &c.accent } else { &c.dim }, size / 2);
                 s.nodes.push(Primitive::Border {
                     rect: r,
-                    color: c.ink.clone(),
-                    radius: 8,
+                    color: if i == e.stage {
+                        c.ink.clone()
+                    } else {
+                        c.accent.clone()
+                    },
+                    radius: size / 2,
                 });
                 classic::label(
                     &mut s,
-                    R::new(r.x + 5, r.y, 11, 16),
-                    (i + 1).to_string(),
+                    R::new(r.x + 4, r.y, size - 4, size),
+                    e.band_number(i).to_string(),
                     &c.inset,
                     10,
                     true,
@@ -586,15 +808,25 @@ impl Rack<'_> {
         }
         let x = w.saturating_sub(328);
         if let Some(stage) = e.active().stages.get(e.stage) {
-            label(
+            classic::label(
                 &mut s,
-                c,
                 R::new(x, 83, 310, 24),
                 format!(
-                    "FILTER {} · {}",
-                    e.stage + 1,
-                    if stage.enabled { "ACTIVE" } else { "BYPASS" }
+                    "{}{} · {}{}",
+                    if matches!(stage.filter, Filter::Preamp { .. }) {
+                        "PREAMP"
+                    } else {
+                        "BAND "
+                    },
+                    if matches!(stage.filter, Filter::Preamp { .. }) {
+                        String::new()
+                    } else {
+                        e.band_number(e.stage).to_string()
+                    },
+                    filter_caption(&stage.filter),
+                    if stage.enabled { "" } else { " · BYPASS" }
                 ),
+                &c.accent,
                 font,
                 true,
             );
@@ -609,11 +841,16 @@ impl Rack<'_> {
                     (format!("Gain        {gain_db:+.2} dB"), "eq-gain"),
                     (
                         format!(
-                            "Width       {}",
+                            "{}       {}",
                             match width {
-                                Width::Q(q) => format!("Q {q:.3}"),
-                                Width::Bandwidth(b) => format!("BW {b:.3}"),
-                                Width::Slope(v) => format!("S {v:.3}"),
+                                Width::Q(_) => "Q",
+                                Width::Bandwidth(_) => "Bandwidth",
+                                Width::Slope(_) => "Slope",
+                            },
+                            match width {
+                                Width::Q(q) => format!("{q:.2}"),
+                                Width::Bandwidth(b) => format!("{b:.2}"),
+                                Width::Slope(v) => format!("{v:.2}"),
                             }
                         ),
                         "eq-width",
@@ -630,12 +867,17 @@ impl Rack<'_> {
                 classic::label(&mut s, R::new(x, y, 108, 24), name, &c.dim, font, false);
                 let r = R::new(x + 113, y, 188, 22);
                 self.frame(&mut s, r, c, 0, true);
+                s.fill(
+                    R::new(r.x + 2, r.y + 2, r.width - 4, r.height - 4),
+                    &c.inset,
+                    0,
+                );
                 classic::label(
                     &mut s,
                     R::new(r.x + 10, y, 168, 24),
                     value.trim(),
                     &c.accent,
-                    font,
+                    font.saturating_sub(2).max(1),
                     false,
                 );
                 s.hits.push(HitRegion {
@@ -645,6 +887,11 @@ impl Rack<'_> {
             }
             let r = R::new(x + 113, 183, 188, 22);
             self.frame(&mut s, r, c, 0, true);
+            s.fill(
+                R::new(r.x + 2, r.y + 2, r.width - 4, r.height - 4),
+                &c.inset,
+                0,
+            );
             classic::label(
                 &mut s,
                 R::new(x, 183, 108, 22),
@@ -663,7 +910,7 @@ impl Rack<'_> {
                 R::new(r.x + 12, r.y, 164, r.height),
                 channels,
                 &c.accent,
-                12,
+                10,
                 false,
             );
             s.hits.push(HitRegion {
@@ -693,44 +940,71 @@ impl Rack<'_> {
                 false,
             );
         }
-        let summary = e
+        let summaries = e
             .active()
             .stages
             .iter()
             .enumerate()
+            .filter(|(_, stage)| !matches!(stage.filter, Filter::Preamp { .. }))
             .map(|(i, stage)| {
                 let text = match stage.filter {
                     Filter::Biquad {
-                        kind,
-                        frequency,
-                        gain_db,
-                        ..
+                        frequency, gain_db, ..
                     } => format!(
-                        "{} {:?} · {:.0} Hz · {:+.1} dB",
-                        i + 1,
-                        kind,
-                        frequency,
-                        gain_db
+                        "{} {} · {frequency:.0} Hz · {gain_db:+.1} dB",
+                        e.band_number(i),
+                        filter_caption(&stage.filter)
                     ),
-                    Filter::Preamp { gain_db } => format!("{} Preamp · {:+.1} dB", i + 1, gain_db),
-                    _ => format!("{} Custom filter", i + 1),
+                    _ => format!("{} {}", e.band_number(i), filter_caption(&stage.filter)),
                 };
-                if i == e.stage {
-                    format!("[{text}]")
-                } else {
-                    text
-                }
+                (
+                    i,
+                    if i == e.stage {
+                        format!("[{text}]")
+                    } else {
+                        text
+                    },
+                )
             })
-            .collect::<Vec<_>>()
-            .join("     ");
-        classic::label(
-            &mut s,
-            R::new(18, h - 48, w - 36, 22),
-            summary,
-            &c.ink,
-            11,
-            false,
-        );
+            .collect::<Vec<_>>();
+        let selected = summaries
+            .iter()
+            .position(|(i, _)| *i == e.stage)
+            .unwrap_or(0);
+        let mut first = 0;
+        while first < selected
+            && summaries[first..=selected]
+                .iter()
+                .map(|(_, t)| t.width() * 7 + 24)
+                .sum::<usize>()
+                > usize::from(w - 36)
+        {
+            first += 1;
+        }
+        let mut left = 18;
+        for (i, text) in summaries.iter().skip(first) {
+            let width = (text.width() as u16 * 7 + 24).min(w - 18 - left);
+            if width < 48 {
+                break;
+            }
+            let rect = R::new(left, h - 48, width, 22);
+            classic::label(
+                &mut s,
+                rect,
+                text,
+                if *i == e.stage { &c.accent } else { &c.ink },
+                11,
+                false,
+            );
+            s.hits.push(HitRegion {
+                rect,
+                action: format!("eq-select:{i}"),
+            });
+            left += width;
+            if left >= w - 18 {
+                break;
+            }
+        }
         for (x, width, text, action) in [
             (18, 100, "+ Add filter", "eq-add"),
             (134, 120, "‹ Previous band", "eq-stage-prev"),
@@ -757,24 +1031,116 @@ impl Rack<'_> {
         s
     }
     fn album(&self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 292, c, "ALBUM", font);
-        let a = self
+        let mut s = self.window(w, LEDGER_HEIGHT, c, "ALBUM", font);
+        let album = self
             .app
             .current_uri()
             .and_then(|u| self.app.art.as_ref()?.album_for(&u));
         let item = self.app.player.current_item();
-        let cover = if w > 600 { 180 } else { 128 };
-        self.frame(&mut s, R::new(16, 46, cover, cover), c, 0, true);
+        let artwork = R::new(16, ALBUM_COVER_Y, ALBUM_COVER, ALBUM_COVER);
+        if album.as_ref().is_none_or(|a| a.image.is_none()) {
+            if self.skins {
+                self.skin.pane_well(&mut s, artwork);
+            } else {
+                self.frame(&mut s, artwork, c, 0, true);
+            }
+            classic::label(
+                &mut s,
+                R::new(
+                    24,
+                    ALBUM_COVER_Y + ALBUM_COVER / 2 - 12,
+                    ALBUM_COVER - 16,
+                    24,
+                ),
+                "NO COVER",
+                &c.dim,
+                11,
+                false,
+            );
+        }
+        let detail = album.as_ref().and_then(|a| a.detail.as_ref());
+        let x = ALBUM_COVER + 40;
+        let text_width = w.saturating_sub(x + 16);
+        let title = detail
+            .and_then(|d| d.album.clone())
+            .or_else(|| item.as_ref().and_then(|i| i.album.clone()))
+            .unwrap_or_else(|| "No album metadata".into());
+        let artist = detail
+            .and_then(|d| d.artist.clone())
+            .or_else(|| item.as_ref().and_then(|i| i.artist.clone()))
+            .unwrap_or_default();
         classic::label(
             &mut s,
-            R::new(24, 46 + cover / 2 - 12, cover - 16, 24),
-            "NO COVER",
-            &c.dim,
-            font,
+            R::new(x, 50, text_width, 28),
+            title,
+            &c.accent,
+            16,
+            true,
+        );
+        classic::label(
+            &mut s,
+            R::new(x, 80, text_width, 24),
+            artist,
+            &c.ink,
+            13,
             false,
         );
-        let x = cover + 34;
-        let detail = a.as_ref().and_then(|a| a.detail.as_ref());
+        if let Some(genre) = detail.and_then(|d| d.genre.as_deref()) {
+            classic::label(
+                &mut s,
+                R::new(x, 116, text_width, 22),
+                genre,
+                &c.dim,
+                11,
+                false,
+            );
+        }
+        use std::sync::atomic::Ordering::Relaxed;
+        let rate = self.app.player.state.sample_rate.load(Relaxed);
+        let depth = self.app.player.state.bit_depth.load(Relaxed);
+        let format = if rate > 0 {
+            format!(
+                "{} · {:.1} kHz · {}-bit",
+                self.app.player.state.codec.load_full(),
+                rate as f64 / 1000.,
+                depth
+            )
+        } else {
+            detail.and_then(|d| d.codec.clone()).unwrap_or_default()
+        };
+        classic::label(
+            &mut s,
+            R::new(x, 144, text_width, 22),
+            format,
+            &c.ink,
+            11,
+            false,
+        );
+        // The larger artwork owns the left column; its selector slides beside
+        // it instead of consuming space below the image and the facts row.
+        for (left, caption, action) in [(x, "‹", "cover-prev"), (x + 123, "›", "cover-next")] {
+            self.button(
+                &mut s,
+                R::new(left, 178, 29, 29),
+                c,
+                caption,
+                action,
+                font,
+                false,
+            );
+        }
+        let choices = album
+            .as_ref()
+            .map(|a| format!("{} / {}", a.choice + 1, a.choices))
+            .unwrap_or_else(|| "— / —".into());
+        classic::label(
+            &mut s,
+            R::new(x + 48, 178, 64, 29),
+            choices,
+            &c.dim,
+            11,
+            false,
+        );
         let album_items = self
             .app
             .queue
@@ -786,267 +1152,272 @@ impl Rack<'_> {
                 })
             })
             .collect::<Vec<_>>();
-        let album_seconds = album_items
-            .iter()
-            .filter_map(|i| i.duration_secs)
-            .map(|v| v.max(0))
-            .sum::<i64>();
-        use std::sync::atomic::Ordering::Relaxed;
-        let rate = self.app.player.state.sample_rate.load(Relaxed);
-        let depth = self.app.player.state.bit_depth.load(Relaxed);
-        let lines = vec![
+        let seconds = detail.map(|d| d.total_ms / 1000).unwrap_or_else(|| {
+            album_items
+                .iter()
+                .filter_map(|i| i.duration_secs)
+                .map(|v| v.max(0))
+                .sum()
+        });
+        let year = detail
+            .and_then(|d| d.year)
+            .or_else(|| item.as_ref().and_then(|i| i.year))
+            .map(|y| y.to_string())
+            .unwrap_or_else(|| "—".into());
+        let count = if item.is_some() {
             detail
-                .and_then(|d| d.album.clone())
-                .or_else(|| item.as_ref().and_then(|i| i.album.clone()))
-                .unwrap_or_else(|| "No album metadata".into()),
-            detail
-                .and_then(|d| d.artist.clone())
-                .or_else(|| item.as_ref().and_then(|i| i.artist.clone()))
-                .unwrap_or_default(),
-            detail
-                .map(|d| {
-                    format!(
-                        "{} · {} tracks · {}:{:02}",
-                        d.year.map(|v| v.to_string()).unwrap_or_else(|| "—".into()),
-                        d.track_count,
-                        d.total_ms / 60000,
-                        d.total_ms / 1000 % 60
-                    )
-                })
-                .unwrap_or_else(|| {
-                    if item.is_some() {
-                        format!(
-                            "{} · {} queued tracks · {}:{:02}",
-                            item.as_ref()
-                                .and_then(|i| i.year)
-                                .map(|v| v.to_string())
-                                .unwrap_or_else(|| "—".into()),
-                            album_items.len(),
-                            album_seconds / 60,
-                            album_seconds % 60
-                        )
-                    } else {
-                        String::new()
-                    }
-                }),
-            if rate > 0 {
-                format!(
-                    "{} · {:.1} kHz · {}-bit",
-                    self.app.player.state.codec.load_full(),
-                    rate as f64 / 1000.,
-                    depth
-                )
-            } else {
-                detail.and_then(|d| d.codec.clone()).unwrap_or_default()
-            },
-            a.as_ref()
-                .and_then(|a| a.source)
-                .map(|v| format!("ARTWORK  {}", v.name()))
-                .unwrap_or_else(|| "No cover available".into()),
-            a.as_ref().and_then(|a| a.art.clone()).unwrap_or_default(),
-        ];
-        for (i, text) in lines.into_iter().enumerate() {
-            let (y, size, height) = match i {
-                0 => (47, 14, 32),
-                1 => (80, 15, 28),
-                2 => (109, 12, 24),
-                3 => (134, 12, 24),
-                4 => (191, 11, 24),
-                _ => (213, 11, 24),
-            };
-            classic::label(
-                &mut s,
-                R::new(x, y, w.saturating_sub(x + 18), height),
-                text,
-                if i == 0 || i == 4 {
-                    &c.accent
-                } else if i == 1 || i == 3 {
-                    &c.ink
+                .map(|d| d.track_count)
+                .unwrap_or(album_items.len())
+                .to_string()
+        } else {
+            "—".into()
+        };
+        let duration = if item.is_some() {
+            format!("{}:{:02}", seconds / 60, seconds % 60)
+        } else {
+            "—".into()
+        };
+        s.fill(R::new(16, 220, w - 32, 1), &c.raised, 0);
+        let column = (w - 32) / 3;
+        for (i, (heading, value)) in [
+            ("RELEASED", year),
+            (
+                if detail.is_some() {
+                    "TRACKS"
                 } else {
-                    &c.dim
+                    "QUEUED TRACKS"
                 },
-                size,
-                i == 0,
-            );
-        }
-        if let Some(genre) = detail.and_then(|d| d.genre.as_deref()) {
+                count,
+            ),
+            ("DURATION", duration),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let left = 16 + i as u16 * column;
             classic::label(
                 &mut s,
-                R::new(x, 158, w.saturating_sub(x + 18), 22),
-                format!("GENRE  {genre}"),
+                R::new(left, 226, column - 12, 18),
+                heading,
                 &c.dim,
-                11,
+                9,
+                false,
+            );
+            classic::label(
+                &mut s,
+                R::new(left, 246, column - 12, 24),
+                value,
+                &c.ink,
+                14,
                 false,
             );
         }
-        s.fill(R::new(x, 185, w.saturating_sub(x + 18), 1), &c.raised, 0);
-        let bottom = 242;
-        for (x, width, text, action) in [
-            (16, 29, "‹", "cover-prev"),
-            (cover + 16 - 29, 29, "›", "cover-next"),
-            (x, 99, "CHOOSE", "cover-choose"),
-            (x + 109, 81, "RETRY", "cover-retry"),
+        s.fill(R::new(16, 277, w - 32, 1), &c.raised, 0);
+        let provenance = album
+            .as_ref()
+            .and_then(|a| a.source)
+            .map(|source| format!("Artwork: {}", source.name()))
+            .unwrap_or_else(|| "No cover available".into());
+        classic::label(
+            &mut s,
+            R::new(16, 286, w.saturating_sub(244), 24),
+            provenance,
+            &c.dim,
+            10,
+            false,
+        );
+        for (left, width, caption, action) in [
+            (w - 218, 100, "CHOOSE", "cover-choose"),
+            (w - 108, 90, "RETRY", "cover-retry"),
         ] {
             self.button(
                 &mut s,
-                R::new(x, bottom, width, 29),
+                R::new(left, 284, width, 29),
                 c,
-                text,
+                caption,
                 action,
                 font,
                 false,
             );
         }
-        classic::label(
-            &mut s,
-            R::new(51, bottom, cover - 70, 29),
-            a.as_ref()
-                .map(|a| format!("{} / {}", a.choice + 1, a.choices))
-                .unwrap_or_else(|| "— / —".into()),
-            &c.dim,
-            font,
-            false,
-        );
-        for (x, title, action) in [
+        for (left, caption, action) in [
             (w.saturating_sub(260), "artist ↗", "catalog-artist"),
             (w.saturating_sub(182), "album ↗", "catalog-album"),
         ] {
-            let rect = R::new(x, 7, 74, 24);
-            classic::label(&mut s, rect, title, &c.dim, font.saturating_sub(2), false);
+            let rect = R::new(left, 7, 74, 24);
+            classic::label(&mut s, rect, caption, &c.dim, 10, false);
             s.hits.push(HitRegion {
                 rect,
                 action: action.into(),
             });
         }
-        if w > 600 {
-            let rect = R::new(w - 180, bottom, 162, 29);
-            classic::label(
-                &mut s,
-                rect,
-                "Click art: original ↗",
-                &c.dim,
-                font.saturating_sub(2),
-                false,
-            );
-            s.hits.push(HitRegion {
-                rect,
-                action: "cover-open".into(),
-            });
-        }
         s
     }
     fn activity(&self, w: u16, c: &Colors, font: u16) -> Surface {
-        let mut s = self.window(w, 292, c, "ACTIVITY", font);
-        let snap = self.app.activity.snapshot();
-        classic::label(
-            &mut s,
-            R::new(16, 42, w - 150, 20),
-            "RECENT LISTENS",
-            &c.dim,
-            10,
-            true,
-        );
-        classic::label(
-            &mut s,
-            R::new(w - 104, 42, 88, 20),
-            "DELIVERY",
-            &c.dim,
-            10,
-            true,
-        );
+        self.activity_view(w, c, font, &self.app.activity.snapshot())
+    }
+    fn activity_view(
+        &self,
+        w: u16,
+        c: &Colors,
+        font: u16,
+        snap: &crate::activity::Snapshot,
+    ) -> Surface {
+        use crate::activity::Provider;
+        let mut s = self.window(w, LEDGER_HEIGHT, c, "ACTIVITY", font);
+        let column = (w - 32) / 3;
+        for (i, (heading, status, enabled)) in [
+            ("LOCAL HISTORY", "Recording", true),
+            (
+                "LAST.FM",
+                provider_state(snap, Provider::Lastfm).0,
+                provider_state(snap, Provider::Lastfm).1,
+            ),
+            (
+                "LISTENBRAINZ",
+                provider_state(snap, Provider::Listenbrainz).0,
+                provider_state(snap, Provider::Listenbrainz).1,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = 16 + i as u16 * column;
+            classic::label(
+                &mut s,
+                R::new(x, 42, column - 10, 18),
+                heading,
+                &c.dim,
+                9,
+                true,
+            );
+            classic::label(
+                &mut s,
+                R::new(x, 61, column - 10, 22),
+                status,
+                if enabled { &c.accent } else { &c.dim },
+                11,
+                false,
+            );
+        }
+        s.fill(R::new(16, 87, w - 32, 1), &c.raised, 0);
+        for (x, width, heading) in [
+            (16, 72, "LISTENED"),
+            (96, w - 212, "TRACK / ARTIST"),
+            (w - 100, 84, "DELIVERY"),
+        ] {
+            classic::label(&mut s, R::new(x, 96, width, 20), heading, &c.dim, 9, true);
+        }
         if snap.recent.is_empty() {
             classic::label(
                 &mut s,
-                R::new(16, 65, w - 32, 26),
+                R::new(96, 122, w - 112, 24),
                 "No listening activity yet",
                 &c.dim,
-                font,
+                11,
                 false,
             );
         }
-        let count = 5;
+        let scroll = self
+            .app
+            .panels
+            .history_scroll
+            .min(snap.recent.len().saturating_sub(LEDGER_ROWS));
         for (i, row) in snap
             .recent
             .iter()
-            .skip(self.app.panels.history_scroll)
-            .take(count)
+            .skip(scroll)
+            .take(LEDGER_ROWS)
             .enumerate()
         {
-            let y = 65 + i as u16 * 34;
-            if i == 0 {
-                s.fill(
-                    R::new(10, y, w - 20, 33),
-                    &native::hex(self.palette().selected),
-                    1,
-                );
+            let y = 121 + i as u16 * 23;
+            let action = format!("activity-row:{}", scroll + i);
+            if self.skin.hovered.as_deref() == Some(&action) {
+                s.fill(R::new(10, y, w - 20, 23), &c.title, 0);
             }
             classic::label(
                 &mut s,
-                R::new(16, y, w - 130, 18),
-                row.title.as_deref().unwrap_or(&row.uri),
-                &c.ink,
-                12,
-                false,
-            );
-            classic::label(
-                &mut s,
-                R::new(16, y + 18, w - 130, 16),
+                R::new(16, y, 72, 23),
                 format!(
-                    "{} · {:02}:{:02} listened · {}",
-                    row.artist.as_deref().unwrap_or("Unknown artist"),
+                    "{}:{:02}",
                     row.listened_ms / 60000,
-                    row.listened_ms / 1000 % 60,
-                    row.outcome
+                    row.listened_ms / 1000 % 60
                 ),
                 &c.dim,
-                10,
+                11,
                 false,
             );
+            let title = row.title.as_deref().unwrap_or(&row.uri);
+            let track = row
+                .artist
+                .as_deref()
+                .filter(|a| !a.is_empty())
+                .map(|artist| format!("{title} — {artist}"))
+                .unwrap_or_else(|| title.to_string());
+            classic::label(&mut s, R::new(96, y, w - 212, 23), track, &c.ink, 11, false);
             let state = row.state();
+            let color = if row.errors > 0 {
+                native::hex(self.palette().error)
+            } else if state == "playing" {
+                c.accent.clone()
+            } else if matches!(state.as_str(), "queued" | "partial") {
+                crate::embed::skin::tone(&self.palette(), "#d7b579", true)
+            } else {
+                c.dim.clone()
+            };
             classic::label(
                 &mut s,
-                R::new(w - 100, y, 84, 24),
+                R::new(w - 100, y, 84, 23),
                 state.to_uppercase(),
-                if row.errors > 0 {
-                    "#e09885"
-                } else if state == "playing" {
-                    &c.accent
-                } else {
-                    &c.dim
-                },
-                10,
+                &color,
+                9,
                 true,
             );
             s.hits.push(HitRegion {
-                rect: R::new(10, y, w - 20, 34),
-                action: format!("activity-row:{}", self.app.panels.history_scroll + i),
+                rect: R::new(10, y, w - 20, 23),
+                action,
             });
-            if i > 0 {
-                s.fill(R::new(14, y + 33, w - 28, 1), &c.raised, 0);
+            if i + 1 < LEDGER_ROWS {
+                s.fill(R::new(16, y + 23, w - 32, 1), &c.raised, 0);
             }
         }
-        let bottom = s.height - 42;
-        label(
+        s.fill(R::new(16, 277, w - 32, 1), &c.raised, 0);
+        let errors = snap.recent.iter().filter(|row| row.errors > 0).count();
+        let pending = if errors > 0 {
+            format!("{} pending · {errors} recent errors", snap.pending)
+        } else {
+            format!("{} pending submissions", snap.pending)
+        };
+        classic::label(
             &mut s,
-            c,
-            R::new(16, bottom, w.saturating_sub(160), 28),
-            format!("{} pending submissions", snap.pending),
-            font,
+            R::new(16, 286, w.saturating_sub(180), 24),
+            pending,
+            &c.dim,
+            10,
             false,
         );
-        let r = R::new(w.saturating_sub(156), s.height - 35, 140, 29);
         self.button(
             &mut s,
-            r,
+            R::new(w - 156, 284, 140, 29),
             c,
             "RETRY FAILED",
             "activity-retry",
-            font.saturating_sub(2),
+            font,
             false,
         );
         s
     }
     fn playlist(&mut self, w: u16, h: u16, c: &Colors, font: u16) -> Surface {
+        let playlist_colors = Colors {
+            inset: if self.palette() == crate::embed::skin::SILVER_PALETTE {
+                crate::embed::skin::colors(&crate::embed::skin::REFERENCE_PALETTE).inset
+            } else {
+                c.inset.clone()
+            },
+            ..c.clone()
+        };
+        let c = &playlist_colors;
+        let silver = self.palette() == crate::embed::skin::SILVER_PALETTE;
         let mut s = self.window(w, h, c, "PLAYLIST", font);
         let heading = if self.app.filter_query().trim().is_empty() {
             format!("· {}", self.app.queue.name)
@@ -1076,19 +1447,11 @@ impl Rack<'_> {
                 action: action.into(),
             });
         }
-        let well_height = s.height - 82;
-        // Theme queues sit close to the other pane interiors, rather than
-        // inheriting the much darker analyzer display well.
-        let queue_bg = if self.reference_colors {
-            c.inset.clone()
-        } else {
-            use starkit::theme::color::Rgb;
-            Rgb::parse_hex(&c.panel)
-                .unwrap()
-                .mix(Rgb::new(0, 0, 0), 0.06)
-                .to_hex()
-        };
-        s.fill(R::new(10, 38, w - 20, well_height), &queue_bg, 0);
+        let well_top = 42;
+        let well_height = s.height - well_top - 44;
+        // Silver retains the earlier Classic dark playlist surface.
+        // Start with the first row so no exposed strip forms a header divider.
+        s.fill(R::new(10, well_top, w - 20, well_height), &c.inset, 0);
         if self.app.queue.items.is_empty() {
             classic::label(
                 &mut s,
@@ -1210,7 +1573,14 @@ impl Rack<'_> {
         };
         let grouped = self.app.session_grouped();
         let index_width = self.app.queue.items.len().to_string().len().max(4) as u16 * 7 + 7;
-        let body = R::new(14, 42, w - 44, visible as u16 * row_h);
+        let body = R::new(14, well_top, w - 44, visible as u16 * row_h);
+        // Blend the selection into this playlist's actual well so it reads as
+        // a light overlay across themes, including Silver's Classic well.
+        let [r, g, b] = self.palette().selected;
+        let selection_fill = crate::theme::color::Rgb::parse_hex(&c.inset)
+            .expect("playlist well color")
+            .mix(crate::theme::color::Rgb::new(r, g, b), 0.50)
+            .to_hex();
         s.hits.push(HitRegion {
             rect: body,
             action: "playlist:body".into(),
@@ -1242,20 +1612,15 @@ impl Rack<'_> {
                 if hovered {
                     s.fill(r, &c.title, 0);
                 }
-                native::heading_depth(
-                    &mut s,
-                    r,
-                    if hovered { &c.title } else { &queue_bg },
-                    &c.ink,
-                );
+                native::heading_depth(&mut s, r, if hovered { &c.title } else { &c.inset }, &c.ink);
                 let count = playlist::section_count(*tracks, *folded);
-                let count_w = count.width() as u16 * 7;
+                // Leave room for the presenting terminal's wider mono font.
+                let count_w = count.width() as u16 * 8 + 12;
                 let count_x = r.x + r.width - count_w - 6;
                 let title_x = r.x + 32;
                 let title_w = count_x.saturating_sub(title_x + 24);
                 let title = crate::ui::panels::player::truncate(title, usize::from(title_w / 7));
                 let rule_x = title_x + title.width() as u16 * 7 + 10;
-                s.fill(R::new(r.x, r.y + row_h / 2, 5, 1), &c.raised, 0);
                 if rule_x + 8 < count_x {
                     s.fill(
                         R::new(rule_x, r.y + row_h / 2, count_x - rule_x - 8, 1),
@@ -1281,19 +1646,22 @@ impl Rack<'_> {
                 );
                 // Pixel geometry keeps both signs centered on the same axis;
                 // font bearings made the minus sit above the section's seam.
-                let fold = R::new(r.x + 7, r.y + 2, 18, 18);
-                s.fill(fold, &c.title, 1);
-                s.nodes.push(Primitive::Border {
-                    rect: fold,
-                    color: c.dim.clone(),
-                    radius: 1,
-                });
-                s.fill(R::new(fold.x + 5, fold.y + 8, 8, 2), &c.ink, 0);
+                let fold_hit = R::new(r.x + 7, r.y + 2, 18, 18);
+                let fold = R::new(r.x + 9, r.y + 4, 14, 14);
+                if hovered {
+                    s.fill(fold, &c.title, 0);
+                    s.nodes.push(Primitive::Border {
+                        rect: fold,
+                        color: c.dim.clone(),
+                        radius: 0,
+                    });
+                }
+                s.fill(R::new(fold.x + 4, fold.y + 6, 6, 2), &c.ink, 0);
                 if *folded {
-                    s.fill(R::new(fold.x + 8, fold.y + 5, 2, 8), &c.ink, 0);
+                    s.fill(R::new(fold.x + 6, fold.y + 4, 2, 6), &c.ink, 0);
                 }
                 s.hits.push(HitRegion {
-                    rect: fold,
+                    rect: fold_hit,
                     action: action.clone(),
                 });
             } else if let playlist::Row::Track(i) = row {
@@ -1303,7 +1671,7 @@ impl Rack<'_> {
                 let selected = index == selected_row;
                 let active = playing == Some(*i);
                 if selected {
-                    s.fill(r, &native::hex(self.palette().selected), 0);
+                    s.fill(r, &selection_fill, 0);
                 } else if hovered {
                     s.fill(r, &c.title, 0);
                 }
@@ -1313,6 +1681,17 @@ impl Rack<'_> {
                     &c.accent
                 } else {
                     &c.ink
+                };
+                let column_ink = |silver_ink: &str| -> String {
+                    if active || item.unplayable {
+                        ink.clone()
+                    } else if silver {
+                        silver_ink.into()
+                    } else if selected {
+                        ink.clone()
+                    } else {
+                        c.dim.clone()
+                    }
                 };
                 let x = r.x + 6;
                 classic::label(
@@ -1333,7 +1712,7 @@ impl Rack<'_> {
                     &mut s,
                     R::new(x + 14, r.y, index_width, row_h),
                     format!("{:>4}{}", i + 1, if marked.contains(i) { '+' } else { '.' }),
-                    if selected || active { ink } else { &c.dim },
+                    &column_ink("#9daec4"),
                     row_font,
                     active,
                 );
@@ -1345,7 +1724,7 @@ impl Rack<'_> {
                         &mut s,
                         R::new(name_x, r.y, 42, row_h),
                         format!("{:>5}", rows.album_index(*i, item)),
-                        if selected || active { ink } else { &c.dim },
+                        &column_ink("#b8b09f"),
                         row_font,
                         active,
                     );
@@ -1366,7 +1745,7 @@ impl Rack<'_> {
                     item.duration_secs
                         .map(|seconds| crate::ui::digits::clock(seconds as f64))
                         .unwrap_or_else(|| "-:--".into()),
-                    if selected || active { ink } else { &c.dim },
+                    &column_ink("#95acb5"),
                     row_font,
                     active,
                 );
@@ -1417,27 +1796,63 @@ impl Rack<'_> {
         self.playlist_scrolled = Some(self.app.queue.cursor);
     }
 
-    fn drag_eq(&mut self, x: u16, y: u16) {
+    fn begin_eq_drag(&mut self, x: u16, y: u16) {
+        self.eq_drag = None;
         let Some(plot) = self
             .surface
             .as_ref()
             .and_then(|s| s.hits.iter().find(|h| h.action == "eq-plot"))
             .map(|h| h.rect)
+            .filter(|r| r.width > 1 && r.height > 1)
         else {
             return;
         };
-        let fx =
-            f64::from(x.saturating_sub(plot.x).min(plot.width - 1)) / f64::from(plot.width - 1);
-        let fy =
-            f64::from(y.saturating_sub(plot.y).min(plot.height - 1)) / f64::from(plot.height - 1);
-        let index = self.app.eq.stage;
-        if let Some(stage) = self.app.eq.active_mut().stages.get_mut(index) {
+        let stage = self.app.eq.stage;
+        if let Some(Filter::Biquad {
+            frequency, gain_db, ..
+        }) = self.app.eq.active().stages.get(stage).map(|s| &s.filter)
+        {
+            self.eq_drag = Some(EqDrag {
+                stage,
+                origin: [x, y],
+                plot,
+                frequency: *frequency,
+                gain_db: *gain_db,
+            });
+        }
+    }
+
+    fn drag_eq(&mut self, x: u16, y: u16) {
+        let Some(drag) = &self.eq_drag else { return };
+        let dx = f64::from(x) - f64::from(drag.origin[0]);
+        let dy = f64::from(y) - f64::from(drag.origin[1]);
+        // Keep full precision, including when returning to the press position.
+        // The graph spans three frequency decades and 24 dB vertically.
+        let frequency = if dx == 0. {
+            drag.frequency
+        } else {
+            (drag.frequency * 1000f64.powf(dx / f64::from(drag.plot.width - 1))).clamp(20., 20000.)
+        };
+        let gain_db = if dy == 0. {
+            drag.gain_db
+        } else {
+            (drag.gain_db - dy * 24. / f64::from(drag.plot.height - 1)).clamp(
+                -crate::audio::dsp::apo::MAX_GAIN_DB,
+                crate::audio::dsp::apo::MAX_GAIN_DB,
+            )
+        };
+        if let Some(stage) = self.app.eq.active_mut().stages.get_mut(drag.stage) {
             if let Filter::Biquad {
-                frequency, gain_db, ..
+                frequency: hz,
+                gain_db: db,
+                ..
             } = &mut stage.filter
             {
-                *frequency = 20. * 1000f64.powf(fx);
-                *gain_db = 12. - fy * 24.;
+                if *hz == frequency && *db == gain_db {
+                    return;
+                }
+                *hz = frequency;
+                *db = gain_db;
                 self.app.eq.enabled = true;
                 self.app.apply_eq();
                 self.eq_dirty = true;
@@ -1552,6 +1967,8 @@ impl Rack<'_> {
             "shuffle" => a.handle(Action::ToggleShuffle),
             "eq-prev" => a.handle(Action::PrevEqPreset),
             "eq-next" => a.handle(Action::NextEqPreset),
+            "eq-profiles" => a.open_eq_profiles(),
+            "eq-save-current" => a.save_eq_profile(),
             "eq-stage-prev" => a.handle(Action::EqBandPrev),
             "eq-stage-next" => a.handle(Action::EqBandNext),
             "eq-enabled" => a.apply_setting(Setting::EqEnabled),
@@ -1590,6 +2007,7 @@ impl Rack<'_> {
             _ => {
                 if let Some(i) = name
                     .strip_prefix("eq-band:")
+                    .or_else(|| name.strip_prefix("eq-select:"))
                     .and_then(|n| n.parse::<usize>().ok())
                 {
                     a.eq.stage = i;
@@ -1738,16 +2156,24 @@ impl Controller for Rack<'_> {
         self.cells = cells;
         self.playlist_bars.release();
         self.drag = None;
+        self.eq_drag = None;
     }
     fn scene(&mut self, v: Viewport) -> Scene {
         self.viewport = v;
         self.revision += 1;
         self.overlay = false;
+        if self.app.over.resume.is_none() {
+            self.resume_scroll = 0;
+            self.resume_fresh = false;
+        }
         self.playlist_bars.begin_frame();
         if self.app.over.playlist_add.is_none() {
             self.context_anchor = None;
         }
         self.app.sync_view();
+        // Native scenes bypass App::draw, including its initial/open-panel
+        // artwork lookup. Track revision changes alone do not cover these.
+        self.app.pump_album();
         self.app.prepare_playlist_rows();
         self.app.panels.last_area = Rect::new(0, 0, v.columns, v.rows);
         let area = Rect::new(0, 0, v.columns, v.rows);
@@ -1840,7 +2266,7 @@ impl Controller for Rack<'_> {
             },
         );
         if self.app.panels.focus == Focus::Player {
-            native::focus_outline(&mut player, &c.accent, self.radius);
+            self.focus_outline(&mut player);
         }
         append(&mut surface, player, 0, 0, 0, "player");
         classic::label(
@@ -1868,13 +2294,19 @@ impl Controller for Rack<'_> {
             y += i32::from(hh + 8);
         }
         let module_w = w;
+        // Album and Activity retain their original surfaces; the darker display
+        // wells belong only to the player, EQ and playlist.
+        let detail_colors = crate::embed::skin::colors(&Palette {
+            inset_bg: None,
+            ..palette
+        });
         let album_y = y;
         let paired = module_w >= 1040 && self.app.panels.album && self.app.panels.history;
         let album_w = if paired { (module_w - 8) / 2 } else { module_w };
         let mut album_height = 0;
         if self.app.panels.album {
-            let s = self.album(album_w, &c, font);
-            let s = self.fold_module(s, "album", &c);
+            let s = self.album(album_w, &detail_colors, font);
+            let s = self.fold_module(s, "album", &detail_colors);
             album_height = s.height;
             self.modules.push((Focus::Album, y, s.height));
             modules.push((s, 0, y, "album"));
@@ -1888,8 +2320,8 @@ impl Controller for Rack<'_> {
             } else {
                 module_w
             };
-            let s = self.activity(activity_w, &c, font);
-            let s = self.fold_module(s, "activity", &c);
+            let s = self.activity(activity_w, &detail_colors, font);
+            let s = self.fold_module(s, "activity", &detail_colors);
             let row_height = if paired {
                 s.height.max(album_height)
             } else {
@@ -1983,11 +2415,19 @@ impl Controller for Rack<'_> {
                 x += width;
             }
             let width = text.width() as u16 * advance;
-            let ink = hex(if *lit {
-                self.app.look.theme.transport_toggle_on_fg
+            let ink = if palette == crate::embed::skin::REFERENCE_PALETTE {
+                if *lit {
+                    c.accent.clone()
+                } else {
+                    c.dim.clone()
+                }
             } else {
-                self.app.look.theme.transport_toggle_off_fg
-            });
+                hex(if *lit {
+                    self.app.look.theme.transport_toggle_on_fg
+                } else {
+                    self.app.look.theme.transport_toggle_off_fg
+                })
+            };
             classic::label(
                 &mut surface,
                 R::new(x, footer_y, width, font + 12),
@@ -2023,6 +2463,9 @@ impl Controller for Rack<'_> {
             action: "help".into(),
         });
         if self.app.overlay_open()
+            && !self.eq_value_popup(&mut surface, &c)
+            && !self.eq_library_popup(&mut surface, &c)
+            && !self.resume_popup(&mut surface, &c)
             && !self.filter_popup(&mut surface, &c)
             && !self.list_popup(&mut surface, &c)
         {
@@ -2139,7 +2582,7 @@ impl Controller for Rack<'_> {
                         4 * density,
                         thumb.len,
                     ),
-                    &c.accent,
+                    &self.selection_color(),
                     2 * density,
                 );
             }
@@ -2165,8 +2608,9 @@ impl Controller for Rack<'_> {
         if !self.overlay
             && self.app.panels.album
             && !self.folded.contains("album")
-            && album_y + 46 >= i32::from(top)
-            && album_y + 46 + if album_w > 600 { 180 } else { 128 } < i32::from(h - font - 12)
+            && album_y + i32::from(ALBUM_COVER_Y) >= i32::from(top)
+            && album_y + i32::from(ALBUM_COVER_Y) + i32::from(ALBUM_COVER)
+                < i32::from(h - font - 12)
         {
             if let Some(album) = self
                 .app
@@ -2180,36 +2624,44 @@ impl Controller for Rack<'_> {
                         .as_ref()
                         .map(|a| a.serial())
                         .unwrap_or_default();
-                    if self
-                        .cover_cache
-                        .as_ref()
-                        .is_none_or(|(old, _)| *old != serial)
-                    {
-                        self.cover_cache = starkit::terminal_graphics::assets::encode_png(image)
-                            .ok()
-                            .map(|png| (serial, png));
+                    let cover = ALBUM_COVER;
+                    let slot = R::new(
+                        16 * density,
+                        (album_y + i32::from(ALBUM_COVER_Y)) as u16 * density,
+                        cover * density,
+                        cover * density,
+                    );
+                    let (rect, canvas, bounds) = cover_layout(v, slot);
+                    let key = CoverKey {
+                        serial,
+                        canvas,
+                        bounds,
+                        border: 2 * density,
+                        background: c.panel.clone(),
+                        silver_gradient: palette == crate::embed::skin::SILVER_PALETTE,
+                        outline: native::hex(palette.border),
+                    };
+                    if self.cover_cache.as_ref().is_none_or(|old| old.key != key) {
+                        self.cover_cache = starkit::terminal_graphics::assets::encode_png(
+                            &cover_raster(image, &key),
+                        )
+                        .ok()
+                        .map(|png| CoverCache {
+                            key,
+                            id: format!("album-{serial}-{}", self.revision),
+                            png,
+                        });
                     }
-                    if let Some((_, png)) = &self.cover_cache {
-                        let cover = if album_w > 600 { 180 } else { 128 };
-                        let xx = 16u16 * density;
-                        let yy = (album_y + 46) as u16 * density;
-                        let to_cell = |r: R| starkit::terminal_graphics::protocol::Rect {
-                            x: (u32::from(r.x) * u32::from(v.columns) / v.width) as u16,
-                            y: (u32::from(r.y) * u32::from(v.rows) / v.height) as u16,
-                            width: (u32::from(r.width) * u32::from(v.columns) / v.width).max(1)
-                                as u16,
-                            height: (u32::from(r.height) * u32::from(v.rows) / v.height).max(1)
-                                as u16,
-                        };
+                    if let Some(cached) = &self.cover_cache {
                         scene.components.push(Component::Image {
-                            rect: to_cell(R::new(xx, yy, cover * density, cover * density)),
-                            id: format!("album-{serial}"),
-                            png: Some(png.clone()),
-                            scale: Default::default(),
+                            rect,
+                            id: cached.id.clone(),
+                            png: Some(cached.png.clone()),
+                            scale: starkit::terminal_graphics::protocol::ImageScale::One,
                             zoom: 100,
                         });
                         surface.hits.push(HitRegion {
-                            rect: R::new(xx, yy, cover * density, cover * density),
+                            rect: slot,
                             action: "cover-open".into(),
                         });
                     }
@@ -2267,6 +2719,9 @@ impl Controller for Rack<'_> {
             Input::Key { code, modifiers } => {
                 if let Some(code) = key(&code) {
                     let modifiers = KeyModifiers::from_bits_truncate(modifiers);
+                    if self.resume_key(code, modifiers) {
+                        return;
+                    }
                     if self.player_control_key(code, modifiers) {
                         return;
                     }
@@ -2286,6 +2741,16 @@ impl Controller for Rack<'_> {
                     }
                     let theme_before = self.app.look.theme.name.clone();
                     self.app.dispatch_key(KeyEvent::new(code, modifiers));
+                    if !self.overlay && self.app.panels.focus == Focus::History {
+                        self.app.panels.history_scroll = self.app.panels.history_scroll.min(
+                            self.app
+                                .activity
+                                .snapshot()
+                                .recent
+                                .len()
+                                .saturating_sub(LEDGER_ROWS),
+                        );
+                    }
                     if theme_before != self.app.look.theme.name {
                         self.reference_colors = false;
                         self.app.saving.pending.insert(
@@ -2324,6 +2789,12 @@ impl Controller for Rack<'_> {
                 }
             }
             Input::Paste { text } => {
+                if let Some(library) = &mut self.app.edit.eq_profiles {
+                    library.query.push_str(text.trim());
+                    library.cursor = 0;
+                    library.scroll = 0;
+                    return;
+                }
                 if !self.app.filter_paste(&text)
                     && !self.app.import_artist_paste(&text)
                     && !self.app.auth_paste(&text)
@@ -2343,7 +2814,9 @@ impl Controller for Rack<'_> {
                     tracing::debug!(%action, button, x, y, ?pixel, overlay = self.overlay, "Graphical pointer input");
                 }
                 if self.overlay
-                    && (self.filter_pointer(&action, button, x, y, pixel)
+                    && (self.eq_profile_pointer(&action, button, x, y, pixel)
+                        || self.resume_pointer(&action, button, x, y, pixel)
+                        || self.filter_pointer(&action, button, x, y, pixel)
                         || self.popup_pointer(&action, button, x, y, pixel))
                 {
                     return;
@@ -2392,13 +2865,24 @@ impl Controller for Rack<'_> {
                         })
                         .map(|hit| hit.action.as_str())
                     {
-                        self.app.panels.focus = match name {
+                        let focus = match name {
                             "focus:player" => Focus::Player,
                             "focus:eq" => Focus::Equalizer,
                             "focus:album" => Focus::Album,
                             "focus:activity" => Focus::History,
                             _ => Focus::Playlist,
                         };
+                        if self.app.panels.focus != focus {
+                            self.app.panels.focus = focus;
+                            self.skin.focused = None;
+                            self.skin.pressed = None;
+                            self.drag = None;
+                            self.eq_drag = None;
+                            self.playlist_bars.release();
+                            // Selecting a pane consumes the press, so its drag
+                            // and release cannot operate the control beneath it.
+                            return;
+                        }
                     }
                 }
                 if action == "down" && button == 0 {
@@ -2465,7 +2949,14 @@ impl Controller for Rack<'_> {
                                 self.app.panels.history_scroll.saturating_sub(1);
                         } else {
                             self.app.panels.history_scroll = (self.app.panels.history_scroll + 1)
-                                .min(self.app.activity.snapshot().recent.len().saturating_sub(5));
+                                .min(
+                                    self.app
+                                        .activity
+                                        .snapshot()
+                                        .recent
+                                        .len()
+                                        .saturating_sub(LEDGER_ROWS),
+                                );
                         }
                         return;
                     }
@@ -2487,8 +2978,12 @@ impl Controller for Rack<'_> {
                 if action == "down" && button == 0 {
                     self.skin.pressed = hit.clone();
                     self.drag = hit.clone();
+                    self.eq_drag = None;
                     if let Some(name) = hit.as_deref() {
                         self.action(name, px as u16, py as u16);
+                        if name.starts_with("eq-band:") {
+                            self.begin_eq_drag(px as u16, py as u16);
+                        }
                     }
                 }
                 if action == "down" && button == 1 {
@@ -2530,6 +3025,7 @@ impl Controller for Rack<'_> {
                         self.eq_dirty = false;
                     }
                     self.drag = None;
+                    self.eq_drag = None;
                 }
             }
             Input::Detach => self.app.quit = true,
@@ -2542,6 +3038,7 @@ impl Controller for Rack<'_> {
                     self.eq_dirty = false;
                 }
                 self.drag = None;
+                self.eq_drag = None;
             }
             _ => {}
         }
@@ -2615,6 +3112,7 @@ impl App {
             offset: 0,
             radius: 8,
             drag: None,
+            eq_drag: None,
             max_offset: 0,
             overlay: false,
             context_anchor: None,
@@ -2627,8 +3125,365 @@ impl App {
             skins: true,
             reference_colors: true,
             density: 1,
+            resume_scroll: 0,
+            resume_fresh: false,
             folded: Default::default(),
         };
+        // A native scene must request artwork even when playback has not
+        // changed. Unlike the text view, it does not call App::draw.
+        {
+            let library = tempfile::tempdir()?;
+            let index = library.path().join("index.sqlite");
+            let db = crate::library::db::Db::open(&index)?;
+            db.conn.execute_batch(
+                "INSERT INTO dir (id, rel_path, scan_gen) VALUES (1, '', 1);
+                 INSERT INTO file (id, dir_id, rel_path, size, mtime_ns, kind, scan_gen)
+                 VALUES (1, 1, 'fixture.flac', 0, 0, 0, 1),
+                        (2, 1, 'cover.png', 0, 0, 2, 1);",
+            )?;
+            let uri = rack.app.current_uri().expect("fixture current track");
+            db.conn.execute(
+                "INSERT INTO track (uri, file_id, album, codec, added_at, modified_at, scan_gen)
+                 VALUES (?1, 1, 'Artwork fixture', 'flac', 0, 0, 1)",
+                [&uri],
+            )?;
+            starkit::image::RgbaImage::from_pixel(
+                32,
+                24,
+                starkit::image::Rgba([164, 215, 145, 255]),
+            )
+            .save(library.path().join("cover.png"))?;
+            rack.app.art = crate::library::art::Watcher::spawn(
+                index,
+                Arc::new(crate::vfs::Vfs::local(library.path())),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            );
+            let viewport = Viewport {
+                width: 1400,
+                height: 1800,
+                columns: 140,
+                rows: 90,
+                generation: 0,
+            };
+            rack.app.panels.album = false;
+            rack.scene(viewport);
+            assert!(rack.app.art_uri.is_none(), "closed Album stays idle");
+            rack.app.panels.album = true;
+            rack.scene(viewport);
+            assert_eq!(rack.app.art_uri.as_deref(), Some(uri.as_str()));
+            let watcher = rack.app.art.as_ref().expect("fixture artwork worker");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let album = loop {
+                if let Some(album) = watcher.album_for(&uri) {
+                    break album;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "initial artwork lookup timed out"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            assert!(album.image.is_some(), "cover loads without Retry");
+            let scene = rack.scene(viewport);
+            assert!(scene
+                .components
+                .iter()
+                .any(|c| matches!(c, Component::Image { .. })));
+            // Check the production raster, including fractional terminal grids:
+            // fitted artwork has a 2px logical outline and no dark empty well.
+            let previous_theme = rack.app.look.theme.clone();
+            let mut previous_id = String::new();
+            for theme in ["winamp-classic", "kanagawa", "winamp-silver"] {
+                rack.app.look.theme = crate::theme::builtin::load(theme).unwrap();
+                rack.reference_colors = false;
+                for (width, height, columns, rows) in [
+                    (1400, 1800, 140, 90),
+                    (2800, 3600, 140, 90),
+                    (2737, 1801, 171, 55),
+                ] {
+                    let scene = rack.scene(Viewport {
+                        width,
+                        height,
+                        columns,
+                        rows,
+                        generation: 0,
+                    });
+                    let cached = rack.cover_cache.as_ref().unwrap();
+                    assert_ne!(
+                        cached.id, previous_id,
+                        "changed artwork raster needs a new transport ID"
+                    );
+                    previous_id = cached.id.clone();
+                    let slot = rack
+                        .surface
+                        .as_ref()
+                        .unwrap()
+                        .hits
+                        .iter()
+                        .rev()
+                        .find(|h| h.action == "cover-open")
+                        .unwrap()
+                        .rect;
+                    assert_eq!(slot.width, ALBUM_COVER * rack.density);
+                    let selector = rack
+                        .surface
+                        .as_ref()
+                        .unwrap()
+                        .hits
+                        .iter()
+                        .find(|h| h.action == "cover-next")
+                        .unwrap()
+                        .rect;
+                    assert!(
+                        selector.x >= slot.x + slot.width,
+                        "art selector must sit beside the enlarged cover"
+                    );
+                    let rendered = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                    let pixel = |x: u16, y: u16| rendered.get_pixel(u32::from(x), u32::from(y)).0;
+                    let rgb = |s: &str| {
+                        let c = crate::theme::color::Rgb::parse_hex(s).unwrap();
+                        [c.r, c.g, c.b, 255]
+                    };
+                    let middle_x = slot.x + slot.width / 2;
+                    let middle_y = slot.y + slot.height / 2;
+                    let outline = rgb(&cached.key.outline);
+                    let background = if theme == "winamp-silver" {
+                        rgb(
+                            &crate::embed::skin::silver_panel_color(ALBUM_COVER_Y, LEDGER_HEIGHT)
+                                .to_hex(),
+                        )
+                    } else {
+                        rgb(&cached.key.background)
+                    };
+                    assert_eq!(pixel(middle_x, slot.y + 1), background);
+                    if theme == "winamp-silver" {
+                        assert_eq!(
+                            pixel(middle_x, slot.y + 1),
+                            pixel(slot.x + slot.width + 1, slot.y + 1),
+                            "artwork padding must match the panel gradient"
+                        );
+                    }
+                    let xs = (slot.x..slot.x + slot.width)
+                        .filter(|x| pixel(*x, middle_y) == outline)
+                        .collect::<Vec<_>>();
+                    let ys = (slot.y..slot.y + slot.height)
+                        .filter(|y| pixel(middle_x, *y) == outline)
+                        .collect::<Vec<_>>();
+                    let border = cached.key.border;
+                    assert_eq!(
+                        xs.len(),
+                        usize::from(2 * border),
+                        "left/right border at {width}x{height}"
+                    );
+                    assert_eq!(
+                        ys.len(),
+                        usize::from(2 * border),
+                        "top/bottom border at {width}x{height}"
+                    );
+                    for i in 0..border {
+                        assert_eq!(pixel(xs[0] + i, middle_y), outline);
+                        assert_eq!(pixel(*xs.last().unwrap() - i, middle_y), outline);
+                        assert_eq!(pixel(middle_x, ys[0] + i), outline);
+                        assert_eq!(pixel(middle_x, *ys.last().unwrap() - i), outline);
+                    }
+                    assert_eq!(pixel(xs[0] + border, middle_y), [164, 215, 145, 255]);
+                    assert_eq!(pixel(middle_x, ys[0] + border), [164, 215, 145, 255]);
+                    assert!(
+                        (i32::from(xs[0] + xs.last().unwrap() + 1)
+                            - i32::from(2 * slot.x + slot.width))
+                        .abs()
+                            <= 1
+                    );
+                    assert!(
+                        (i32::from(ys[0] + ys.last().unwrap() + 1)
+                            - i32::from(2 * slot.y + slot.height))
+                        .abs()
+                            <= 1
+                    );
+                    starkit::image::imageops::crop_imm(
+                        &rendered,
+                        u32::from(slot.x - 4),
+                        u32::from(slot.y - 4),
+                        u32::from(slot.width + 8),
+                        u32::from(slot.height + 8),
+                    )
+                    .to_image()
+                    .save(output.join(format!("album-artwork-{theme}-{width}.png")))?;
+                }
+            }
+            rack.app.look.theme = previous_theme;
+            rack.reference_colors = true;
+            let serial = rack.app.art.as_ref().unwrap().serial();
+            rack.app.panels.album = false;
+            rack.scene(viewport);
+            rack.app.panels.album = true;
+            rack.scene(viewport);
+            assert_eq!(rack.app.art.as_ref().unwrap().serial(), serial);
+            rack.app.art = None;
+            rack.app.art_uri = None;
+            rack.cover_cache = None;
+        }
+        // Resume is a native, wrapped choice dialog, sharing the existing
+        // acceptance/decline actions. A detached player keeps this check silent.
+        {
+            let mut saved = rack.app.snapshot().expect("fixture session");
+            saved.artist = "Black Sabbath".into();
+            saved.title = "Wasp/Behind the Wall of Sleep/Bassically/N.I.B. — a complete medley title that must stay readable instead of being clipped into a terminal row".into();
+            saved.playlist_name = "queue".into();
+            saved.index = 78;
+            saved.total = 29615;
+            saved.position = 134.55;
+            saved.duration = 584.56;
+            saved.folded = vec!["first record".into(), "second record".into()];
+            saved.volume = 0.42;
+            saved.playlist = Some(output.join("missing-playlist.m3u"));
+            let items = rack.app.player.queue.lock().unwrap().tracks().to_vec();
+            let original = std::mem::replace(&mut rack.app.player, Arc::new(Player::detached()));
+            rack.app.player.set_queue_tracks(items);
+            let status = rack.app.status.take();
+            let folded = rack.app.queue.folded.clone();
+            let fold_gen = rack.app.queue.fold_gen;
+            let cursor = rack.app.queue.cursor;
+            let scroll = rack.app.queue.scroll;
+            let text = |rack: &Rack<'_>| {
+                let surface = rack.surface.as_ref().unwrap();
+                let start = surface
+                    .nodes
+                    .iter()
+                    .rposition(
+                        |n| matches!(n, Primitive::Text { text, .. } if text == "RESUME SESSION"),
+                    )
+                    .unwrap();
+                surface.nodes[start..]
+                    .iter()
+                    .filter_map(|n| match n {
+                        Primitive::Text { text, .. } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            for density in [1, 2] {
+                rack.app.offer_resume(saved.clone());
+                let viewport = Viewport {
+                    width: 800 * density,
+                    height: 420 * density,
+                    columns: 100,
+                    rows: 26,
+                    generation: 0,
+                };
+                let scene = rack.scene(viewport);
+                assert!(rack.overlay);
+                let surface = rack.surface.as_ref().unwrap();
+                assert!(surface.hits.iter().all(|h| h.action.starts_with("resume:")));
+                let contents = text(&rack);
+                for value in [
+                    "Black Sabbath",
+                    "N.I.B.",
+                    "terminal row",
+                    "track 79 of 29615",
+                    "2:14",
+                    "9:44",
+                    "2 records folded",
+                    "unavailable",
+                    "Start fresh",
+                    "Resume",
+                ] {
+                    assert!(
+                        contents.contains(value),
+                        "resume dialog lost {value}: {contents}"
+                    );
+                }
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("resume-session-{density}x.png")))?;
+                // Kitty uses larger glyph metrics than the bundled reference
+                // font. Compare actual clipped label boxes with an unrestricted
+                // rendering at a larger size; neither may introduce an ellipsis.
+                for caption in ["Start fresh", "Resume"] {
+                    let label = surface
+                        .nodes
+                        .iter()
+                        .rev()
+                        .find_map(|node| match node {
+                            Primitive::Text { rect, text, .. } if text == caption => Some(*rect),
+                            _ => None,
+                        })
+                        .unwrap();
+                    let base = starkit::image::RgbaImage::new(220, 30);
+                    let mut label_surface = Surface::new(220, 30, "transparent".into());
+                    classic::label(
+                        &mut label_surface,
+                        R::new(0, 0, label.width / density as u16, 30),
+                        caption,
+                        "#ffffff",
+                        14,
+                        true,
+                    );
+                    let bounded = starkit::terminal_graphics::renderer::render_surface_overlay(
+                        &base,
+                        &label_surface,
+                    )?;
+                    if let Primitive::Text { rect, .. } = &mut label_surface.nodes[0] {
+                        rect.width = 220;
+                    }
+                    let complete = starkit::terminal_graphics::renderer::render_surface_overlay(
+                        &base,
+                        &label_surface,
+                    )?;
+                    assert_eq!(bounded, complete, "resume button truncates {caption}");
+                }
+                saved.save()?;
+                rack.input(Input::Key {
+                    code: "tab".into(),
+                    modifiers: 0,
+                });
+                assert!(rack.resume_fresh);
+                rack.input(Input::Key {
+                    code: "enter".into(),
+                    modifiers: 0,
+                });
+                assert!(rack.app.over.resume.is_none());
+                assert!(!crate::session::Session::path()?.exists());
+                rack.scene(viewport);
+            }
+            rack.app.offer_resume(saved.clone());
+            rack.scene(rack.viewport);
+            press_button(&mut rack, "resume:accept", 0);
+            assert!(rack.app.over.resume.is_none());
+            assert!(rack.app.queue.folded.contains("first record"));
+            assert!((rack.app.player.volume() - 0.42).abs() < 0.001);
+            assert_eq!(rack.app.current_uri().as_deref(), Some(saved.uri.as_str()));
+            rack.scene(rack.viewport);
+            rack.app.offer_resume(saved.clone());
+            rack.scene(rack.viewport);
+            press_button(&mut rack, "resume:fresh", 0);
+            assert!(rack.app.over.resume.is_none());
+            rack.scene(rack.viewport);
+            saved.title = format!("{} LAST WORD", "A long saved title 世界 ".repeat(150));
+            rack.app.offer_resume(saved);
+            rack.scene(rack.viewport);
+            rack.input(Input::Key {
+                code: "end".into(),
+                modifiers: 0,
+            });
+            rack.scene(rack.viewport);
+            assert!(rack.app.over.resume.is_some());
+            assert!(rack.resume_scroll > 0);
+            let contents = text(&rack).split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(
+                contents.contains("LAST WORD"),
+                "scroll missed title ending: {contents}"
+            );
+            rack.app.over.resume = None;
+            rack.app.player = original;
+            rack.app.status = status;
+            rack.app.queue.folded = folded;
+            rack.app.queue.fold_gen = fold_gen;
+            rack.app.queue.cursor = cursor;
+            rack.app.queue.scroll = scroll;
+            rack.resume_scroll = 0;
+            rack.resume_fresh = false;
+        }
         // Measure the actual shared component against option 01 separately
         // from the full application's fixture. No alternate drawing path.
         let mut selected = rack.player();
@@ -2641,6 +3496,7 @@ impl App {
         selected.repeat = crate::playlist::queue::RepeatMode::All;
         let selected_palette = Palette {
             bg: [23, 24, 32],
+            inset_bg: None,
             fg: [215, 217, 207],
             muted: [152, 158, 172],
             accent: [164, 215, 145],
@@ -2720,9 +3576,95 @@ impl App {
                 _ => None,
             })
             .collect::<String>();
-        assert!(activity_text.contains("RECENT LISTENS"));
-        for removed in ["LOCAL HISTORY", "Last.fm", "ListenBrainz", "Not connected"] {
-            assert!(!activity_text.contains(removed));
+        for heading in [
+            "LOCAL HISTORY",
+            "LAST.FM",
+            "LISTENBRAINZ",
+            "LISTENED",
+            "TRACK / ARTIST",
+            "DELIVERY",
+        ] {
+            assert!(activity_text.contains(heading));
+        }
+        // Render populated, scrollable ledgers using the same production view.
+        // No provider setup or network requests are involved in the fixture.
+        {
+            use crate::activity::{Provider, ProviderStatus, Recent, Snapshot};
+            let scroll = rack.app.panels.history_scroll;
+            let mut snapshot = Snapshot {
+                providers: vec![
+                    ProviderStatus {
+                        provider: Provider::Lastfm,
+                        configured: true,
+                        enabled: true,
+                        username: "fixture".into(),
+                    },
+                    ProviderStatus {
+                        provider: Provider::Listenbrainz,
+                        configured: true,
+                        enabled: false,
+                        username: "fixture".into(),
+                    },
+                ],
+                recent: (0..10)
+                    .map(|i| Recent {
+                        artist: Some("Black Sabbath".into()),
+                        title: Some(format!("Listen {i} — 世界")),
+                        listened_ms: 132000,
+                        outcome: "completed".into(),
+                        deliveries: 1,
+                        sent: i64::from(i % 3 == 0),
+                        errors: i64::from(i % 3 == 2),
+                        ..Recent::default()
+                    })
+                    .collect(),
+                pending: 2,
+            };
+            assert_eq!(
+                provider_state(&snapshot, Provider::Lastfm),
+                ("Enabled", true)
+            );
+            assert_eq!(
+                provider_state(&snapshot, Provider::Listenbrainz),
+                ("Off", false)
+            );
+            snapshot.providers[1].configured = false;
+            snapshot.providers[1].enabled = true;
+            assert_eq!(
+                provider_state(&snapshot, Provider::Listenbrainz),
+                ("Set up", false)
+            );
+            rack.app.panels.history_scroll = usize::MAX;
+            for density in [1, 2] {
+                rack.skin
+                    .prepare(&rack.palette(), density, rack.radius == 0)?;
+                let ledger = rack.activity_view(
+                    592,
+                    &crate::embed::skin::colors(&rack.palette()),
+                    12,
+                    &snapshot,
+                );
+                let rows = ledger
+                    .hits
+                    .iter()
+                    .filter(|h| h.action.starts_with("activity-row:"))
+                    .collect::<Vec<_>>();
+                assert_eq!(rows.len(), LEDGER_ROWS);
+                assert_eq!(rows[0].action, "activity-row:4");
+                assert_eq!(rows[5].action, "activity-row:9");
+                assert!(rows.iter().all(|h| h.rect.y + h.rect.height < 277));
+                let ledger = ledger.at_density(density)?;
+                ledger.validate()?;
+                starkit::terminal_graphics::renderer::render_surface_overlay(
+                    &starkit::image::RgbaImage::new(
+                        u32::from(ledger.width),
+                        u32::from(ledger.height),
+                    ),
+                    &ledger,
+                )?
+                .save(output.join(format!("compact-ledger-activity-{density}x.png")))?;
+            }
+            rack.app.panels.history_scroll = scroll;
         }
         for (width, height, rows) in [(1400, 2000, 100), (2737, 2401, 70)] {
             let v = Viewport {
@@ -2817,6 +3759,44 @@ impl App {
         starkit::terminal_graphics::renderer::render_reference(&selected_scene)?
             .save(output.join("selected-rack.png"))?;
         rack.reference_colors = false;
+        // Compare actual header pixels across the composed production modules.
+        // Album/Activity wells must not change their title strip's palette.
+        let assert_common_headers = |rack: &Rack<'_>, image: &starkit::image::RgbaImage| {
+            let scale = u32::from(rack.density);
+            for action in [
+                "focus:player",
+                "fold:eq",
+                "fold:album",
+                "fold:activity",
+                "fold:playlist",
+            ] {
+                let hit = rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .hits
+                    .iter()
+                    .find(|hit| hit.action == action)
+                    .unwrap_or_else(|| panic!("missing header hit: {action}"));
+                // Whole-panel focus hits are clipped away when the body is
+                // below the viewport; title-strip hits remain available.
+                let inset = if action == "focus:player" {
+                    0
+                } else {
+                    7 * scale
+                };
+                for row in [7, 15, 30] {
+                    assert_eq!(
+                        image.get_pixel(
+                            u32::from(hit.rect.x) - inset + 250 * scale,
+                            u32::from(hit.rect.y) - inset + row * scale
+                        ),
+                        image.get_pixel(250 * scale, row * scale),
+                        "{action} header differs from Player/EQ at row {row}, density {scale}"
+                    );
+                }
+            }
+        };
         for id in crate::theme::builtin::ids() {
             rack.app.look.theme = crate::theme::builtin::load(id).unwrap();
             for (name, width, height, columns, rows) in
@@ -2848,6 +3828,41 @@ impl App {
                     }
                 }
                 let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                if name == "full" {
+                    assert_common_headers(&rack, &image);
+                }
+                if id == "winamp-classic" {
+                    // Theme selection must reproduce the actual reference-mode
+                    // artwork, not just a similar palette. Compare the rendered
+                    // rack at both responsive widths; only the footer's theme
+                    // name intentionally differs.
+                    rack.reference_colors = true;
+                    let reference =
+                        starkit::terminal_graphics::renderer::render_reference(&rack.scene(v))?;
+                    rack.reference_colors = false;
+                    let body_height = height - 32;
+                    assert!(
+                        starkit::image::imageops::crop_imm(&image, 0, 0, width, body_height)
+                            .to_image()
+                            == starkit::image::imageops::crop_imm(
+                                &reference,
+                                0,
+                                0,
+                                width,
+                                body_height
+                            )
+                            .to_image(),
+                        "Winamp Classic diverged from the stacked-rack artwork at {width}x{height}"
+                    );
+                    assert!(
+                        !starkit::image::imageops::crop_imm(&image, 0, body_height, width, 32)
+                            .to_image()
+                            .pixels()
+                            .any(|pixel| pixel.0[..3] == [0, 255, 0] && pixel.0[3] > 0),
+                        "Winamp Classic footer still uses the legacy neon green"
+                    );
+                    rack.scene(v);
+                }
                 let theme_rect = rack
                     .surface
                     .as_ref()
@@ -2920,6 +3935,10 @@ impl App {
         starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?
             .save(output.join("selected-rack-2x.png"))?;
         rack.reference_colors = false;
+        rack.app.look.theme = crate::theme::builtin::load("winamp-silver").unwrap();
+        let silver_2x = starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?;
+        assert_common_headers(&rack, &silver_2x);
+        silver_2x.save(output.join("winamp-silver-full-2x.png"))?;
         // Wide layouts share a row; narrow layouts stack, with no overlapping
         // drawing or hit geometry. Closing a module never stops its service.
         let vwide = Viewport {
@@ -3038,6 +4057,18 @@ impl App {
             .find(|h| h.action == "playlist:1")
             .unwrap()
             .rect;
+        let previous_cursor = rack.app.queue.cursor;
+        rack.input(Input::Pointer {
+            action: "down".into(),
+            button: 0,
+            x: hit.x / 10,
+            y: hit.y / 20,
+            pixel: Some([u32::from(hit.x + 2), u32::from(hit.y + 2)]),
+            modifiers: 0,
+        });
+        assert_eq!(rack.app.panels.focus, Focus::Playlist);
+        assert_eq!(rack.app.queue.cursor, previous_cursor);
+        assert!(rack.drag.is_none());
         rack.input(Input::Pointer {
             action: "down".into(),
             button: 0,
@@ -3056,6 +4087,31 @@ impl App {
         assert_eq!(rack.app.queue.cursor, cursor);
         assert_eq!(rack.app.queue.tagged, tags);
         assert!(Arc::ptr_eq(&owner, &rack.app.player));
+        let full = Rect::new(0, 0, v.columns, v.rows);
+        let regions = rack.app.regions(full).unwrap();
+        let volume_rect = rack
+            .app
+            .player_geometry(&regions)
+            .unwrap()
+            .controls
+            .volume
+            .unwrap();
+        let volume = rack.app.player.volume();
+        rack.app.player.set_volume(0.1);
+        rack.app.panels.focus = Focus::Playlist;
+        let mouse = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: volume_rect.x + volume_rect.width / 2,
+            row: volume_rect.y,
+            modifiers: KeyModifiers::empty(),
+        };
+        rack.app.handle_mouse(mouse, full);
+        assert_eq!(rack.app.panels.focus, Focus::Player);
+        assert!((rack.app.player.volume() - 0.1).abs() < 0.001);
+        rack.app.handle_mouse(mouse, full);
+        assert!(rack.app.player.volume() > 0.1);
+        rack.app.edit.drag = None;
+        rack.app.player.set_volume(volume);
         rack.presentation(false);
         rack.scene(v);
         rack.action("settings:eq", 0, 0);
@@ -3074,6 +4130,14 @@ impl App {
             click_button(rack, name, 0);
         }
         fn click_button(rack: &mut Rack<'_>, name: &str, button: u8) {
+            let focus = rack.app.panels.focus;
+            press_button(rack, name, button);
+            if rack.app.panels.focus != focus && rack.app.over.settings.is_none() {
+                rack.scene(rack.viewport);
+                press_button(rack, name, button);
+            }
+        }
+        fn press_button(rack: &mut Rack<'_>, name: &str, button: u8) {
             let surface = rack.surface.as_ref().unwrap();
             let rect = surface
                 .hits
@@ -3091,6 +4155,459 @@ impl App {
                 pixel: Some([u32::from(x), u32::from(y)]),
                 modifiers: 0,
             });
+        }
+        // A restored high-frequency profile must match the audio response on
+        // the first playback frame, without selecting and loading it again.
+        {
+            use crate::audio::dsp::apo::Profile;
+            use std::sync::atomic::Ordering::Relaxed;
+            let mut bob = Profile::legacy("Bob", 0., &[0.; 10]);
+            for (stage, hz, gain) in [(1, 33.4, 2.47), (5, 1217.4, 2.47), (10, 16998., -6.32)] {
+                if let Filter::Biquad {
+                    frequency, gain_db, ..
+                } = &mut bob.stages[stage].filter
+                {
+                    *frequency = hz;
+                    *gain_db = gain;
+                }
+            }
+            let file = bob.save_new_managed()?;
+            let mut restored_cfg = cfg.clone();
+            restored_cfg.eq.preset = "Bob".into();
+            restored_cfg.eq.enabled = true;
+            let original_eq =
+                std::mem::replace(&mut rack.app.eq, EqState::from_config(&restored_cfg));
+            let original_rate = rack.app.player.state.sample_rate.load(Relaxed);
+            let original_output_rate = rack.app.player.eq.load().sample_rate;
+            rack.app.player.state.sample_rate.store(0, Relaxed);
+            rack.app.apply_eq();
+            // The audio worker rebuilds at startup and when output formats
+            // change. Source metadata can remain 44.1 kHz under resampling.
+            for rate in [44100, 48000, 96000] {
+                rack.app.player.eq.rebuild(rate);
+                rack.app.player.state.sample_rate.store(44100, Relaxed);
+                rack.tick();
+                assert_eq!(rack.app.eq.active(), &bob);
+                assert_eq!(rack.app.eq.compiled_rate, rate);
+                let audio = rack.app.player.eq.load();
+                assert_eq!(audio.sample_rate, rate);
+                for hz in [16998., 1217.4, 33.4] {
+                    let drawn = rack
+                        .app
+                        .eq
+                        .compiled
+                        .magnitude_db_at(hz, rack.app.eq.compiled_rate);
+                    let heard = audio.magnitude_db_at(hz, rate);
+                    assert!((drawn - heard).abs() < 1e-6, "restored Bob response differs at {hz} Hz: graph {drawn} dB, audio {heard} dB");
+                }
+                rack.scene(v);
+                let restored_curve = rack.curve.as_ref().unwrap().points.clone();
+                rack.app.apply_eq();
+                rack.scene(v);
+                assert_eq!(
+                    rack.curve.as_ref().unwrap().points,
+                    restored_curve,
+                    "reapplying Bob must not repair or alter the restored graph"
+                );
+                assert_eq!(rack.app.player.eq.load().sample_rate, rate);
+            }
+            // Stopping playback must not turn a valid high-frequency profile
+            // into an 8 kHz display or change the saved file.
+            rack.app.player.state.sample_rate.store(0, Relaxed);
+            rack.tick();
+            assert_eq!(rack.app.eq.compiled_rate, 96000);
+            assert_eq!(Profile::parse_file(&file)?, bob);
+            assert!(rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .any(|n| matches!(n, Primitive::Text{text,..} if text == "Profile: Bob")));
+            rack.app.eq = original_eq;
+            rack.app
+                .player
+                .state
+                .sample_rate
+                .store(original_rate, Relaxed);
+            rack.app.player.eq.rebuild(original_output_rate);
+            rack.app.apply_eq();
+            std::fs::remove_file(file)?;
+        }
+        // Named profile workflows run against the isolated fixture directory,
+        // through the production native input path, never the user's EQ files.
+        {
+            use crate::audio::dsp::apo::{BiquadKind as K, ChannelMask, Profile, Stage};
+            let original_eq = std::mem::replace(&mut rack.app.eq, EqState::from_config(&cfg));
+            let original_theme = rack.app.look.theme.clone();
+            let original_reference = rack.reference_colors;
+            let original_offset = rack.offset;
+            rack.reference_colors = false;
+            rack.app.look.theme = crate::theme::builtin::load("winamp-silver").unwrap();
+            rack.offset = 0;
+            rack.app.panels.focus = Focus::Equalizer;
+            rack.app.eq.profile = 0;
+            let stage = |filter| Stage {
+                enabled: true,
+                channels: ChannelMask::ALL,
+                filter,
+            };
+            rack.app.eq.active_mut().stages = vec![
+                stage(Filter::Preamp { gain_db: -4. }),
+                stage(Filter::Biquad {
+                    kind: K::LowShelf,
+                    frequency: 70.,
+                    gain_db: 2.6,
+                    width: Width::Q(0.7),
+                    corner_frequency: false,
+                }),
+                stage(Filter::Biquad {
+                    kind: K::Peaking,
+                    frequency: 560.,
+                    gain_db: -3.8,
+                    width: Width::Q(1.4),
+                    corner_frequency: false,
+                }),
+                stage(Filter::Biquad {
+                    kind: K::HighShelf,
+                    frequency: 6300.,
+                    gain_db: 1.4,
+                    width: Width::Q(0.7),
+                    corner_frequency: false,
+                }),
+            ];
+            rack.app.finish_eq_edit();
+            let viewport = Viewport {
+                width: 1400,
+                height: 1200,
+                columns: 140,
+                rows: 60,
+                generation: 0,
+            };
+            // A handle sits on the combined curve, not at its individual
+            // gain. Grabbing it off-center must never rewrite the profile.
+            let initial = rack.app.eq.active().clone();
+            for density in [1u16, 2] {
+                let view = Viewport {
+                    width: viewport.width * u32::from(density),
+                    height: viewport.height * u32::from(density),
+                    ..viewport
+                };
+                rack.scene(view);
+                let hits = &rack.surface.as_ref().unwrap().hits;
+                let handle = hits.iter().find(|h| h.action == "eq-band:2").unwrap().rect;
+                let plot = hits.iter().find(|h| h.action == "eq-plot").unwrap().rect;
+                let origin = [
+                    handle.x + handle.width / 2 + 4 * density,
+                    handle.y + handle.height / 2 - 3 * density,
+                ];
+                let pointer = |rack: &mut Rack<'_>, action: &str, point: [u16; 2]| {
+                    rack.input(Input::Pointer {
+                        action: action.into(),
+                        button: 0,
+                        x: 0,
+                        y: 0,
+                        pixel: Some(point.map(u32::from)),
+                        modifiers: 0,
+                    });
+                };
+                pointer(&mut rack, "down", origin);
+                assert_eq!(rack.app.eq.stage, 2);
+                pointer(&mut rack, "drag", origin);
+                assert_eq!(*rack.app.eq.active(), initial, "pickup must not snap");
+                assert!(!rack.eq_dirty, "stationary pickup must not create an edit");
+                // Move one logical pixel, then beyond the original hit region.
+                // Repainting during a drag must not replace the original anchor.
+                for distance in [1, 30] {
+                    pointer(
+                        &mut rack,
+                        "drag",
+                        [
+                            origin[0] + distance * density,
+                            origin[1] - distance * density,
+                        ],
+                    );
+                    let Filter::Biquad {
+                        frequency, gain_db, ..
+                    } = rack.app.eq.active().stages[2].filter
+                    else {
+                        unreachable!()
+                    };
+                    let expected_hz = 560.
+                        * 1000f64.powf(f64::from(distance * density) / f64::from(plot.width - 1));
+                    let expected_db =
+                        -3.8 + f64::from(distance * density) * 24. / f64::from(plot.height - 1);
+                    assert!((frequency - expected_hz).abs() < 1e-9);
+                    assert!((gain_db - expected_db).abs() < 1e-9);
+                    rack.scene(view);
+                }
+                pointer(&mut rack, "drag", origin);
+                assert_eq!(
+                    *rack.app.eq.active(),
+                    initial,
+                    "returning to pickup must restore exact unrounded parameters"
+                );
+                pointer(&mut rack, "up", origin);
+                assert!(rack.eq_drag.is_none() && !rack.eq_dirty);
+                pointer(&mut rack, "drag", [origin[0] + 20, origin[1]]);
+                assert_eq!(*rack.app.eq.active(), initial, "release must end capture");
+                pointer(&mut rack, "down", origin);
+                pointer(&mut rack, "drag", [origin[0], origin[1] + density]);
+                rack.input(Input::CancelPointer);
+                assert!(rack.eq_drag.is_none() && !rack.eq_dirty);
+                let cancelled = rack.app.eq.active().clone();
+                pointer(&mut rack, "drag", origin);
+                assert_eq!(*rack.app.eq.active(), cancelled, "cancel must end capture");
+                *rack.app.eq.active_mut() = initial.clone();
+                rack.app.finish_eq_edit();
+            }
+            rack.scene(viewport);
+            click(&mut rack, "eq-save-current");
+            assert!(matches!(
+                rack.app.edit.eq_value.as_ref().unwrap().field,
+                EqField::SaveAsProfile
+            ));
+            rack.input(Input::Key {
+                code: "char:u".into(),
+                modifiers: KeyModifiers::CONTROL.bits(),
+            });
+            rack.input(Input::Paste {
+                text: "Headphone reference".into(),
+            });
+            let stage_before = rack.app.eq.stage;
+            rack.input(Input::Key {
+                code: "right".into(),
+                modifiers: 0,
+            });
+            assert_eq!(
+                rack.app.eq.stage, stage_before,
+                "name forms must own navigation keys"
+            );
+            for density in [1, 2] {
+                let view = Viewport {
+                    width: 1400 * density,
+                    height: 1200 * density,
+                    columns: 140,
+                    rows: 60,
+                    generation: 0,
+                };
+                let scene = rack.scene(view);
+                assert!(rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .hits
+                    .iter()
+                    .any(|h| h.action == "eq-form:accept"));
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("eq-save-as-{density}x.png")))?;
+            }
+            click(&mut rack, "eq-form:accept");
+            assert!(rack.app.edit.eq_value.is_none());
+            assert_eq!(rack.app.eq.active().name, "Headphone reference");
+            let headphone = rack.app.eq.profile;
+            let path = rack.app.eq.active().managed_path()?;
+            let saved = std::fs::read(&path)?;
+            if let Filter::Biquad { gain_db, .. } = &mut rack.app.eq.active_mut().stages[2].filter {
+                *gain_db = -4.2;
+            }
+            rack.app.finish_eq_edit();
+            assert_eq!(
+                std::fs::read(&path)?,
+                saved,
+                "editing must not overwrite a saved profile"
+            );
+            assert!(rack.app.eq.modified(headphone));
+            let recovered = EqState::from_config(&cfg);
+            assert_eq!(
+                recovered.active(),
+                rack.app.eq.active(),
+                "restart must recover the working curve"
+            );
+            assert!(recovered.modified(recovered.profile));
+            rack.app.select_eq_profile(0);
+            rack.app.select_eq_profile(headphone);
+            assert!(
+                rack.app.eq.modified(headphone),
+                "switching must retain unsaved edits"
+            );
+            rack.app.save_eq_profile();
+            assert!(!rack.app.eq.modified(headphone));
+            assert_ne!(std::fs::read(&path)?, saved);
+            assert_eq!(Profile::parse_file(&path)?, *rack.app.eq.active());
+            // Save As detects collisions and leaves both the name form and
+            // original file intact, so the user can fix the name or cancel.
+            rack.app.begin_eq_name(EqField::SaveAsProfile);
+            rack.app.edit.eq_value.as_mut().unwrap().value = "Headphone reference".into();
+            rack.app
+                .eq_value_type(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+            assert!(!rack.app.edit.eq_value.as_ref().unwrap().error.is_empty());
+            rack.app
+                .eq_value_type(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+            rack.app
+                .commit_eq_name(EqField::SaveAsProfile, "Studio speakers", headphone)?;
+            let speakers = rack.app.eq.profile;
+            rack.app.select_eq_profile(headphone);
+            rack.app
+                .commit_eq_name(EqField::RenameProfile, "Studio monitors", speakers)?;
+            assert_eq!(
+                rack.app.eq.profile, headphone,
+                "renaming another profile must not load it"
+            );
+            assert!(!crate::paths::equalizer_dir()?
+                .join("Studio speakers.txt")
+                .exists());
+            assert!(crate::paths::equalizer_dir()?
+                .join("Studio monitors.txt")
+                .exists());
+            // Search owns letter keys while the modal is open; choosing a row
+            // does not change audio until Load, and delete requires confirmation.
+            rack.app.open_eq_profiles();
+            rack.input(Input::Paste {
+                text: "STUDIO monitors".into(),
+            });
+            rack.scene(viewport);
+            assert_eq!(
+                rack.app
+                    .edit
+                    .eq_profiles
+                    .as_ref()
+                    .unwrap()
+                    .matches(&rack.app.eq),
+                [speakers]
+            );
+            click(&mut rack, "eq-library:row:0");
+            assert_eq!(rack.app.eq.profile, headphone);
+            click(&mut rack, "eq-library:delete");
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:cancel-delete");
+            assert!(crate::paths::equalizer_dir()?
+                .join("Studio monitors.txt")
+                .exists());
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:delete");
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:confirm-delete");
+            assert!(!crate::paths::equalizer_dir()?
+                .join("Studio monitors.txt")
+                .exists());
+            rack.app.eq_library_action("close");
+            // Reverting is explicit and confirmed, and leaves the saved file intact.
+            if let Filter::Biquad { gain_db, .. } = &mut rack.app.eq.active_mut().stages[2].filter {
+                *gain_db = -8.;
+            }
+            rack.app.finish_eq_edit();
+            rack.app.open_eq_profiles();
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:revert");
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:cancel-delete");
+            assert!(rack.app.eq.modified(headphone));
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:revert");
+            rack.scene(viewport);
+            click(&mut rack, "eq-library:confirm-revert");
+            assert!(!rack.app.eq.modified(headphone));
+            assert_eq!(Profile::parse_file(&path)?, *rack.app.eq.active());
+            rack.app.eq_library_action("close");
+            // External changes are never silently overwritten or deleted.
+            let disk_before = std::fs::read(&path)?;
+            let mut external = rack.app.eq.active().clone();
+            if let Filter::Preamp { gain_db } = &mut external.stages[0].filter {
+                *gain_db = -6.;
+            }
+            std::fs::write(&path, external.to_apo())?;
+            let external_bytes = std::fs::read(&path)?;
+            rack.app.save_eq_profile();
+            assert_eq!(std::fs::read(&path)?, external_bytes);
+            std::fs::write(&path, &disk_before)?;
+            // A file absent from the in-memory library still cannot be clobbered by Save As.
+            let occupied = crate::paths::equalizer_dir()?.join("Occupied.txt");
+            std::fs::write(&occupied, "external file")?;
+            assert!(rack
+                .app
+                .commit_eq_name(EqField::SaveAsProfile, "Occupied", headphone)
+                .is_err());
+            assert_eq!(std::fs::read_to_string(&occupied)?, "external file");
+            std::fs::remove_file(occupied)?;
+            // Restore the reference sample's gain for native visual captures.
+            if let Filter::Biquad { gain_db, .. } = &mut rack.app.eq.active_mut().stages[2].filter {
+                *gain_db = -3.8;
+            }
+            rack.app.finish_eq_edit();
+            rack.app.save_eq_profile();
+            rack.app.eq.stage = 2;
+            for density in [1, 2] {
+                let view = Viewport {
+                    width: 1400 * density,
+                    height: 1200 * density,
+                    columns: 140,
+                    rows: 60,
+                    generation: 0,
+                };
+                let scene = rack.scene(view);
+                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                image.save(output.join(format!("eq-reference-rack-{density}x.png")))?;
+                starkit::image::imageops::crop_imm(
+                    &image,
+                    0,
+                    238 * density,
+                    1400 * density,
+                    294 * density,
+                )
+                .to_image()
+                .save(output.join(format!("eq-reference-{density}x.png")))?;
+                let surface = rack.surface.as_ref().unwrap();
+                assert_eq!(
+                    surface
+                        .hits
+                        .iter()
+                        .filter(|h| h.action.starts_with("eq-band:"))
+                        .count(),
+                    3
+                );
+                assert!(surface
+                    .nodes
+                    .iter()
+                    .any(|n| matches!(n,Primitive::Text{text,..}if text=="BAND 2 · PEAKING")));
+                for action in ["eq-frequency", "eq-gain", "eq-width", "eq-channels"] {
+                    assert!(surface.hits.iter().any(|h| h.action == action));
+                }
+                click(&mut rack, "eq-profiles");
+                let scene = rack.scene(view);
+                let surface = rack.surface.as_ref().unwrap();
+                assert!(surface.hits.iter().any(|h| h.action == "eq-library:load"));
+                assert!(
+                    !surface.hits.iter().any(|h| h.action == "eq-plot"),
+                    "modal must hide underlying controls"
+                );
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("eq-profiles-{density}x.png")))?;
+                click(&mut rack, "eq-library:close");
+            }
+            for density in [1, 2] {
+                let view = Viewport {
+                    width: 900 * density,
+                    height: 700 * density,
+                    columns: 90,
+                    rows: 35,
+                    generation: 0,
+                };
+                let scene = rack.scene(view);
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("eq-reference-narrow-{density}x.png")))?;
+                click(&mut rack, "eq-profiles");
+                let scene = rack.scene(view);
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("eq-profiles-narrow-{density}x.png")))?;
+                click(&mut rack, "eq-library:close");
+            }
+            rack.app.eq = original_eq;
+            rack.app.look.theme = original_theme;
+            rack.reference_colors = original_reference;
+            rack.offset = original_offset;
+            rack.app.apply_eq();
+            rack.scene(v);
         }
         rack.app.player.queue.lock().unwrap().set_shuffle(false);
         for density in [1, 2] {
@@ -3110,6 +4627,20 @@ impl App {
                 ("settings:activity", Focus::History),
                 ("settings:playlist", Focus::Playlist),
             ] {
+                rack.app.panels.focus = if focus == Focus::Player {
+                    Focus::Playlist
+                } else {
+                    Focus::Player
+                };
+                rack.scene(viewport);
+                press_button(&mut rack, name, 0);
+                assert_eq!(rack.app.panels.focus, focus);
+                assert!(
+                    rack.app.over.settings.is_none(),
+                    "first click only selects {name}"
+                );
+                assert!(rack.drag.is_none());
+                assert!(rack.skin.pressed.is_none());
                 rack.scene(viewport);
                 click(&mut rack, name);
                 let settings = rack.app.over.settings.as_ref().expect(name);
@@ -3171,6 +4702,33 @@ impl App {
             assert_ne!(rack.app.eq.enabled, enabled);
             let volume = rack.app.player.volume();
             rack.app.player.set_volume(0.1);
+            rack.app.panels.focus = Focus::Playlist;
+            rack.scene(viewport);
+            press_button(&mut rack, "volume", 0);
+            assert_eq!(rack.app.panels.focus, Focus::Player);
+            let rect = rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .find(|hit| hit.action == "volume")
+                .unwrap()
+                .rect;
+            for action in ["drag", "up"] {
+                rack.input(Input::Pointer {
+                    action: action.into(),
+                    button: 0,
+                    x: 0,
+                    y: 0,
+                    pixel: Some([u32::from(rect.x + rect.width - 1), u32::from(rect.y)]),
+                    modifiers: 0,
+                });
+            }
+            assert!(
+                (rack.app.player.volume() - 0.1).abs() < 0.001,
+                "selecting the player must not start a volume drag"
+            );
             click(&mut rack, "volume");
             assert!((rack.app.player.volume() - 0.5).abs() < 0.05);
             rack.app.player.set_volume(volume);
@@ -3321,12 +4879,19 @@ impl App {
                 let accent = rack.palette().accent;
                 assert_eq!(
                     image
+                        .get_pixel(u32::from(rect.x + rect.width / 2), u32::from(rect.y))
+                        .0,
+                    [accent[0], accent[1], accent[2], 255]
+                );
+                assert_ne!(
+                    image
                         .get_pixel(
                             u32::from(rect.x + rect.width / 2),
                             u32::from(rect.y) + density
                         )
                         .0,
-                    [accent[0], accent[1], accent[2], 255]
+                    [accent[0], accent[1], accent[2], 255],
+                    "{name}: focus border must be one logical pixel thick"
                 );
                 if name == "playlist" {
                     image.save(output.join(format!("kanagawa-grouped-focus-{density}x.png")))?;
@@ -3351,6 +4916,15 @@ impl App {
             playlist::Row::Track(i) => rack.app.queue.items[i].clone(),
             _ => panic!("expected track"),
         };
+        rack.app.panels.focus = Focus::Player;
+        let cursor = rack.app.queue.cursor;
+        press_button(&mut rack, "playlist:2", 1);
+        assert_eq!(rack.app.panels.focus, Focus::Playlist);
+        assert_eq!(rack.app.queue.cursor, cursor);
+        assert!(
+            rack.app.over.playlist_add.is_none(),
+            "first right-click only selects"
+        );
         click_button(&mut rack, "playlist:2", 1);
         let context_scene = rack.scene(viewport);
         assert_eq!(
@@ -3774,6 +5348,7 @@ impl App {
                 rack.app.queue.fold_gen += 1;
                 rack.app.queue.cursor = 0;
                 rack.app.queue.scroll = 0;
+                rack.app.panels.focus = Focus::Playlist;
                 rack.playlist_scrolled = None;
                 rack.scene(v);
                 if folded {
@@ -3799,7 +5374,7 @@ impl App {
                     matches!(node,
                     Primitive::Fill { rect, color, .. } if rect.x == track.x + 6 * density as u16
                         && rect.y == track.y + thumb.start && rect.height == thumb.len
-                        && color == &crate::embed::skin::colors(&rack.palette()).accent)
+                        && color == &rack.selection_color())
                 });
                 assert!(
                     painted,

@@ -11,6 +11,16 @@ use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Sur
 pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
+/// Common title strip for every rack module, including the embedded player.
+pub(crate) fn panel_header(
+    surface: &mut Surface,
+    width: u16,
+    colors: &starkit::native_surface::classic::Colors,
+) {
+    let rect = R::new(7, 7, width.saturating_sub(14), 24);
+    surface.fill(rect, &colors.title, 2);
+    heading_depth(surface, rect, &colors.title, &colors.ink);
+}
 /// A restrained raised edge, independent of the heading's text metrics.
 pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, ink: &str) {
     use starkit::theme::color::Rgb;
@@ -34,20 +44,13 @@ pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, in
     );
 }
 
-/// Two logical pixels of accent, preserving the existing pane bounds.
+/// A single accent stroke follows the unskinned pane frame's corner geometry.
 pub(crate) fn focus_outline(surface: &mut Surface, accent: &str, radius: u16) {
-    for inset in [1, 2] {
-        surface.nodes.push(Primitive::Border {
-            rect: R::new(
-                inset,
-                inset,
-                surface.width - inset * 2,
-                surface.height - inset * 2,
-            ),
-            color: accent.into(),
-            radius: radius.saturating_sub(inset),
-        });
-    }
+    surface.nodes.push(Primitive::Border {
+        rect: R::new(0, 0, surface.width, surface.height),
+        color: accent.into(),
+        radius,
+    });
 }
 /// Draw the same centered close mark in player pickers and rack headers.
 /// The hit target is larger than the mark and independent of font metrics.
@@ -158,7 +161,8 @@ fn player_button(
 ) {
     if let Some(art) = art {
         art.button(s, r, action, active);
-        if art.fixed_label(s, r, text, &art.button_ink(action, active), true) {
+        let face = super::skin::button_rect(r);
+        if art.fixed_label(s, face, text, &art.button_ink(action, active), true) {
             s.hits.push(HitRegion {
                 rect: r,
                 action: action.into(),
@@ -166,22 +170,26 @@ fn player_button(
             return;
         }
         let text_width = (text.chars().count() as u16)
-            .saturating_mul(size)
-            .saturating_mul(3)
-            / 5;
-        let pad = r
+            .saturating_mul(7)
+            .saturating_add(6);
+        let pad = face
             .width
             .saturating_sub(text_width)
             .saturating_div(2)
             .max(3)
-            .min(r.width / 4);
+            .min(face.width / 4);
         starkit::native_surface::classic::label(
             s,
-            R::new(r.x + pad, r.y, r.width.saturating_sub(pad * 2), r.height),
+            R::new(
+                face.x + pad,
+                face.y,
+                face.width.saturating_sub(pad * 2),
+                face.height,
+            ),
             text,
             &art.button_ink(action, active),
-            size,
-            active,
+            11,
+            true,
         );
         s.hits.push(HitRegion {
             rect: r,
@@ -193,6 +201,9 @@ fn player_button(
 }
 
 pub(super) trait PlayerArtwork {
+    fn readout_advance(&self, size: u16) -> Option<u16>;
+    fn readout_width(&self, text: &str, size: u16) -> Option<u16>;
+    fn readout(&self, s: &mut Surface, rect: R, text: &str, color: &str, size: u16) -> bool;
     fn fixed_label(
         &self,
         s: &mut Surface,
@@ -208,6 +219,19 @@ pub(super) trait PlayerArtwork {
     fn transport_icon(&self, s: &mut Surface, rect: R, action: &str, active: bool);
 }
 
+fn player_readout(
+    artwork: Option<&dyn PlayerArtwork>,
+    s: &mut Surface,
+    rect: R,
+    text: &str,
+    color: &str,
+    size: u16,
+) {
+    if !artwork.is_some_and(|art| art.readout(s, rect, text, color, size)) {
+        starkit::native_surface::classic::label(s, rect, text, color, size, false);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn player_surface(
     w: u16,
@@ -220,7 +244,7 @@ pub(super) fn player_surface(
 ) -> Surface {
     use starkit::native_surface::classic::{self, Colors};
     let m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
-    let c = if artwork.is_some() {
+    let mut c = if artwork.is_some() {
         super::skin::colors(palette)
     } else {
         Colors::new(
@@ -231,6 +255,9 @@ pub(super) fn player_surface(
             palette.border,
         )
     };
+    if let Some(inset) = palette.inset_bg {
+        c.inset = hex(inset);
+    }
     let accent = c.accent.clone();
     let border = hex(palette.border);
     let header_ink = super::skin::tone(palette, "#bbc6d5", true);
@@ -244,8 +271,7 @@ pub(super) fn player_surface(
     }
     let pad = if artwork.is_some() { 14 } else { 12 };
     player_frame(artwork, &mut s, R::new(0, 0, w, h), &c, radius, false);
-    s.fill(R::new(7, 7, w - 14, 24), &c.title, 2);
-    heading_depth(&mut s, R::new(7, 7, w - 14, 24), &c.title, &c.ink);
+    panel_header(&mut s, w, &c);
     let header = 24;
     if !artwork.is_some_and(|art| {
         art.fixed_label(
@@ -271,7 +297,7 @@ pub(super) fn player_surface(
             R::new(w.saturating_sub(218), 7, 108, 24),
             "bit-perfect",
             &c.dim,
-            12,
+            10,
             false,
         );
     }
@@ -477,28 +503,49 @@ pub(super) fn player_surface(
         false,
     );
     let pad = if artwork.is_some() { 16 } else { 12 };
-    let time_w = if artwork.is_some() {
-        62
-    } else {
-        (m.font * 5).min(w / 5)
+    // Skin readouts use their actual bitmap ink bounds, independent of the
+    // terminal's font metrics. Both ends of each track meet the same ink gap.
+    let text_width = |text: &str, size: u16| {
+        artwork
+            .and_then(|art| art.readout_width(text, size))
+            .unwrap_or_else(|| (text.chars().count() as u16 * size * 3).div_ceil(4) + 2)
     };
-    classic::label(
+    let track_gap = 24;
+    let time_font = if artwork.is_some() { 13 } else { m.font };
+    let elapsed = clock(state.position);
+    let total = clock(state.duration);
+    let elapsed_ink = text_width(&elapsed, time_font).min(w / 5);
+    let elapsed_width = artwork
+        .and_then(|art| art.readout_advance(time_font))
+        .map(|advance| advance * elapsed.chars().count() as u16)
+        .unwrap_or(elapsed_ink)
+        .max(elapsed_ink)
+        .min(w / 5);
+    let total_width = text_width(&total, time_font).min(w / 5);
+    player_readout(
+        artwork,
         &mut s,
-        R::new(pad, seek_y, time_w, header),
-        clock(state.position),
+        R::new(
+            pad + elapsed_width - elapsed_ink,
+            seek_y,
+            elapsed_ink,
+            header,
+        ),
+        &elapsed,
         &c.dim,
-        m.font,
-        false,
+        time_font,
     );
-    classic::label(
+    let total_x = w - pad - total_width;
+    player_readout(
+        artwork,
         &mut s,
-        R::new(w - pad - time_w, seek_y, time_w, header),
-        clock(state.duration),
+        R::new(total_x, seek_y, total_width, header),
+        &total,
         &c.dim,
-        m.font,
-        false,
+        time_font,
     );
-    let seek = R::new(pad + time_w, seek_y, w - pad * 2 - time_w * 2, header);
+    let seek_x = pad + elapsed_width + track_gap;
+    let seek = R::new(seek_x, seek_y, total_x - track_gap - seek_x, header);
     let fraction = if state.duration > 0. {
         (state.position / state.duration).clamp(0., 1.)
     } else {
@@ -622,23 +669,46 @@ pub(super) fn player_surface(
         }
     }
     let volume_w = 130.min(w / 5);
-    let volume = R::new(w - 50 - volume_w, controls_y, volume_w, button);
+    let track_gap = 18;
+    let volume_font = if artwork.is_some() {
+        11
+    } else {
+        m.font.saturating_sub(2)
+    };
+    let value_width = text_width("100", volume_font);
+    let volume = R::new(
+        w - pad - value_width - track_gap - volume_w,
+        controls_y,
+        volume_w,
+        button,
+    );
     if volume.x > pad + 5 * (button + 6) + 24 {
-        classic::label(
+        let caption_width = text_width("VOL", volume_font);
+        player_readout(
+            artwork,
             &mut s,
-            R::new(volume.x.saturating_sub(40), controls_y, 34, button),
+            R::new(
+                volume.x - track_gap - caption_width,
+                controls_y,
+                caption_width,
+                button,
+            ),
             "VOL",
             &c.dim,
-            m.font.saturating_sub(2),
-            false,
+            volume_font,
         );
-        classic::label(
+        player_readout(
+            artwork,
             &mut s,
-            R::new(w - 40, controls_y, 28, button),
-            format!("{:.0}", state.volume * 100.),
+            R::new(
+                volume.x + volume.width + track_gap,
+                controls_y,
+                value_width,
+                button,
+            ),
+            &format!("{:.0}", state.volume * 100.),
             &c.ink,
-            m.font.saturating_sub(2),
-            false,
+            volume_font,
         );
         s.fill(
             R::new(volume.x, volume.y + button / 2, volume.width, 3),

@@ -123,6 +123,8 @@ pub const PRESETS: &[Preset] = &[
 /// What the audio callback reads. Immutable once published.
 #[derive(Debug, Clone)]
 pub struct EqSettings {
+    /// Device rate used to compile this immutable set of coefficients.
+    pub sample_rate: u32,
     pub enabled: bool,
     pub preamp_db: f32,
     pub coeffs: [Coeffs; 10],
@@ -178,6 +180,7 @@ impl EqSettings {
             coeffs[i] = Coeffs::peaking(BANDS[i], Q, g as f64, sample_rate as f64);
         }
         Self {
+            sample_rate,
             enabled,
             preamp_db,
             coeffs,
@@ -320,6 +323,7 @@ impl EqSettings {
                 _ => false,
             });
         Self {
+            sample_rate,
             enabled,
             preamp_db: 0.0,
             coeffs: [Coeffs::IDENTITY; 10],

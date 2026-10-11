@@ -65,6 +65,9 @@ const EXTENSIONS: &[&str] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Palette {
     pub bg: [u8; 3],
+    /// Optional inset surface color; older hosts keep the derived background.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inset_bg: Option<[u8; 3]>,
     pub fg: [u8; 3],
     pub muted: [u8; 3],
     pub accent: [u8; 3],

@@ -330,10 +330,12 @@ impl Profile {
     }
 
     pub fn save_managed(&self) -> Result<PathBuf> {
+        self.save_managed_at(&self.managed_path()?)
+    }
+    pub(crate) fn save_managed_at(&self, path: &Path) -> Result<PathBuf> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SERIAL: AtomicU64 = AtomicU64::new(0);
 
-        let path = self.managed_path()?;
         let parent = path.parent().expect("managed profile has a parent");
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating {}", parent.display()))?;
@@ -341,7 +343,28 @@ impl Profile {
         let tmp = path.with_extension(format!("txt.tmp-{}-{serial}", std::process::id()));
         std::fs::write(&tmp, self.to_apo())
             .with_context(|| format!("writing {}", tmp.display()))?;
-        std::fs::rename(&tmp, &path).with_context(|| format!("saving {}", path.display()))?;
+        std::fs::rename(&tmp, path).with_context(|| format!("saving {}", path.display()))?;
+        Ok(path.to_path_buf())
+    }
+
+    /// Publish a newly named profile without replacing an existing file.
+    pub fn save_new_managed(&self) -> Result<PathBuf> {
+        use std::io::Write;
+        self.validate()?;
+        if self.stages.is_empty() {
+            bail!("Add a filter before saving this profile.");
+        }
+        let path = self.managed_path()?;
+        let parent = path.parent().expect("managed profile has a parent");
+        std::fs::create_dir_all(parent)?;
+        let mut file = tempfile::NamedTempFile::new_in(parent)?;
+        file.write_all(self.to_apo().as_bytes())?;
+        file.persist_noclobber(&path).with_context(|| {
+            format!(
+                "A profile already exists or cannot be saved at {}",
+                path.display()
+            )
+        })?;
         Ok(path)
     }
 }

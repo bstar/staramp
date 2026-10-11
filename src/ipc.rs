@@ -494,7 +494,7 @@ fn handle_with_activity(
             if let Err(error) = request.profile.validate() {
                 return format!("error: invalid EQ profile: {error}");
             }
-            let rate = player.state.sample_rate.load(Ordering::Relaxed).max(8_000) as u32;
+            let rate = player.eq.load().sample_rate;
             player.set_eq_profile(request.enabled, request.profile, rate);
             "ok".into()
         }
@@ -1197,6 +1197,8 @@ mod tests {
     #[test]
     fn a_follower_can_publish_the_eq_to_the_audio_owner() {
         let player = Player::detached();
+        player.eq.rebuild(96_000);
+        player.state.sample_rate.store(44_100, Ordering::Relaxed);
         let profile = crate::audio::dsp::apo::Profile::legacy("remote", -3.0, &[0.0; 10]);
         let request = serde_json::json!({ "enabled": true, "profile": profile });
         assert_eq!(
@@ -1208,6 +1210,11 @@ mod tests {
             "ok"
         );
         assert!(!player.eq.load().is_transparent());
+        assert_eq!(
+            player.eq.load().sample_rate,
+            96_000,
+            "loading EQ must retain the owner's output rate"
+        );
 
         let invalid = r#"set-eq {"enabled":true,"profile":{"name":"bad","stages":[{"enabled":true,"channels":18446744073709551615,"filter":{"Iir":{"numerator":[],"denominator":[]}}}]}}"#;
         assert!(handle(&player, &crate::view::shared(), invalid).starts_with("error:"));

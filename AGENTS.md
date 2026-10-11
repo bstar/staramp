@@ -277,8 +277,9 @@ output is the default and does not capture or relay samples.
 
 ## Active Classic skin work
 
-The ongoing skin work is in the sibling `staramp-graphical` worktree on
-`feature/skinned-native-ui`, with generic foundation work in `starkit-amp-rack`.
+The skin implementation is on `main`; the active desktop checkout is the
+sibling `staramp-graphical` worktree, with generic foundation work in
+`starkit-amp-rack`.
 The full recovered seven-step plan is in `docs/graphical/README.md` under
 "Recovered skin implementation plan". On 2026-10-09 the user explicitly selected
 **01 — Classic stacked rack · parametric EQ** and required precise bitmap artwork

@@ -248,9 +248,8 @@
             # scripts/check-version.sh reads `cargo metadata`.
             jq
             # The licence and advisory gate CI runs, so it can be run here
-            # first. It matters more now than it did: `deny.toml` allows one
-            # git source, and the check that the allowlist still has exactly
-            # one entry in it is this command.
+            # first. `deny.toml` restricts git sources to KIT and the pinned
+            # upstream Crossterm parser fix; this checks that allowlist too.
             cargo-deny
           ])
           ++ buildTools ++ runtimeLibs;

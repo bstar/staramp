@@ -92,9 +92,10 @@ visualizer targets. Other buttons and clicks outside targets have no effect.
 The first response is
 `{"type":"hello","protocol":1,"extensions":[...],"capabilities":["transport_images","player_styles"]}`.
 The service then sends `status` when playback state or title changes. A status
-contains `playing`, `paused`, `title`, and an optional absolute `path` for the
+contains `playing`, `paused`, `loading`, `title`, and an optional absolute `path` for the
 current track, which lets the host open that track externally after next or
-previous. It sends `error`
+previous. `loading` covers foreground opening and initial buffering; the player
+display also shows this wait. Older services omit it (treat as false). It sends `error`
 for a failed request or playback problem, and `frame` while configured. A frame
 has `generation`, `width`, `height`, and exactly `width * height` row-major
 `cells`. Every cell has `symbol`, RGB `fg` and `bg` triples, and `modifiers`,

@@ -18,6 +18,8 @@ use crate::playlist::queue::QueueItem;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MirrorState {
     pub state: String,
+    /// Absent on older owners, which continue to report the transport state.
+    pub loading: bool,
     pub artist: String,
     pub title: String,
     /// The leader's current track URI, for looking the album up in the index.
@@ -225,6 +227,7 @@ pub fn parse_state(src: &str) -> Option<MirrorState> {
     let num = |k: &str| field(src, k).and_then(|v| v.parse::<f64>().ok());
     Some(MirrorState {
         state: field(src, "state").unwrap_or("stopped").to_string(),
+        loading: field(src, "loading") == Some("true"),
         artist: field(src, "artist").map(unescape).unwrap_or_default(),
         title: field(src, "title").map(unescape).unwrap_or_default(),
         uri: field(src, "uri").map(unescape).unwrap_or_default(),

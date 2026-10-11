@@ -1087,6 +1087,7 @@ mod tests {
             subtitle: "Homogenic".into(),
             tech: "FLAC · 44.1 kHz · 16-bit".into(),
             state: PlayState::Playing,
+            loading: false,
             position: 30.,
             duration: 120.,
             volume: 0.5,

@@ -86,6 +86,33 @@ fn clock(seconds: f64) -> String {
     format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
+/// Indeterminate progress belongs in the display, without covering transport controls.
+fn loading_indicator(s: &mut Surface, rect: R, ink: &str, accent: &str, phase: f32, font: u16) {
+    let line = (font + 8).min(rect.height);
+    s.text(
+        R::new(rect.x, rect.y, rect.width, line),
+        "LOADING TRACK…",
+        ink,
+        font,
+        true,
+    );
+    if rect.height > line + 4 && rect.width > 4 {
+        let width = (rect.width / 6).max(4);
+        let travel = rect.width - width;
+        let progress = 1. - (phase.clamp(0., 1.) * 2. - 1.).abs();
+        s.fill(
+            R::new(
+                rect.x + (f32::from(travel) * progress) as u16,
+                rect.y + line + 2,
+                width,
+                3,
+            ),
+            accent,
+            0,
+        );
+    }
+}
+
 pub fn surface(
     width: u16,
     height: u16,
@@ -334,10 +361,14 @@ pub(super) fn player_surface(
     classic::label(
         &mut s,
         R::new(pad + 12, display_y + display_h - 24, clock_w - 16, 20),
-        match state.state {
-            PlayState::Playing => "PLAY · STEREO",
-            PlayState::Paused => "PAUSE · STEREO",
-            PlayState::Stopped => "STOP",
+        if state.loading {
+            "LOADING"
+        } else {
+            match state.state {
+                PlayState::Playing => "PLAY · STEREO",
+                PlayState::Paused => "PAUSE · STEREO",
+                PlayState::Stopped => "STOP",
+            }
         },
         &accent,
         m.font.saturating_sub(2).max(1),
@@ -353,7 +384,16 @@ pub(super) fn player_surface(
     };
     let pad = pad * 2;
     if analyzer_height > 2 {
-        if state.vis_mode.needs_waveform() {
+        if state.loading {
+            loading_indicator(
+                &mut s,
+                R::new(x, analyzer_top, width, analyzer_height),
+                &fg,
+                &accent,
+                state.seek_phase,
+                m.font,
+            );
+        } else if state.vis_mode.needs_waveform() {
             let count = width.clamp(1, 256);
             let step = (width / count).max(1);
             let mut previous = analyzer_height / 2;
@@ -489,7 +529,9 @@ pub(super) fn player_surface(
     classic::label(
         &mut s,
         R::new(x, display_y + display_h - header, width, header),
-        if state.bit_perfect && artwork.is_none() {
+        if state.loading {
+            "Opening audio · waiting for media".into()
+        } else if state.bit_perfect && artwork.is_none() {
             format!("{} · BIT PERFECT", state.tech)
         } else {
             state.tech.clone()
@@ -603,8 +645,9 @@ pub(super) fn player_surface(
         .enumerate()
     {
         let rect = R::new(pad + i as u16 * (button + 6), controls_y, button, button);
-        let active = (*name == "play" && state.state == PlayState::Playing)
-            || (*name == "pause" && state.state == PlayState::Paused);
+        let active = !state.loading
+            && ((*name == "play" && state.state == PlayState::Playing)
+                || (*name == "pause" && state.state == PlayState::Paused));
         player_button(artwork, &mut s, rect, &c, "", name, m.font, active);
         if let Some(art) = artwork {
             art.transport_icon(&mut s, rect, name, active);
@@ -1047,7 +1090,12 @@ fn compact_surface(
     let border = hex(palette.border);
     let mut s = Surface::new(w, h, hex(palette.bg));
     if w < 128 || h < 64 {
-        s.text(R::new(0, 0, w, h), &state.title, &fg, m.font, false);
+        let title = if state.loading {
+            format!("LOADING… {}", state.title)
+        } else {
+            state.title.clone()
+        };
+        s.text(R::new(0, 0, w, h), title, &fg, m.font, false);
         return s;
     }
     // Compact sizes keep title, seeking and transport; the analyzer takes the slack.
@@ -1059,7 +1107,11 @@ fn compact_surface(
     let seek_y = controls_y.saturating_sub(line + m.small);
     s.text(
         R::new(pad, pad, inner, line),
-        &state.title,
+        if state.loading {
+            format!("LOADING… {}", state.title)
+        } else {
+            state.title.clone()
+        },
         &fg,
         m.font,
         true,
@@ -1086,7 +1138,16 @@ fn compact_surface(
         );
         let x = pad + clock_w + m.gap.min(inner / 10);
         let width = w.saturating_sub(pad + x);
-        if state.vis_mode.needs_waveform() {
+        if state.loading {
+            loading_indicator(
+                &mut s,
+                R::new(x, analyzer_top, width, analyzer_height),
+                &fg,
+                &accent,
+                state.seek_phase,
+                m.font,
+            );
+        } else if state.vis_mode.needs_waveform() {
             let count = width.clamp(1, 256);
             let step = (width / count).max(1);
             let mut previous = analyzer_height / 2;
@@ -1254,8 +1315,8 @@ fn compact_surface(
         inner,
         m,
         palette,
-        state.state == PlayState::Playing,
-        state.state == PlayState::Paused,
+        !state.loading && state.state == PlayState::Playing,
+        !state.loading && state.state == PlayState::Paused,
         state.volume,
         false,
     );

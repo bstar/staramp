@@ -596,7 +596,7 @@ fn handle_with_activity(
             // JSON by hand: one object with fixed keys does not justify a
             // serialisation dependency on the control path.
             format!(
-                r#"{{"state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{}}}"#,
+                r#"{{"state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{}}}"#,
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
@@ -604,6 +604,7 @@ fn handle_with_activity(
                 player.volume(),
                 player.crossfade(),
                 st.bit_perfect.load(Ordering::Relaxed),
+                st.loading.load(Ordering::Relaxed),
             )
         }
         // Everything a mirroring instance needs for one frame, on one line.
@@ -662,7 +663,7 @@ fn handle_with_activity(
                 .unwrap_or_default();
 
             format!(
-                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"grouping":{grouping},"group_desc":{group_desc},"arranged":{arranged},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"view":{view_revision},"bands":"{bands}"}}"#,
+                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"grouping":{grouping},"group_desc":{group_desc},"arranged":{arranged},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"loading":{},"view":{view_revision},"bands":"{bands}"}}"#,
                 match st.state() {
                     PlayState::Playing => "playing",
                     PlayState::Paused => "paused",
@@ -681,6 +682,7 @@ fn handle_with_activity(
                 st.bitrate_kbps.load(Ordering::Relaxed),
                 st.bit_perfect.load(Ordering::Relaxed),
                 json_string(&uri),
+                st.loading.load(Ordering::Relaxed),
             )
         }
 
@@ -1192,6 +1194,25 @@ mod tests {
         assert_eq!(ask(&client, r#"set-queue ["A/one.flac"]"#), "1");
         assert_eq!(ask(&client, r#"enqueue ["A/one.flac"]"#), "0");
         stop.store(true, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn loading_survives_the_owner_mirror_wire_and_clears_when_ready() {
+        let player = Player::detached();
+        let view = crate::view::shared();
+        for loading in [true, false] {
+            player.state.loading.store(loading, Ordering::Relaxed);
+            let status: serde_json::Value =
+                serde_json::from_str(&handle(&player, &view, "status")).unwrap();
+            assert_eq!(status["loading"], loading);
+            let mirrored = crate::mirror::parse_state(&handle(&player, &view, "mirror")).unwrap();
+            assert_eq!(mirrored.loading, loading);
+        }
+        assert!(
+            !crate::mirror::parse_state(r#"{"state":"playing"}"#)
+                .unwrap()
+                .loading
+        );
     }
 
     #[test]

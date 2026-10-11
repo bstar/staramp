@@ -18,6 +18,7 @@ pub struct PlayerView<'a> {
     pub subtitle: String,
     pub tech: String,
     pub state: PlayState,
+    pub loading: bool,
     pub position: f64,
     pub duration: f64,
     pub volume: f32,
@@ -428,7 +429,13 @@ const VOLUME_TRACK: char = '\u{25ad}';
 const VOLUME_WIDTH: u16 = VOLUME_LABEL + VOLUME_SLIDER + VOLUME_READOUT + VOLUME_MARGIN;
 
 impl<'a> Widget for PlayerView<'a> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    fn render(mut self, area: Rect, buf: &mut Buffer) {
+        if self.loading {
+            self.position = 0.;
+            self.duration = 0.;
+            self.bit_perfect = false;
+            self.tech = "Opening audio · waiting for media".into();
+        }
         let t = self.theme;
 
         // Letter-spaced, with the slash spaced along with the rest: pulling it
@@ -443,6 +450,10 @@ impl<'a> Widget for PlayerView<'a> {
         // "bit-perfect" badge that is really just a default is worse than no
         // badge at all.
         let badge = match self.state {
+            _ if self.loading => Some(Badge {
+                text: "LOADING",
+                tone: Tone::Warn,
+            }),
             PlayState::Stopped => None,
             _ if self.bit_perfect => Some(Badge {
                 text: "bit-perfect",
@@ -475,7 +486,7 @@ impl<'a> Widget for PlayerView<'a> {
         };
 
         // ---- clock and analyzer ----
-        let shown = if self.state == PlayState::Stopped {
+        let shown = if self.loading || self.state == PlayState::Stopped {
             "-:--".to_string()
         } else {
             digits::clock(self.position)
@@ -495,22 +506,39 @@ impl<'a> Widget for PlayerView<'a> {
             );
         }
 
-        super::visualizer::render(
-            g.visualizer,
-            buf,
-            t,
-            self.vis_mode,
-            &super::visualizer::Frame {
-                bands: self.bands,
-                peaks: self.peaks,
-                wave: self.wave,
-            },
-            self.bars,
-        );
+        if self.loading {
+            let r = g.visualizer;
+            buf.set_stringn(
+                r.x + 1,
+                r.y + r.height / 2,
+                "LOADING TRACK…",
+                r.width.saturating_sub(2) as usize,
+                Style::default()
+                    .fg(rgb(t.accent))
+                    .add_modifier(Modifier::BOLD),
+            );
+        } else {
+            super::visualizer::render(
+                g.visualizer,
+                buf,
+                t,
+                self.vis_mode,
+                &super::visualizer::Frame {
+                    bands: self.bands,
+                    peaks: self.peaks,
+                    wave: self.wave,
+                },
+                self.bars,
+            );
+        }
 
         // ---- track title, with a marquee for long ones ----
         let width = g.title.width.saturating_sub(2) as usize;
-        let title = marquee(&self.title, width, self.marquee_offset);
+        let title = if self.loading {
+            truncate(&format!("LOADING… {}", self.title), width)
+        } else {
+            marquee(&self.title, width, self.marquee_offset)
+        };
         let title_colour = match self.state {
             PlayState::Playing => t.marquee_fg,
             PlayState::Paused => t.marquee_paused_fg,
@@ -1008,6 +1036,7 @@ mod tests {
             subtitle: subtitle.into(),
             tech: tech.into(),
             state: PlayState::Playing,
+            loading: false,
             position: 30.0,
             duration: 300.0,
             volume: 0.8,
@@ -1844,6 +1873,7 @@ mod tests {
                 subtitle: String::new(),
                 tech: String::new(),
                 state: PlayState::Playing,
+                loading: false,
                 position: 30.0,
                 duration: 300.0,
                 volume: 1.0,
@@ -1967,6 +1997,7 @@ mod tests {
                 subtitle: "Angra".into(),
                 tech: "flac".into(),
                 state: PlayState::Playing,
+                loading: false,
                 position: 30.0,
                 duration: 300.0,
                 volume: 0.8,

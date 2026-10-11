@@ -160,6 +160,7 @@ enum Response<'a> {
     Status {
         playing: bool,
         paused: bool,
+        loading: bool,
         title: String,
         path: Option<String>,
     },
@@ -294,7 +295,7 @@ pub fn run_stdio() -> Result<()> {
     let mut seek_phase = 0.0f32;
     let mut last_sample_rate = None;
     let mut last_tick = Instant::now();
-    let mut last_status: Option<(bool, bool, String, Option<String>)> = None;
+    let mut last_status: Option<(bool, bool, String, Option<String>, bool)> = None;
     let mut last_error: Option<String> = None;
     let metadata = MetadataWorker::new();
     let mut metadata_key: Option<(String, u64)> = None;
@@ -405,7 +406,9 @@ pub fn run_stdio() -> Result<()> {
                 let count = samples.len().min(wave.len());
                 wave[..count].copy_from_slice(&samples[samples.len() - count..]);
             }
-            if cfg.fx.active() && player.state.state() == PlayState::Playing {
+            if player.state.loading.load(Relaxed)
+                || (cfg.fx.active() && player.state.state() == PlayState::Playing)
+            {
                 seek_phase = (seek_phase + dt / 3.5).fract();
             } else {
                 seek_phase = 0.0;
@@ -448,13 +451,20 @@ pub fn run_stdio() -> Result<()> {
             .or_else(|| current.as_ref().map(|item| item.uri.to_string()))
             .unwrap_or_else(|| "nothing playing".into());
         let path = current.as_ref().map(|item| item.uri.to_string());
-        let status = (playing, paused, title, path);
+        let status = (
+            playing,
+            paused,
+            title,
+            path,
+            player.state.loading.load(Relaxed),
+        );
         if last_status.as_ref() != Some(&status) {
             write_response(
                 &mut output,
                 &Response::Status {
                     playing: status.0,
                     paused: status.1,
+                    loading: status.4,
                     title: status.2.clone(),
                     path: status.3.clone(),
                 },
@@ -920,6 +930,7 @@ fn render_state(
         subtitle,
         tech,
         state: st.state(),
+        loading: st.loading.load(Relaxed),
         position: st.position_secs(),
         duration: st.duration_secs(),
         volume: player.volume(),

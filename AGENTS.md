@@ -72,6 +72,13 @@ nix develop -c cargo build --release
 Run other Cargo commands through the flake in the same way, for example
 `nix develop -c cargo test --all`.
 
+Crossterm 0.29.0 is patched to upstream revision `d4e9929` in the root
+`Cargo.toml`: its released mouse parser underflows on zero coordinates. Keep
+the registry patch so KIT and Ratatui share one copy. Remove it when a compatible
+crates.io release contains the fix. `scripts/test-graphical-mouse.py` exercises
+zero-coordinate reports and the main close X through an isolated real frontend
+PTY; it must not use the user's configuration or playback session.
+
 ## Listening history is user data
 
 `activity.sqlite` is deliberately separate from `index.sqlite`. The index is

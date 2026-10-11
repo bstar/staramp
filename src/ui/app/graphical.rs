@@ -368,6 +368,7 @@ impl Rack<'_> {
                 )
             },
             state: st.state(),
+            loading: st.loading.load(Relaxed),
             position: st.position_secs(),
             duration: st.duration_secs(),
             volume: a.player.volume(),
@@ -1959,6 +1960,7 @@ impl Rack<'_> {
             "queue-remove" => a.handle(Action::RemoveTagged),
             "queue-tag" => a.handle(Action::TagRow),
             "help" => a.handle(Action::Help),
+            "close:app" => a.handle(Action::Quit),
             "close:eq" => a.handle(Action::ToggleEqPanel),
             "close:album" => a.handle(Action::ToggleAlbumPanel),
             "close:activity" => a.handle(Action::ToggleHistoryPanel),
@@ -2271,16 +2273,23 @@ impl Controller for Rack<'_> {
         append(&mut surface, player, 0, 0, 0, "player");
         classic::label(
             &mut surface,
-            R::new(w - 78, 7, 64, 24),
+            R::new(w - 114, 7, 70, 24),
             "settings",
             &c.dim,
             font.saturating_sub(2),
             false,
         );
         surface.hits.push(HitRegion {
-            rect: R::new(w - 82, 7, 68, 24),
+            rect: R::new(w - 118, 7, 78, 24),
             action: "settings:player".into(),
         });
+        native::close_button(
+            &mut surface,
+            R::new(w - 40, 7, 30, 24),
+            &c,
+            "close:app",
+            self.skin.hovered.as_deref() == Some("close:app"),
+        );
         let top = player_h + 8;
         self.modules.clear();
         let mut modules = Vec::new();
@@ -2853,6 +2862,18 @@ impl Controller for Rack<'_> {
                     u32::from(x) * self.viewport.width / u32::from(self.viewport.columns.max(1)),
                     u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
                 ]);
+                // Closing the application must work on the first click,
+                // regardless of which pane currently has focus.
+                if action == "down"
+                    && button == 0
+                    && self.surface.as_ref().is_some_and(|s| {
+                        s.hit(px as u16, py as u16)
+                            .is_some_and(|hit| hit.action == "close:app")
+                    })
+                {
+                    self.action("close:app", px as u16, py as u16);
+                    return;
+                }
                 if action == "down" {
                     if let Some(name) = self
                         .surface
@@ -5559,6 +5580,105 @@ impl App {
         }
         starkit::terminal_graphics::renderer::render_reference(&empty)?
             .save(output.join("empty-rack.png"))?;
+        // The real rack keeps a foreground disk wait visible at both bitmap
+        // densities, even with animation effects and the visualizer disabled.
+        rack.app.player.queue.lock().unwrap().set_tracks(vec![{
+            let mut item = crate::playlist::queue::QueueItem::new(
+                crate::playlist::uri::TrackUri::parse("/sleeping-drive/song.flac"),
+            );
+            item.artist = Some("Queen".into());
+            item.title = Some("Another One Bites the Dust".into());
+            item
+        }]);
+        rack.app.player.state.loading.store(true, Relaxed);
+        rack.app.vis.mode = VisMode::Off;
+        rack.app.fx.active = false;
+        rack.app.advance_seek_phase(0.2);
+        assert!(rack.app.look.seek_phase > 0.);
+        rack.app.look.theme = crate::theme::builtin::load("winamp-silver").unwrap();
+        for density in [1, 2] {
+            let scene = rack.scene(Viewport {
+                width: 1200 * density,
+                height: 900 * density,
+                columns: 120,
+                rows: 45,
+                generation: 0,
+            });
+            let contents = rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Primitive::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(contents.contains("LOADING TRACK"));
+            assert!(contents.contains("Another One Bites the Dust"));
+            assert!(!rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .any(|h| h.action == "seek"));
+            starkit::terminal_graphics::renderer::render_reference(&scene)?
+                .save(output.join(format!("loading-track-{density}x.png")))?;
+        }
+        rack.app.player.state.loading.store(false, Relaxed);
+        rack.app.player.queue.lock().unwrap().set_tracks(Vec::new());
+        // The main header closes the app even while another pane has focus.
+        // Check actual pointer projection and non-overlapping settings at both
+        // bitmap densities, including the artwork-independent renderer.
+        for skins in [true, false] {
+            rack.skins = skins;
+            for density in [1, 2] {
+                let viewport = Viewport {
+                    width: 1200 * density,
+                    height: 900 * density,
+                    columns: 120,
+                    rows: 45,
+                    generation: 0,
+                };
+                rack.app.quit = false;
+                rack.app.panels.focus = Focus::Playlist;
+                rack.scene(viewport);
+                let surface = rack.surface.as_ref().unwrap();
+                let close = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "close:app")
+                    .unwrap()
+                    .rect;
+                let settings = surface
+                    .hits
+                    .iter()
+                    .find(|h| h.action == "settings:player")
+                    .unwrap()
+                    .rect;
+                assert!(settings.x + settings.width <= close.x);
+                assert!(!rack.closed());
+                let pixel = [
+                    u32::from(close.x + close.width / 2),
+                    u32::from(close.y + close.height / 2),
+                ];
+                rack.input(Input::Pointer {
+                    action: "down".into(),
+                    button: 0,
+                    x: (pixel[0] * u32::from(viewport.columns) / viewport.width) as u16,
+                    y: (pixel[1] * u32::from(viewport.rows) / viewport.height) as u16,
+                    pixel: Some(pixel),
+                    modifiers: 0,
+                });
+                assert!(
+                    rack.closed(),
+                    "main close failed: skins={skins}, density={density}"
+                );
+            }
+        }
         rack.app.shutdown();
         Ok(())
     }

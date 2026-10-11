@@ -3312,6 +3312,7 @@ impl App {
         let s = &self.player.state;
         s.playing.store(st.state != "stopped", Relaxed);
         s.paused.store(st.state == "paused", Relaxed);
+        s.loading.store(st.loading, Relaxed);
         // Store the real rate, zero included: the technical line hides itself
         // when nothing is playing, and clamping to 1 made it read "0.0 kHz".
         s.sample_rate.store(st.rate, Relaxed);
@@ -4209,6 +4210,15 @@ impl App {
     /// the title transition, so the bar breathes with the track rather than
     /// sweeping to its own clock.
     fn advance_seek_phase(&mut self, dt: f32) {
+        if self
+            .player
+            .state
+            .loading
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.look.seek_phase = (self.look.seek_phase + dt / SEEK_SHEEN_PERIOD).fract();
+            return;
+        }
         if !self.fx.active || self.player.state.state() != PlayState::Playing {
             self.look.seek_phase = 0.0;
             return;
@@ -7817,6 +7827,7 @@ impl App {
             subtitle,
             tech,
             state: st.state(),
+            loading: st.loading.load(Relaxed),
             position: st.position_secs(),
             duration: st.duration_secs(),
             volume: self.player.volume(),

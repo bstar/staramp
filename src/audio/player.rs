@@ -82,6 +82,8 @@ pub struct PlayerState {
     /// and is read once a frame by the UI, never by the audio callback.
     pub codec: ArcSwap<String>,
     pub underruns: AtomicU64,
+    /// Foreground track open and initial buffering; background preloads never set this.
+    pub loading: AtomicBool,
     pub playing: AtomicBool,
     pub paused: AtomicBool,
     pub bit_perfect: AtomicBool,
@@ -102,6 +104,7 @@ impl PlayerState {
             bitrate_kbps: AtomicU64::new(0),
             codec: ArcSwap::from(Arc::new(String::new())),
             underruns: AtomicU64::new(0),
+            loading: AtomicBool::new(false),
             playing: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             bit_perfect: AtomicBool::new(false),
@@ -619,6 +622,7 @@ fn run(
                     fade = Crossfade::Idle;
                     decoder = None;
                     stream = None;
+                    state.loading.store(false, Ordering::Relaxed);
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
                     state.position_frames.store(0, Ordering::Relaxed);
@@ -632,6 +636,7 @@ fn run(
                     fade = Crossfade::Idle;
                     decoder = None;
                     stream = None;
+                    state.loading.store(false, Ordering::Relaxed);
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
                     state.position_frames.store(0, Ordering::Relaxed);
@@ -741,6 +746,7 @@ fn run(
                         }
                         None => {
                             decoder = None;
+                            state.loading.store(false, Ordering::Relaxed);
                             state.playing.store(false, Ordering::Relaxed);
                         }
                     }
@@ -874,6 +880,9 @@ fn run(
                 let cap = crate::audio::ring::capacity_samples(s.sample_rate, s.channels);
                 if s.producer.slots() <= cap / 2 || s.opened_at.elapsed() >= PRIME_TIMEOUT {
                     s.primed = true;
+                    if s.producer.slots() < cap {
+                        state.loading.store(false, Ordering::Relaxed);
+                    }
                     // Priming decides *when* it may start, not *whether* it
                     // should. Pausing during a track change and having the
                     // next track start itself anyway is a bug worth naming.
@@ -1018,6 +1027,7 @@ fn run(
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
                                     decoder = None;
+                                    state.loading.store(false, Ordering::Relaxed);
                                     state.playing.store(false, Ordering::Relaxed);
                                 }
                             }
@@ -1104,6 +1114,7 @@ fn run(
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
                                     decoder = None;
+                                    state.loading.store(false, Ordering::Relaxed);
                                     state.playing.store(false, Ordering::Relaxed);
                                 }
                             }
@@ -1160,6 +1171,9 @@ fn run(
                             let limiting = needs_limiting(&settings, scale);
                             for &x in buf.iter() {
                                 let _ = s.producer.push(if limiting { soft_clip(x) } else { x });
+                            }
+                            if s.primed {
+                                state.loading.store(false, Ordering::Relaxed);
                             }
                             state.position_frames.store(d.position(), Ordering::Relaxed);
                             state.underruns.store(
@@ -1682,6 +1696,10 @@ fn open_track(
     backing: &mut Option<std::path::PathBuf>,
     fixed_rate: Option<u32>,
 ) {
+    // Publish before the first filesystem access: metadata/open can wait for
+    // a sleeping USB drive, and the UI must remain able to explain that wait.
+    state.loading.store(true, Ordering::Relaxed);
+    state.last_error.store(None);
     let opened = match source::open(vfs, index, uri) {
         Ok(o) => o,
         Err(e) => {
@@ -1835,6 +1853,7 @@ fn open_track(
 }
 
 fn fail_track(state: &PlayerState, message: String) {
+    state.loading.store(false, Ordering::Relaxed);
     state.playing.store(false, Ordering::Relaxed);
     state.paused.store(false, Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
@@ -1890,16 +1909,78 @@ mod tests {
         let state = PlayerState::new();
         state.playing.store(true, Ordering::Relaxed);
         state.paused.store(true, Ordering::Relaxed);
+        state.loading.store(true, Ordering::Relaxed);
         state.position_frames.store(99, Ordering::Relaxed);
         state.duration_frames.store(100, Ordering::Relaxed);
         fail_track(&state, "USB volume disappeared".into());
         assert_eq!(state.state(), PlayState::Stopped);
+        assert!(!state.loading.load(Ordering::Relaxed));
         assert_eq!(state.position_frames.load(Ordering::Relaxed), 0);
         assert_eq!(state.duration_frames.load(Ordering::Relaxed), 0);
         assert_eq!(
             state.last_error.load_full().as_deref().map(String::as_str),
             Some("USB volume disappeared")
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn loading_is_published_while_the_real_source_open_is_blocked() {
+        use std::io::Write;
+        use std::os::unix::{ffi::OsStrExt, fs::OpenOptionsExt};
+        // A delayed CUE read models stalled storage without touching a disk's
+        // power settings or requiring an audio device. Opening remains blocked
+        // until the test releases it, so there is no timing-dependent fast file.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("waiting.cue");
+        let cpath = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
+        let player = Player::new_embedded(Arc::new(Vfs::local(dir.path())), None, None).unwrap();
+        let item = QueueItem::new(TrackUri::CueTrack {
+            cue_rel_path: "waiting.cue".into(),
+            ordinal: 1,
+        });
+        player.queue.lock().unwrap().set_tracks(vec![item]);
+        player.send_checked(Command::PlayIndex(0)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !player.state.loading.load(Ordering::Relaxed) && std::time::Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(2));
+        }
+        let loading = player.state.loading.load(Ordering::Relaxed);
+        let failed_early = player.state.last_error.load_full().is_some();
+        // Release before any assertion, including on a regression, so Drop can
+        // always join the real playback worker rather than hanging the suite.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut release = loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(&path)
+            {
+                Ok(writer) => break writer,
+                Err(e)
+                    if e.raw_os_error() == Some(libc::ENXIO)
+                        && std::time::Instant::now() < deadline =>
+                {
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(e) => panic!("source did not reach the delayed read: {e}"),
+            }
+        };
+        release.write_all(b"invalid cue sheet\n").unwrap();
+        drop(release);
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while player.state.last_error.load_full().is_none() && std::time::Instant::now() < deadline
+        {
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(loading, "no loading feedback during a blocked source read");
+        assert!(!failed_early);
+        assert!(player.state.last_error.load_full().is_some());
+        assert!(!player.state.loading.load(Ordering::Relaxed));
+        assert_eq!(player.state.state(), PlayState::Stopped);
+        player.send_checked(Command::Stop).unwrap();
     }
 
     #[test]

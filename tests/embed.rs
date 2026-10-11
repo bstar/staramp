@@ -196,6 +196,63 @@ fn eof_exits_cleanly_without_writes() {
 }
 
 #[test]
+fn loading_clears_when_audio_is_buffered_and_after_stop() {
+    let media = TempDir::new().unwrap();
+    let path = media.path().join("ready.wav");
+    let pcm = vec![0u8; 48_000 * 2 * 2 * 3];
+    let mut wav = std::fs::File::create(&path).unwrap();
+    wav.write_all(b"RIFF").unwrap();
+    wav.write_all(&(36 + pcm.len() as u32).to_le_bytes())
+        .unwrap();
+    wav.write_all(b"WAVEfmt ").unwrap();
+    wav.write_all(&16u32.to_le_bytes()).unwrap();
+    wav.write_all(&1u16.to_le_bytes()).unwrap();
+    wav.write_all(&2u16.to_le_bytes()).unwrap();
+    wav.write_all(&48_000u32.to_le_bytes()).unwrap();
+    wav.write_all(&192_000u32.to_le_bytes()).unwrap();
+    wav.write_all(&4u16.to_le_bytes()).unwrap();
+    wav.write_all(&16u16.to_le_bytes()).unwrap();
+    wav.write_all(b"data").unwrap();
+    wav.write_all(&(pcm.len() as u32).to_le_bytes()).unwrap();
+    wav.write_all(&pcm).unwrap();
+    drop(wav);
+    let mut child = Session::start();
+    child.until("hello");
+    child.send(json!({"type":"configure", "generation":1, "width":60, "height":10, "focused":false, "theme":theme()}));
+    child.until("frame");
+    child.send(json!({"type":"control", "action":"audio_relay", "value":1}));
+    child.send(json!({"type":"control", "action":"audio_credit", "value":8}));
+    child.send(json!({"type":"play", "generation":1, "paths":[path], "index":0}));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (mut ready, mut audio) = (false, false);
+    while !ready || !audio {
+        let message = child
+            .messages
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .unwrap();
+        assert_ne!(message["type"], "error", "{message}");
+        if message["type"] == "audio_open" {
+            child.send(json!({"type":"control", "action":"audio_credit", "value":8}));
+        }
+        if message["type"] == "status" && message["playing"] == true && message["loading"] == false
+        {
+            ready = true;
+        }
+        audio |= message["type"] == "audio";
+    }
+    child.send(json!({"type":"control", "action":"stop"}));
+    loop {
+        let status = child.until("status");
+        if status["playing"] == false {
+            assert_eq!(status["loading"], false);
+            break;
+        }
+    }
+    child.send(json!({"type":"shutdown"}));
+    child.finish();
+}
+
+#[test]
 fn missing_file_reports_error_then_accepts_stop_without_audio_device() {
     let mut child = Session::start();
     child.until("hello");

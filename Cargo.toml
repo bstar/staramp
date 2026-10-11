@@ -170,6 +170,12 @@ proptest = { version = "1", default-features = false, features = [
     "timeout",
 ] }
 
+# Crossterm 0.29.0 underflows on zero mouse/cursor coordinates. Pin the
+# upstream parser fix until a crates.io release includes it. Patching the
+# registry keeps KIT and Ratatui on the same copy of Crossterm.
+[patch.crates-io]
+crossterm = { git = "https://github.com/crossterm-rs/crossterm", rev = "d4e9929f9a1c4adf91505d54f8527c817ae504cd" }
+
 # MPRIS, and only where there is a D-Bus to publish it on.
 #
 # Target-gated rather than always-on: zbus does compile on macOS, so this is

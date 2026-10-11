@@ -9,6 +9,64 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Track loading feedback · October 11
+
+Foreground track opens now publish a loading flag before any filesystem access,
+including the stat/open that can wait for a sleeping USB drive. It stays set
+through initial audio buffering, then clears when the output is primed; failed
+opens, decoder errors, Stop and end-of-queue clear it as well. Background album
+preloads and crossfades do not replace ongoing playback with a loading message.
+
+The native player replaces its analyzer with **LOADING TRACK…** and an animated
+indeterminate bar, retains the selected track below it, and explains the wait
+on the technical line. Clock/format/meter values from the preceding track are
+hidden, and seeking stays unavailable until the track is ready. Compact and
+cell presentations also name the wait. The owner/mirror protocol and embedded
+status carry a backward-compatible `loading` boolean; older owners omit it.
+Loading animation remains visible when the music visualizer/effects are off.
+
+A delayed real CUE read verifies feedback while the playback worker blocks and
+cleanup on failure, without changing disk power settings. A real embedded
+silent-WAV process verifies ready/stop transitions and PCM delivery without a
+sound device. Formatting, strict Clippy, 890 unit tests (5 ignored), 12 embed
+tests and the graphical integration check pass. `render-rack` produces separate
+`loading-track-1x.png` and `loading-track-2x.png` fixtures through the production
+compositor. Their loading display was visually inspected. A physical USB wake
+cycle and macOS remain unverified.
+
+The Nix release build and installed-command check passed. The release also
+passed the isolated real-frontend PTY check (zero mouse coordinates, main X,
+pixel-mode restoration). The live Kitty frontend, relay and playback controller
+now use the new executable. Detached old controllers were replaced so the
+playback owner can publish loading state. Its 29,615-track queue, paused track
+and position, theme, saved/draft EQ files and shared view were retained. The
+existing takeover path reset the IPC view to defaults; the saved view was
+republished and verified afterward. This is runtime migration evidence, not a
+claim that a physical USB sleep/wake cycle was exercised.
+
+### Main module close control · October 11
+
+The STAR/AMP header now has the same close X as the secondary modules, with
+settings moved left and a separate hit target. Clicking it uses the normal Quit
+action and closes the application on the first click even when another pane has
+focus. The native rack integration check covers the close action and adjacent
+settings target at both bitmap densities and with artwork disabled. Formatting,
+the integration check and strict Clippy passed.
+
+A reported startup panic at Crossterm's SGR mouse parser was traced to its
+unchecked subtraction from zero coordinates. The root registry patch now pins
+upstream fix `d4e9929`, keeping KIT and Ratatui on one Crossterm instance. A real
+frontend PTY check sends zero coordinates during startup and at both edges,
+then clicks the main X and verifies clean frontend exit and pixel mouse mode
+restoration. The full unit/embed/native checks, Clippy and dependency source,
+license and duplicate checks passed with the pinned fix.
+The previous release reproduced the reported panic at `parse.rs:737`; the new
+Nix release passed the same PTY packets and close-X check. The installed wrapper
+still targets this checkout. The user's Kitty window was reopened on the new
+executable and survived the zero-coordinate reports, with its paused position,
+29,615-track queue, shared view, theme and saved/draft EQ files preserved. Native
+Silver gallery captures now include the main header X.
+
 
 ### Reference EQ and profile management · October 10
 

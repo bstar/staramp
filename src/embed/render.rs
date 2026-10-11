@@ -31,6 +31,7 @@ struct ImageKey {
     height: u16,
     palette: Palette,
     state: PlayState,
+    loading: bool,
     repeat: RepeatMode,
     graphics: GraphicsConfig,
 }
@@ -57,6 +58,7 @@ impl TransportImageCache {
             height,
             palette: *palette,
             state: player.state,
+            loading: player.loading,
             repeat: player.repeat,
             graphics,
         };
@@ -103,9 +105,21 @@ fn transport_images(
     let c = &g.controls;
     let buttons = [
         (Button::Prev, c.prev, false),
-        (Button::Play, c.play, player.state == PlayState::Playing),
-        (Button::Pause, c.pause, player.state == PlayState::Paused),
-        (Button::Stop, c.stop, player.state == PlayState::Stopped),
+        (
+            Button::Play,
+            c.play,
+            !player.loading && player.state == PlayState::Playing,
+        ),
+        (
+            Button::Pause,
+            c.pause,
+            !player.loading && player.state == PlayState::Paused,
+        ),
+        (
+            Button::Stop,
+            c.stop,
+            !player.loading && player.state == PlayState::Stopped,
+        ),
         (Button::Next, c.next, false),
     ];
     let body = body_rows(height);
@@ -185,6 +199,7 @@ pub struct PlayerRenderState {
     pub subtitle: String,
     pub tech: String,
     pub state: PlayState,
+    pub loading: bool,
     pub position: f64,
     pub duration: f64,
     pub volume: f32,
@@ -204,13 +219,15 @@ pub struct PlayerRenderState {
 
 impl PlayerRenderState {
     /// Decoder and meter fields can outlive a cleared queue. Never advertise
-    /// the previous track's format, clock, or spectrum in an empty idle player.
+    /// the previous track's format, clock, or spectrum while loading or idle.
     pub fn clear_empty_idle(mut self) -> Self {
-        if !self.has_items && self.state == PlayState::Stopped {
+        if self.loading || (!self.has_items && self.state == PlayState::Stopped) {
             self.position = 0.;
             self.duration = 0.;
             self.tech.clear();
-            self.subtitle.clear();
+            if !self.loading {
+                self.subtitle.clear();
+            }
             self.bit_perfect = false;
             self.bands.fill(0.);
             self.peaks.fill(0.);
@@ -222,9 +239,11 @@ impl PlayerRenderState {
     pub fn control_enabled(&self, action: &str) -> bool {
         match action {
             "previous" | "play" | "next" => self.has_items,
-            "pause" => self.state == PlayState::Playing,
-            "stop" => self.state != PlayState::Stopped,
-            "seek" => self.has_items && self.duration.is_finite() && self.duration > 0.,
+            "pause" => !self.loading && self.state == PlayState::Playing,
+            "stop" => self.loading || self.state != PlayState::Stopped,
+            "seek" => {
+                !self.loading && self.has_items && self.duration.is_finite() && self.duration > 0.
+            }
             _ => true,
         }
     }
@@ -296,6 +315,7 @@ fn source_buffer(width: u16, palette: &Palette, player: &PlayerRenderState) -> B
         subtitle: player.subtitle.clone(),
         tech: player.tech.clone(),
         state: player.state,
+        loading: player.loading,
         position: player.position,
         duration: player.duration,
         volume: player.volume,
@@ -370,7 +390,7 @@ pub fn render_frame(
                 cell.bg = palette.bg;
                 cell.modifiers = 0;
             }
-            let clock = if player.state == PlayState::Stopped {
+            let clock = if player.loading || player.state == PlayState::Stopped {
                 "--:--".to_string()
             } else {
                 crate::ui::digits::clock_padded(player.position)
@@ -477,6 +497,7 @@ mod tests {
             subtitle: "The Album".into(),
             tech: "FLAC".into(),
             state: PlayState::Playing,
+            loading: false,
             position: 30.0,
             duration: 120.0,
             volume: 0.5,
@@ -492,6 +513,51 @@ mod tests {
             seek_style: SeekStyle::default(),
             bars: BarLayout::default(),
             seek_phase: 0.0,
+        }
+    }
+
+    #[test]
+    fn loading_is_visible_at_full_and_compact_sizes_without_stale_readouts() {
+        use starkit::native_surface::Primitive;
+        let mut state = playing();
+        state.loading = true;
+        state.bit_perfect = true;
+        let state = state.clear_empty_idle();
+        assert_eq!(state.position, 0.);
+        assert_eq!(state.duration, 0.);
+        assert!(!state.bit_perfect);
+        assert!(state.tech.is_empty());
+        assert!(state.bands.iter().all(|v| *v == 0.));
+        assert!(!state.control_enabled("seek"));
+        assert!(!state.control_enabled("pause"));
+        assert!(state.control_enabled("stop"));
+        for (width, height) in [(80, 10), (40, 5), (80, 5)] {
+            let surface = crate::embed::native::surface(
+                width,
+                height,
+                GraphicsConfig {
+                    cell_width: 8,
+                    cell_height: 16,
+                },
+                &palette(),
+                &state,
+            );
+            surface.validate().unwrap();
+            let text = surface
+                .nodes
+                .iter()
+                .filter_map(|n| match n {
+                    Primitive::Text { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(text.contains("LOADING"), "{width}×{height}: {text}");
+            assert!(text.contains("The Track"));
+            let cells = render_frame(width, height, &palette(), &state);
+            let text = cells.iter().map(|c| c.symbol.as_str()).collect::<String>();
+            assert!(text.contains("LOADING"), "cells {width}×{height}: {text}");
+            assert!(text.contains("The Track"));
         }
     }
 

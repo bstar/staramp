@@ -80,6 +80,13 @@ and restarts the host player. Preserve any remote edits before updating; do not
 reset them. Restarting the host player after a successful build is explicitly
 authorized as part of this process. The helper saves a recovery snapshot, replaces the old
 playback owner and graphical servers, and verifies the new executable is running.
+Also verify the Mac frontend process uses the current executable after every
+rebuild. A host restart and SSH reattachment leave the old Mac process running;
+that old process cannot negotiate newly added cache or audio capabilities. On
+macOS, compare the executable inode from `lsof -p PID -a -d txt -Fni` with
+`stat -f %i target/release/staramp`; the displayed path alone is insufficient.
+The remote build script fails its final check if a stale local player remains.
+Restart that frontend and verify the inode before reporting testing is ready.
 The Mac frontend must reattach after the host session restarts. Use `--no-restart`
 only when a build without interruption is specifically requested.
 

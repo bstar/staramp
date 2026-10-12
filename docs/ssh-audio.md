@@ -92,6 +92,11 @@ The restart saves a recovery snapshot and verifies the new executable is running
 Reattach the Mac frontend and resume the saved session afterward. Pass
 `--no-restart` to build without interrupting an existing player.
 
+After rebuilding the Mac executable, restart the Mac frontend too. An existing
+process continues running its old code even when SSH reconnects to an updated
+server. The build command checks running Mac executable inodes and reports an
+error if a frontend still uses the old build.
+
 The native Cargo/Homebrew route, including Intel Macs, is documented in
 [Installing](installing.md). Build and install this version on the music server
 as well, or select its executable with `--remote-executable`.

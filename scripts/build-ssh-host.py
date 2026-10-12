@@ -5,8 +5,40 @@ import base64
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def verify_local_frontends():
+    """Reject stale Mac processes even when their executable path looks current."""
+    if sys.platform != 'darwin':
+        return
+    binary = ROOT / 'target/release/staramp'
+    expected_inode = binary.stat().st_ino
+    processes = subprocess.check_output(['ps', '-axo', 'pid=,comm='], text=True)
+    stale = []
+    for row in processes.splitlines():
+        fields = row.strip().split(None, 1)
+        if len(fields) != 2 or Path(fields[1]).name != 'staramp':
+            continue
+        pid = fields[0]
+        images = subprocess.run(['lsof', '-p', pid, '-a', '-d', 'txt', '-Fin'],
+                                capture_output=True, text=True)
+        inode = None
+        for line in images.stdout.splitlines():
+            if line.startswith('i'):
+                inode = line[1:]
+            elif line == 'n' + str(binary):
+                if inode != str(expected_inode):
+                    stale.append(pid)
+                else:
+                    print(f'Mac player PID {pid} uses the current release executable.', flush=True)
+                break
+    if stale:
+        raise RuntimeError('The host is updated, but Mac player PIDs ' + ', '.join(stale)
+                           + ' still use an older executable. Restart the Mac frontend too;'
+                             ' reconnecting SSH alone does not load the new audio/cache code.')
 
 
 def main():
@@ -79,6 +111,7 @@ fi
 '''
     command = 'bash -s -- ' + shlex.join([args.repo, revision, cleanup, "skip" if args.no_restart else "restart", args.session])
     subprocess.run(ssh + [args.host, command], input=script, text=True, check=True)
+    verify_local_frontends()
 
 
 if __name__ == '__main__':

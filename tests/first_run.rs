@@ -5,6 +5,7 @@ fn fresh_noninteractive_launch_explains_setup_without_sqlite_error() {
     let isolated = tempfile::tempdir().unwrap();
     let data = isolated.path().join("data");
     let result = Command::new(env!("CARGO_BIN_EXE_staramp"))
+        .env_remove("SSH_CONNECTION")
         .env("STARAMP_DIR", &data)
         .env("STARAMP_CONFIG_DIR", isolated.path().join("config"))
         .env("XDG_RUNTIME_DIR", isolated.path().join("runtime"))

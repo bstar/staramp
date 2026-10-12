@@ -123,3 +123,8 @@ Paused/stopped playback and initial buffering clear bars, peaks, and waveform;
 a device clock stationary for 350 ms also clears them. This grace period permits
 ordinary SSH progress feedback gaps without flashing the spectrum off each frame.
 The hardware callback remains lock-free and does no visualization file I/O.
+
+Run `python3 scripts/test-ssh-visualizer.py target/release/staramp` to exercise
+this through a real, isolated playback owner without hardware or an SSH server.
+It drains an entire generated song through the relay before advancing the
+simulated device clock, then verifies frequency changes, pause, resume and stalls.

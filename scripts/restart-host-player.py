@@ -90,6 +90,11 @@ def main():
             if child.poll() is not None:
                 raise RuntimeError(f'Player exited with {child.returncode}; see {log}')
             try:
+                running = os.stat(f'/proc/{child.pid}/exe')
+                built = executable.stat()
+                if (running.st_dev, running.st_ino) != (built.st_dev, built.st_ino):
+                    time.sleep(0.1)
+                    continue
                 with socket.socket(socket.AF_UNIX) as connection:
                     connection.connect(str(path))
                 break
@@ -103,7 +108,7 @@ def main():
             raise RuntimeError('Restarted player does not use the current release executable')
         print(f'Restarted host session {name}: PID {child.pid}, current release executable', flush=True)
     subprocess.run([str(launcher), 'ctl', 'status'], check=True)
-    print('Host ready. Reattach the Mac frontend; the saved session can be resumed.')
+    print('Host ready. The Mac frontend can reconnect; the saved session can be resumed.')
 
 
 if __name__ == '__main__':

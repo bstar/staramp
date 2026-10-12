@@ -43,16 +43,6 @@ fn duration_label(state: &PlayerRenderState, width: u16) -> String {
     }
 }
 
-/// Keep the cached range visible underneath played audio, including a full cache.
-fn cache_lane(s: &mut Surface, seek: R, thickness: u16, buffered: u16, groove: &str) {
-    if thickness < 4 {
-        return;
-    }
-    let bottom = seek.y + (seek.height - thickness) / 2 + thickness;
-    s.fill(R::new(seek.x, bottom - 3, seek.width, 3), groove, 0);
-    s.fill(R::new(seek.x, bottom - 2, buffered, 2), &buffer_color(), 0);
-}
-
 pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
@@ -653,58 +643,23 @@ pub(super) fn player_surface(
         8
     } else if state.seek_style == SeekStyle::THIN {
         6
+    } else if state.seek_style == SeekStyle::ANSI {
+        4
     } else if state.seek_style == SeekStyle::BLOCKS {
         header.saturating_sub(4).max(1)
     } else {
         8
     }
     .min(header);
-    if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
-        for dy in [0, 4] {
-            let y = seek.y + (header - 6) / 2 + dy;
-            s.fill(R::new(seek.x, y, seek.width, 2), &groove, 0);
-            s.fill(R::new(seek.x, y, buffered, 2), &buffer_ink, 0);
-            s.fill(R::new(seek.x, y, played, 2), &accent, 0);
-        }
+    let radius = if matches!(state.seek_style, SeekStyle::BLOCKS | SeekStyle::ANSI) {
+        0
     } else {
-        let radius = if state.seek_style == SeekStyle::BLOCKS {
-            0
-        } else {
-            2
-        };
-        s.fill(
-            R::new(
-                seek.x,
-                seek.y + (header - thickness) / 2,
-                seek.width,
-                thickness,
-            ),
-            &groove,
-            radius,
-        );
-        s.fill(
-            R::new(
-                seek.x,
-                seek.y + (header - thickness) / 2,
-                buffered,
-                thickness,
-            ),
-            &buffer_ink,
-            radius,
-        );
-        s.fill(
-            R::new(seek.x, seek.y + (header - thickness) / 2, played, thickness),
-            &accent,
-            radius,
-        );
-    }
-    let visible_thickness =
-        if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
-            6
-        } else {
-            thickness
-        };
-    cache_lane(&mut s, seek, visible_thickness, buffered, &groove);
+        2
+    };
+    let y = seek.y + (header - thickness) / 2;
+    s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
+    s.fill(R::new(seek.x, y, buffered, thickness), &buffer_ink, radius);
+    s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     s.hits.push(HitRegion {
         rect: seek,
         action: "seek".into(),
@@ -1354,6 +1309,8 @@ fn compact_surface(
     // native stroke weight, never the position or size of the pointer target.
     let thickness = if state.seek_style == SeekStyle::THIN {
         6
+    } else if state.seek_style == SeekStyle::ANSI {
+        4
     } else if state.seek_style == SeekStyle::BLOCKS {
         line.saturating_sub(4).max(1)
     } else {
@@ -1364,30 +1321,15 @@ fn compact_surface(
     let buffered = buffered_width(state, seek.width);
     let buffer_ink = buffer_color();
     let groove = seek_track_color(palette);
-    if state.seek_style == SeekStyle::BAR && line >= 6 {
-        for offset in [0, 4] {
-            let y = seek.y + (line - 6) / 2 + offset;
-            s.fill(R::new(seek.x, y, seek.width, 2), &groove, 1);
-            s.fill(R::new(seek.x, y, buffered, 2), &buffer_ink, 1);
-            s.fill(R::new(seek.x, y, played, 2), &accent, 1);
-        }
+    let y = seek.y + (line - thickness) / 2;
+    let radius = if matches!(state.seek_style, SeekStyle::BLOCKS | SeekStyle::ANSI) {
+        0
     } else {
-        let y = seek.y + (line - thickness) / 2;
-        let radius = if state.seek_style == SeekStyle::BLOCKS {
-            0
-        } else {
-            2
-        };
-        s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
-        s.fill(R::new(seek.x, y, buffered, thickness), &buffer_ink, radius);
-        s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
-    }
-    let visible_thickness = if state.seek_style == SeekStyle::BAR && line >= 6 {
-        6
-    } else {
-        thickness
+        2
     };
-    cache_lane(&mut s, seek, visible_thickness, buffered, &groove);
+    s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
+    s.fill(R::new(seek.x, y, buffered, thickness), &buffer_ink, radius);
+    s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     s.hits.push(HitRegion {
         rect: seek,
         action: "seek".into(),

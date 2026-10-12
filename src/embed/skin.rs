@@ -1027,21 +1027,19 @@ mod tests {
             let empty = image.get_pixel(x(0.9), y);
             assert_ne!(played, buffered);
             assert_ne!(buffered, empty);
-            // The cached stripe remains visible underneath the played range.
-            let cache_y = u32::from(seek.y + seek.height / 2 + 3 * density);
-            assert_eq!(
-                image.get_pixel(x(0.1), cache_y),
-                image.get_pixel(x(0.5), cache_y)
-            );
-            assert_ne!(
-                image.get_pixel(x(0.5), cache_y),
-                image.get_pixel(x(0.9), cache_y)
-            );
+            // Every interior row stays solid: no seam through played or cached audio.
+            for offset in -3i32..4 {
+                let row =
+                    (i32::from(seek.y + seek.height / 2) + offset * i32::from(density)) as u32;
+                assert_eq!(image.get_pixel(x(0.1), row), played);
+                assert_eq!(image.get_pixel(x(0.5), row), buffered);
+                assert_eq!(image.get_pixel(x(0.9), row), empty);
+            }
         }
     }
 
     #[test]
-    fn fully_cached_track_is_visible_under_played_audio_and_labeled() {
+    fn fully_cached_track_reaches_the_end_and_is_labeled() {
         use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
         let mut skin = PlayerSkin::new().unwrap();
         let mut state = state();
@@ -1081,20 +1079,9 @@ mod tests {
                 )
                 .unwrap();
             let x = |fraction: f64| u32::from(seek.x) + (f64::from(seek.width) * fraction) as u32;
-            let lane = u32::from(seek.y + seek.height / 2 + 3 * density);
-            let played = u32::from(seek.y + seek.height / 2 - density);
-            assert_eq!(
-                image.get_pixel(x(0.1), lane),
-                image.get_pixel(x(0.99), lane)
-            );
-            assert_ne!(
-                image.get_pixel(x(0.1), played),
-                image.get_pixel(x(0.99), played)
-            );
-            assert_ne!(
-                image.get_pixel(x(0.1), lane),
-                image.get_pixel(x(0.1), played)
-            );
+            let y = u32::from(seek.y + seek.height / 2 - density);
+            assert_eq!(image.get_pixel(x(0.9), y), image.get_pixel(x(0.99), y));
+            assert_ne!(image.get_pixel(x(0.1), y), image.get_pixel(x(0.99), y));
         }
     }
 

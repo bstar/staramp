@@ -1354,13 +1354,14 @@ impl Rack<'_> {
         };
         classic::label(
             &mut s,
-            R::new(86, 7, w.saturating_sub(420), 24),
-            crate::ui::panels::player::truncate(&heading, usize::from(w.saturating_sub(420) / 8)),
+            R::new(86, 7, w.saturating_sub(500), 24),
+            crate::ui::panels::player::truncate(&heading, usize::from(w.saturating_sub(500) / 8)),
             &crate::embed::skin::tone(&self.palette(), "#bbc6d5", true),
             12,
             false,
         );
         for (x, text, action) in [
+            (w - 356, "JUMP", "playlist:jump"),
             (w - 276, "sorting", "sorting"),
             (w - 196, "gravity", "gravity"),
         ] {
@@ -1409,8 +1410,6 @@ impl Rack<'_> {
             ("ADD", "library"),
             ("REM", "queue-remove"),
             ("SEL", "queue-tag"),
-            ("NOW", "playlist:current"),
-            ("GO", "playlist:selected"),
             ("MISC", "settings:playlist"),
             ("LIST", "playlists"),
         ]
@@ -1419,7 +1418,7 @@ impl Rack<'_> {
         {
             self.button(
                 &mut s,
-                R::new(14 + i as u16 * 45, toolbar_y, 41, 29),
+                R::new(14 + i as u16 * 63, toolbar_y, 57, 29),
                 c,
                 title,
                 action,
@@ -1729,7 +1728,7 @@ impl Rack<'_> {
         let rows = &self.app.queue.rows;
         self.app.queue.scroll =
             (above as usize).min(rows.len().saturating_sub(self.playlist_visible));
-        // Browsing must retain the selection so GO can return to it.
+        // Browsing retains selection for an explicit jump back to the track.
         self.playlist_scrolled = Some(self.app.queue.cursor);
     }
 
@@ -1894,12 +1893,14 @@ impl Rack<'_> {
             "gravity" => a.open_gravity(),
             "queue-remove" => a.handle(Action::RemoveTagged),
             "queue-tag" => a.handle(Action::TagRow),
-            "playlist:current" => {
-                a.focus_playing_track();
-                self.playlist_scrolled = None;
-            }
-            "playlist:selected" => {
-                a.focus_selected_track();
+            "playlist:jump" => {
+                let has_active_track = a.player.state.state() != PlayState::Stopped
+                    && a.player.queue.lock().unwrap().current_index().is_some();
+                if has_active_track {
+                    a.focus_playing_track();
+                } else {
+                    a.focus_selected_track();
+                }
                 self.playlist_scrolled = None;
             }
             "help" => a.handle(Action::Help),
@@ -5723,6 +5724,7 @@ impl App {
         // must not re-sort its queue, and the open menu must reflect each
         // acknowledged change immediately. Include duplicate occurrences.
         let owner = Arc::new(Player::detached());
+        owner.state.playing.store(true, Relaxed);
         let tracks = (0..30_000)
             .map(|i| {
                 let album = i % 1000;
@@ -5802,7 +5804,7 @@ impl App {
         rack.app.queue.cursor = 0;
         rack.playlist_scrolled = Some(0);
         rack.scene(v);
-        click(&mut rack, "playlist:current");
+        click(&mut rack, "playlist:jump");
         rack.scene(v);
         assert_eq!(rack.app.queue.cursor, playing_cursor);
         assert!(rack.app.edit.words.is_empty());
@@ -5826,7 +5828,9 @@ impl App {
             !(rack.app.queue.scroll..rack.app.queue.scroll + rack.playlist_visible)
                 .contains(&selected_row)
         );
-        click(&mut rack, "playlist:selected");
+        owner.state.playing.store(false, Relaxed);
+        rack.app.poll_mirror();
+        click(&mut rack, "playlist:jump");
         rack.scene(v);
         assert_eq!(rack.app.queue.cursor, selected_cursor);
         let row = rack.app.queue.rows.row_of_track(selected_cursor).unwrap();
@@ -5834,6 +5838,7 @@ impl App {
             (rack.app.queue.scroll..rack.app.queue.scroll + rack.playlist_visible).contains(&row)
         );
         assert_owner(&rack);
+        owner.state.playing.store(true, Relaxed);
         crate::ipc::handle(&owner, &crate::view::shared(), "set-group off");
         rack.app.poll_mirror();
         rack.app.queue.group_desc = false;

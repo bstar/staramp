@@ -34,7 +34,9 @@ writing each block, independently of playback. The cache is discarded on seek,
 track change, route close or disconnect; pause retains it and downloading
 continues. Gain/EQ changes refresh processed audio from the audible position.
 The buffered range uses received sample counts and is shared with mirroring
-windows. Local playback and credit refill run independently of terminal drawing,
+windows. A separate silver stripe underneath the played bar shows the complete
+cached range, including underneath already played audio; when cached to the end,
+that stripe reaches the right edge. Local playback and credit refill run independently of terminal drawing,
 so workspace changes do not need UI frames to keep audio supplied. Downloaded
 EOF does not advance the queue until the local audio device finishes playback.
 

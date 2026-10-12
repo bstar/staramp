@@ -30,6 +30,29 @@ fn buffered_width(state: &PlayerRenderState, width: u16) -> u16 {
         as u16
 }
 
+fn duration_label(state: &PlayerRenderState, width: u16) -> String {
+    let time = clock(state.duration);
+    if width < 720 || state.duration <= 0. || state.buffered <= state.position + 0.1 {
+        return time;
+    }
+    if state.buffered >= state.duration - 0.05 {
+        format!("{time} · cached")
+    } else {
+        let percent = (state.buffered / state.duration * 100.).clamp(0., 99.) as u16;
+        format!("{time} · {percent}% cached")
+    }
+}
+
+/// Keep the cached range visible underneath played audio, including a full cache.
+fn cache_lane(s: &mut Surface, seek: R, thickness: u16, buffered: u16, groove: &str) {
+    if thickness < 4 {
+        return;
+    }
+    let bottom = seek.y + (seek.height - thickness) / 2 + thickness;
+    s.fill(R::new(seek.x, bottom - 3, seek.width, 3), groove, 0);
+    s.fill(R::new(seek.x, bottom - 2, buffered, 2), &buffer_color(), 0);
+}
+
 pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
@@ -576,7 +599,7 @@ pub(super) fn player_surface(
     let track_gap = 24;
     let time_font = if artwork.is_some() { 13 } else { m.font };
     let elapsed = clock(state.position);
-    let total = clock(state.duration);
+    let total = duration_label(state, w);
     let elapsed_ink = text_width(&elapsed, time_font).min(w / 5);
     let elapsed_width = artwork
         .and_then(|art| art.readout_advance(time_font))
@@ -584,7 +607,15 @@ pub(super) fn player_surface(
         .unwrap_or(elapsed_ink)
         .max(elapsed_ink)
         .min(w / 5);
-    let total_width = text_width(&total, time_font).min(w / 5);
+    let total_width = if w >= 720 && state.duration > 0. && state.buffered > state.position + 0.1 {
+        text_width(
+            &format!("{} · 99% cached", clock(state.duration)),
+            time_font,
+        )
+        .min(w / 4)
+    } else {
+        text_width(&total, time_font).min(w / 5)
+    };
     player_readout(
         artwork,
         &mut s,
@@ -619,13 +650,13 @@ pub(super) fn player_surface(
     let buffer_ink = buffer_color();
     let groove = seek_track_color(palette);
     let thickness = if artwork.is_some() {
-        6
+        8
     } else if state.seek_style == SeekStyle::THIN {
-        4
+        6
     } else if state.seek_style == SeekStyle::BLOCKS {
         header.saturating_sub(4).max(1)
     } else {
-        6
+        8
     }
     .min(header);
     if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
@@ -667,6 +698,13 @@ pub(super) fn player_surface(
             radius,
         );
     }
+    let visible_thickness =
+        if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
+            6
+        } else {
+            thickness
+        };
+    cache_lane(&mut s, seek, visible_thickness, buffered, &groove);
     s.hits.push(HitRegion {
         rect: seek,
         action: "seek".into(),
@@ -1280,7 +1318,13 @@ fn compact_surface(
             action: "visualizer".into(),
         });
     }
+    let total = duration_label(state, w);
     let time_width = (m.font * 4).min(inner / 4);
+    let total_width = if w >= 720 && state.duration > 0. && state.buffered > state.position + 0.1 {
+        (m.font * 12).min(inner / 3)
+    } else {
+        time_width
+    };
     s.text(
         R::new(pad, seek_y, time_width, line),
         clock(state.position),
@@ -1289,8 +1333,8 @@ fn compact_surface(
         false,
     );
     s.text(
-        R::new(w - pad - time_width, seek_y, time_width, line),
-        clock(state.duration),
+        R::new(w - pad - total_width, seek_y, total_width, line),
+        total,
         &muted,
         m.font,
         false,
@@ -1298,7 +1342,7 @@ fn compact_surface(
     let seek = R::new(
         pad + time_width,
         seek_y,
-        inner.saturating_sub(2 * time_width),
+        inner.saturating_sub(time_width + total_width),
         line,
     );
     let fraction = if state.duration > 0. {
@@ -1309,11 +1353,11 @@ fn compact_surface(
     // Keep the same seek hit region for every presentation. Styles change
     // native stroke weight, never the position or size of the pointer target.
     let thickness = if state.seek_style == SeekStyle::THIN {
-        4
+        6
     } else if state.seek_style == SeekStyle::BLOCKS {
         line.saturating_sub(4).max(1)
     } else {
-        6
+        8
     }
     .min(line);
     let played = (f64::from(seek.width) * fraction) as u16;
@@ -1338,6 +1382,12 @@ fn compact_surface(
         s.fill(R::new(seek.x, y, buffered, thickness), &buffer_ink, radius);
         s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     }
+    let visible_thickness = if state.seek_style == SeekStyle::BAR && line >= 6 {
+        6
+    } else {
+        thickness
+    };
+    cache_lane(&mut s, seek, visible_thickness, buffered, &groove);
     s.hits.push(HitRegion {
         rect: seek,
         action: "seek".into(),

@@ -1021,15 +1021,80 @@ mod tests {
                 )
                 .unwrap();
             let x = |fraction: f64| u32::from(seek.x) + (f64::from(seek.width) * fraction) as u32;
-            let y = u32::from(seek.y + seek.height / 2);
+            let y = u32::from(seek.y + seek.height / 2 - density);
             let played = image.get_pixel(x(0.1), y);
             let buffered = image.get_pixel(x(0.5), y);
             let empty = image.get_pixel(x(0.9), y);
             assert_ne!(played, buffered);
             assert_ne!(buffered, empty);
-            for dy in 0..3 * density {
-                assert_eq!(image.get_pixel(x(0.5), y + u32::from(dy)), buffered);
-            }
+            // The cached stripe remains visible underneath the played range.
+            let cache_y = u32::from(seek.y + seek.height / 2 + 3 * density);
+            assert_eq!(
+                image.get_pixel(x(0.1), cache_y),
+                image.get_pixel(x(0.5), cache_y)
+            );
+            assert_ne!(
+                image.get_pixel(x(0.5), cache_y),
+                image.get_pixel(x(0.9), cache_y)
+            );
+        }
+    }
+
+    #[test]
+    fn fully_cached_track_is_visible_under_played_audio_and_labeled() {
+        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut state = state();
+        state.position = state.duration * 0.8;
+        state.buffered = state.duration;
+        for density in [1, 2] {
+            let surface = skin
+                .surface_at_density(
+                    1352 * density,
+                    230 * density,
+                    GraphicsConfig {
+                        cell_width: 8 * density,
+                        cell_height: 16 * density,
+                    },
+                    &palette(),
+                    &state,
+                    8,
+                    density,
+                )
+                .unwrap();
+            assert!(surface.nodes.iter().any(|node| matches!(node,
+                Primitive::Text { text, .. } if text.ends_with("· cached")
+            )));
+            let seek = surface
+                .hits
+                .iter()
+                .find(|hit| hit.action == "seek")
+                .unwrap()
+                .rect;
+            let image = SurfaceOverlayRenderer::new("monospace")
+                .render(
+                    &starkit::image::RgbaImage::new(
+                        u32::from(surface.width),
+                        u32::from(surface.height),
+                    ),
+                    &surface,
+                )
+                .unwrap();
+            let x = |fraction: f64| u32::from(seek.x) + (f64::from(seek.width) * fraction) as u32;
+            let lane = u32::from(seek.y + seek.height / 2 + 3 * density);
+            let played = u32::from(seek.y + seek.height / 2 - density);
+            assert_eq!(
+                image.get_pixel(x(0.1), lane),
+                image.get_pixel(x(0.99), lane)
+            );
+            assert_ne!(
+                image.get_pixel(x(0.1), played),
+                image.get_pixel(x(0.99), played)
+            );
+            assert_ne!(
+                image.get_pixel(x(0.1), lane),
+                image.get_pixel(x(0.1), played)
+            );
         }
     }
 

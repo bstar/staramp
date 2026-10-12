@@ -6009,9 +6009,9 @@ impl App {
             Some(uri) => self.command(&Command::PlayIndex(track), &format!("play-uri {uri}")),
             None => self.player.send(Command::PlayIndex(track)),
         }
-        // On the next draw, make the selected track the first visible row so
-        // the upcoming queue is visible. This changes only the viewport.
-        self.queue.scroll = usize::MAX;
+        // Starting playback preserves the viewport. Explicit reveal actions
+        // own scrolling to a track; playback must not send a browsed list to
+        // the end while its manual-scroll lock is active.
     }
 
     /// The track the cursor is on, translating from shown position to storage

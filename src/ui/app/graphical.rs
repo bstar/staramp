@@ -1973,6 +1973,7 @@ impl Rack<'_> {
                     match a.queue.rows.rows().get(i).cloned() {
                         Some(playlist::Row::Track(track)) => {
                             a.set_cursor(track);
+                            self.playlist_scrolled = Some(track);
                             if a.edit.last_click.click(0, i as u16) {
                                 a.handle(Action::Activate);
                             }
@@ -5669,6 +5670,45 @@ impl App {
                 rack.scene(v);
                 assert_eq!(rack.app.queue.scroll, maximum.saturating_sub(3));
                 assert_eq!(rack.offset, offset, "playlist wheel does not move the rack");
+                if !folded {
+                    rack.scroll_playlist_to(500);
+                    rack.scene(v);
+                    let scroll = rack.app.queue.scroll;
+                    let (row, selected) = rack
+                        .app
+                        .queue
+                        .rows
+                        .rows()
+                        .iter()
+                        .enumerate()
+                        .skip(scroll + 2)
+                        .take(rack.playlist_visible.saturating_sub(2))
+                        .find_map(|(row, line)| match line {
+                            playlist::Row::Track(track) => Some((row, *track)),
+                            _ => None,
+                        })
+                        .unwrap();
+                    let action = format!("playlist:{row}");
+                    rack.app.edit.last_click = Default::default();
+                    press_button(&mut rack, &action, 0);
+                    rack.scene(v);
+                    assert_eq!(
+                        rack.app.queue.scroll, scroll,
+                        "selection preserves the browsed viewport"
+                    );
+                    press_button(&mut rack, &action, 0);
+                    assert_eq!(
+                        rack.app.queue.scroll, scroll,
+                        "double-click playback preserves scroll before redraw"
+                    );
+                    rack.scene(v);
+                    assert_eq!(
+                        rack.app.queue.scroll, scroll,
+                        "double-click playback preserves scroll after redraw"
+                    );
+                    assert_eq!(rack.app.queue.cursor, selected);
+                    assert_eq!(rack.app.panels.focus, Focus::Playlist);
+                }
             }
         }
         rack.app.queue.folded.clear();

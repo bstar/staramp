@@ -816,3 +816,7 @@ footer adds NOW to reveal the playing track and GO to reveal the selected
 track. Reveal opens its folded album, clears a hiding filter and releases the
 manual scrollbar position without changing playback or queue order. Manual
 scrolling retains the selection, allowing GO to return to it after browsing.
+
+Starting a selected track preserves the playlist viewport. Row selection and
+double-click playback retain the clicked row and pane focus after manual
+scrolling; regression checks exercise the complete pointer path at 1x/2x.

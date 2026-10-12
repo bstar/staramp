@@ -38,7 +38,8 @@ If the local device cannot preserve the source, playback pauses with a reason.
 Enable **SSH audio compatibility** in Player settings to permit rate/layout/
 precision conversion, or run `staramp ctl audio-compatibility on` on the server.
 The footer reports source and local output formats and labels conversion. This
-choice lasts for the running playback session. Device errors pause playback;
+choice is saved as `[output] ssh_audio_compatibility` on the server and survives
+restarts. Device errors pause playback;
 they never silently move sound to the server. Legacy frontends are asked to
 update rather than silently receiving the old fixed 48 kHz/16-bit route.
 

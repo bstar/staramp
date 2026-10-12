@@ -168,6 +168,8 @@ pub struct Output {
     /// `fixed` pins the device and resamples.
     pub mode: String,
     pub fixed_rate: u32,
+    /// Permit local-device conversion when precise SSH PCM is unsupported.
+    pub ssh_audio_compatibility: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -453,6 +455,7 @@ impl Default for Output {
         Self {
             mode: "native".into(),
             fixed_rate: 48_000,
+            ssh_audio_compatibility: false,
         }
     }
 }

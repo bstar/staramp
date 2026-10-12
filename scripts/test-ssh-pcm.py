@@ -119,6 +119,11 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
 
     try:
         attach()
+        assert ctl('audio-compatibility') == 'false'
+        assert ctl('audio-compatibility', 'on') == 'ok'
+        assert 'ssh_audio_compatibility = true' in (data / 'config.toml').read_text()
+        assert ctl('audio-compatibility', 'off') == 'ok'
+        assert 'ssh_audio_compatibility = false' in (data / 'config.toml').read_text()
         key('char: ', 1)
         opened = media('pcm_open')
         assert opened['spec']['sample_rate'] == 48000
@@ -217,8 +222,22 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         assert json.loads(ctl('status'))['state'] == 'paused', 'Legacy frontend did not pause owner'
         key('char:q', 5)
         assert process.wait(timeout=5) == 0
+        # A new playback owner must restore the saved conversion preference.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                os.kill(server_pid, 0)
+            except ProcessLookupError:
+                break
+            assert time.monotonic() < deadline, 'Previous playback owner did not exit'
+            time.sleep(.02)
+        attach(name='restart')
+        assert ctl('audio-compatibility') == 'true', 'Restart lost compatibility preference'
+        assert ctl('audio-compatibility', 'off') == 'ok'
+        key('char:q', 6)
+        assert process.wait(timeout=5) == 0
         server_pid = None
-        print('Standalone PCM: exact 32-bit bytes, float64 DSP, credits, pause, seek, disconnect, reattach, both presentations, owner mirroring, device failure, legacy frontend, explicit conversion, complete EOF drain and shutdown passed')
+        print('Standalone PCM: exact 32-bit bytes, float64 DSP, credits, pause, seek, disconnect, reattach, both presentations, owner mirroring, device failure, legacy frontend, saved conversion across owner restarts, complete EOF drain and shutdown passed')
     finally:
         if process and process.poll() is None:
             process.kill()

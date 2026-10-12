@@ -427,12 +427,25 @@ fn handle_with_activity(
             .unwrap()
         }
         "audio-compatibility" => {
-            match parts.next() {
-                Some("on") => crate::audio::relay::set_compatibility(true),
-                Some("off") => crate::audio::relay::set_compatibility(false),
+            let enabled = match parts.next() {
+                Some("on") => true,
+                Some("off") => false,
                 None => return crate::audio::relay::compatibility().to_string(),
                 _ => return "error: expected on or off".into(),
+            };
+            let saved = (|| -> anyhow::Result<()> {
+                crate::config::Config::load()?;
+                crate::config::edit::set(
+                    &crate::paths::config_file()?,
+                    "output",
+                    "ssh_audio_compatibility",
+                    &crate::config::edit::Value::Bool(enabled),
+                )
+            })();
+            if let Err(error) = saved {
+                return format!("error: saving SSH audio compatibility: {error:#}");
             }
+            crate::audio::relay::set_compatibility(enabled);
             if crate::audio::relay::enabled() && crate::audio::relay::precise() {
                 player.send(Command::AudioRelay(true));
             }

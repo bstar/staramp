@@ -1904,6 +1904,8 @@ fn cmd_tui_mode(
         cfg = config::Config::load()?;
     }
 
+    audio::relay::set_compatibility(cfg.output.ssh_audio_compatibility);
+
     // With no argument, open on the configured playlist directory. A curated
     // playlist is a far better starting point than thirty thousand tracks in
     // album order, and it is what the playlists exist for.

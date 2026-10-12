@@ -9508,11 +9508,14 @@ impl App {
             Setting::Crossfade => self.handle(Action::ToggleCrossfade),
             Setting::AudioCompatibility => {
                 let on = self.audio_request("audio-compatibility") == "true";
-                self.audio_request(if on {
+                let reply = self.audio_request(if on {
                     "audio-compatibility off"
                 } else {
                     "audio-compatibility on"
                 });
+                if reply != "ok" {
+                    self.note(reply);
+                }
             }
             Setting::Animations => self.handle(Action::ToggleAnimations),
             Setting::JoinSession => {

@@ -9,7 +9,7 @@ use crate::vis::mode::VisMode;
 use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
 /// Muted silver separates received audio from the accent and charcoal groove.
-fn buffer_color() -> String {
+pub(super) fn buffer_color() -> String {
     "#9ba5b3".into()
 }
 

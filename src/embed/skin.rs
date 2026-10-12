@@ -28,6 +28,54 @@ fn button_background(palette: &Palette, kind: &str) -> String {
     }
 }
 
+/// The selected Fine dots treatment: one logical pixel on a fixed 3×3 grid.
+/// Tile one immutable asset instead of emitting thousands of per-dot primitives.
+fn fine_dot_cache(mut surface: Surface, density: u16) -> Surface {
+    use std::sync::OnceLock;
+    static TILES: OnceLock<[(String, String); 2]> = OnceLock::new();
+    let tiles = TILES.get_or_init(|| {
+        std::array::from_fn(|index| {
+            let scale = index as u32 + 1;
+            let pixels = starkit::image::RgbaImage::from_fn(3 * scale, 3 * scale, |x, y| {
+                starkit::image::Rgba(if x < scale && y < scale {
+                    // Muted silver at the example's 48% contrast over the cache base.
+                    [107, 113, 126, 255]
+                } else {
+                    [62, 66, 78, 255]
+                })
+            });
+            starkit::terminal_graphics::assets::encode_skin(&pixels)
+                .expect("fixed 3×3 cache tile is a valid skin asset")
+        })
+    });
+    let (id, png) = &tiles[usize::from(density - 1)];
+    let color = native::buffer_color();
+    let seek = surface
+        .hits
+        .iter()
+        .find(|hit| hit.action == "seek")
+        .map(|hit| hit.rect);
+    if let Some(node) = surface.nodes.iter_mut().find(|node| {
+        matches!(node,
+            Primitive::Fill { rect, color: ink, .. } if *ink == color
+                && rect.width > 0 && rect.height > 0
+                && seek.is_some_and(|seek| rect.x == seek.x && rect.y >= seek.y
+                    && rect.y + rect.height <= seek.y + seek.height)
+        )
+    }) {
+        let rect = node.rect();
+        *node = Primitive::Sprite {
+            rect,
+            asset: id.clone(),
+            source: PixelRect::new(0, 0, 3 * density, 3 * density),
+            insets: Some([0; 4]),
+            tint: None,
+        };
+        surface.assets.insert(id.clone(), Some(png.clone()));
+    }
+    surface
+}
+
 fn transport_button(action: &str) -> bool {
     matches!(action, "previous" | "play" | "pause" | "stop" | "next")
 }
@@ -611,14 +659,9 @@ impl PlayerSkin {
             .filter(|action| !state.control_enabled(action))
             .collect();
         self.prepare(palette, density, radius == 0)?;
-        Ok(native::player_surface(
-            width,
-            height,
-            graphics,
-            palette,
-            state,
-            radius,
-            Some(self),
+        Ok(fine_dot_cache(
+            native::player_surface(width, height, graphics, palette, state, radius, Some(self)),
+            density,
         ))
     }
     #[allow(clippy::too_many_arguments)]
@@ -658,7 +701,7 @@ impl PlayerSkin {
                     radius: radius.min(3),
                 });
             }
-            return Ok(surface);
+            return Ok(fine_dot_cache(surface, 1));
         }
         self.prepare(palette, density, radius == 0)?;
         let surface = native::player_surface(
@@ -673,7 +716,7 @@ impl PlayerSkin {
             radius / density,
             Some(self),
         );
-        surface.at_density(density)
+        Ok(fine_dot_cache(surface.at_density(density)?, density))
     }
 }
 /// UI density selects original artwork and fresh text sizes. Window width only
@@ -1027,13 +1070,24 @@ mod tests {
             let empty = image.get_pixel(x(0.9), y);
             assert_ne!(played, buffered);
             assert_ne!(buffered, empty);
-            // Every interior row stays solid: no seam through played or cached audio.
-            for offset in -3i32..4 {
-                let row =
-                    (i32::from(seek.y + seek.height / 2) + offset * i32::from(density)) as u32;
-                assert_eq!(image.get_pixel(x(0.1), row), played);
-                assert_eq!(image.get_pixel(x(0.5), row), buffered);
-                assert_eq!(image.get_pixel(x(0.9), row), empty);
+            // No separator crosses the bar. The cached range is a stationary,
+            // evenly spaced 1px grid, scaled from logical pixels at both densities.
+            let top = seek.y + seek.height / 2 - 4 * density;
+            for row in 0..8 * density {
+                let yy = u32::from(top + row);
+                assert_eq!(image.get_pixel(x(0.1), yy), played);
+                assert_eq!(image.get_pixel(x(0.9), yy), empty);
+                for column in 0..9 * density {
+                    let xx = u32::from(seek.x + seek.width / 2 + column);
+                    let dot = ((xx - u32::from(seek.x)) / u32::from(density)) % 3 == 0
+                        && row / density % 3 == 0;
+                    let expected = if dot {
+                        [107, 113, 126, 255]
+                    } else {
+                        [62, 66, 78, 255]
+                    };
+                    assert_eq!(image.get_pixel(xx, yy).0, expected);
+                }
             }
         }
     }
@@ -1080,8 +1134,11 @@ mod tests {
                 .unwrap();
             let x = |fraction: f64| u32::from(seek.x) + (f64::from(seek.width) * fraction) as u32;
             let y = u32::from(seek.y + seek.height / 2 - density);
-            assert_eq!(image.get_pixel(x(0.9), y), image.get_pixel(x(0.99), y));
-            assert_ne!(image.get_pixel(x(0.1), y), image.get_pixel(x(0.99), y));
+            for column in x(0.9)..u32::from(seek.x + seek.width) {
+                let pixel = image.get_pixel(column, y).0;
+                assert!(matches!(pixel, [62, 66, 78, 255] | [107, 113, 126, 255]));
+                assert_ne!(image.get_pixel(x(0.1), y).0, pixel);
+            }
         }
     }
 
@@ -1408,7 +1465,11 @@ mod tests {
         assert!(
             matches!(focused.nodes.last(), Some(Primitive::Border { rect: drawn, .. }) if *drawn == rect)
         );
-        assert!(focused.assets.is_empty());
+        assert_eq!(
+            focused.assets.len(),
+            1,
+            "compact fallback only needs the cache tile"
+        );
     }
     #[test]
     fn eq_button_ink_is_centered_in_hover_outlines_at_both_densities() {

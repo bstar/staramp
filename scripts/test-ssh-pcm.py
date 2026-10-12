@@ -174,6 +174,9 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         assert ctl('volume', '1') == 'ok'
         key('char: ', 3)
         final = media('pcm_open')
+        # The receiver controls pacing through credits. It must be able to
+        # refill faster than playback after a scheduling/network delay.
+        refill_started = time.monotonic()
         credit(final, 8)
         received = bytearray()
         while True:
@@ -185,6 +188,12 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
             send(type='media', message=dict(kind='pcm_progress', session=final['session'], epoch=final['epoch'], frames=len(received)//8))
             credit(final, 1)
         assert received == payload, 'End of track lost or changed PCM samples'
+        refill_elapsed = time.monotonic() - refill_started
+        audio_seconds = len(payload) / (48000 * 2 * 4)
+        assert refill_elapsed < audio_seconds * .75, (
+            f'PCM cannot refill ahead of playback: {refill_elapsed:.2f}s '
+            f'to deliver {audio_seconds:.2f}s of audio')
+        print(f'PCM refill: {audio_seconds:.2f}s audio in {refill_elapsed:.2f}s')
         assert json.loads(ctl('status'))['state'] == 'playing', 'Stopped before local drain completed'
         send(type='media', message=dict(kind='pcm_finished', session=final['session'], epoch=final['epoch']))
         media('pcm_close')

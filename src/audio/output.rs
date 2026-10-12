@@ -385,6 +385,13 @@ impl Output {
                     tap.write_f64(&values, channels);
                     cb.frames_out
                         .fetch_add((count / channels) as u64, Ordering::Relaxed);
+                    // Precise SSH playback is clocked by the local device and
+                    // bounded by its credits plus the relay queue. A second
+                    // wall clock here loses scheduler time every packet and
+                    // prevents the frontend from refilling after an underrun.
+                    if precise {
+                        continue;
+                    }
                     next += std::time::Duration::from_secs_f64(
                         count as f64 / (plan.sample_rate as f64 * channels as f64),
                     );

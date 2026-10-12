@@ -75,9 +75,13 @@ If direct authentication is unavailable, pass `--control-path` for a currently
 live authenticated SSH master; discover the current socket rather than saving
 its temporary path. The script requires a clean remote `main`, fetches through
 GitHub, verifies its revision matches local HEAD, builds through Nix with the
-published lockfile, and cleans compiler intermediates while retaining the binary.
-Preserve any remote edits before updating; do not reset them. Existing player
-processes need a restart to use a new build. Do not interrupt playback implicitly.
+published lockfile, cleans compiler intermediates while retaining the binary,
+and restarts the host player. Preserve any remote edits before updating; do not
+reset them. Restarting the host player after a successful build is explicitly
+authorized as part of this process. The helper saves a recovery snapshot, replaces the old
+playback owner and graphical servers, and verifies the new executable is running.
+The Mac frontend must reattach after the host session restarts. Use `--no-restart`
+only when a build without interruption is specifically requested.
 
 ## Building on Linux
 

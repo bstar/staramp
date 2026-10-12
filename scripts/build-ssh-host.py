@@ -14,6 +14,8 @@ def main():
     parser.add_argument('host', help='SSH destination, e.g. bstar@192.168.86.57')
     parser.add_argument('--repo', required=True, help='Absolute remote STAR/AMP checkout path')
     parser.add_argument('--control-path', help='Reuse an authenticated SSH multiplexing socket')
+    parser.add_argument('--no-restart', action='store_true', help='Build without restarting the host player')
+    parser.add_argument('--session', default='player', help='Host session to start after building')
     parser.add_argument('--cleanup-script', type=Path,
                         default=Path.home() / '.codex/skills/rust-build-hygiene/scripts/clean_build_cache.py')
     args = parser.parse_args()
@@ -71,9 +73,11 @@ trap cleanup EXIT
 nix --extra-experimental-features 'nix-command flakes' develop -c cargo build --release --locked
 ./scripts/run-local.sh --version
 printf 'Built remote STAR/AMP revision %s\n' "$expected"
-echo 'Restart the existing remote player to load the new executable.'
+if [[ "$4" = restart ]]; then
+    python3 scripts/restart-host-player.py --repo "$repo" --session "$5"
+fi
 '''
-    command = 'bash -s -- ' + shlex.join([args.repo, revision, cleanup])
+    command = 'bash -s -- ' + shlex.join([args.repo, revision, cleanup, "skip" if args.no_restart else "restart", args.session])
     subprocess.run(ssh + [args.host, command], input=script, text=True, check=True)
 
 

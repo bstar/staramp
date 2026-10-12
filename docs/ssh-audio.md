@@ -84,10 +84,13 @@ python3 scripts/build-ssh-host.py bstar@192.168.86.57 \
 
 The command uses SSH, fast-forwards a clean remote `main`, verifies it matches
 the local commit, builds the locked release through Nix and removes compiler
-intermediates while preserving the executable. It needs Nix, Git and Python 3
+intermediates while preserving the executable, then restarts the host player.
+It needs Nix, Git and Python 3
 on the server and the Rust build hygiene cleanup script locally (override with
 `--cleanup-script PATH`). `--control-path PATH` reuses an authenticated SSH master.
-Restart the existing player after building to load the new executable.
+The restart saves a recovery snapshot and verifies the new executable is running.
+Reattach the Mac frontend and resume the saved session afterward. Pass
+`--no-restart` to build without interrupting an existing player.
 
 The native Cargo/Homebrew route, including Intel Macs, is documented in
 [Installing](installing.md). Build and install this version on the music server

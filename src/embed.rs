@@ -10,6 +10,7 @@ pub(crate) mod render;
 pub(crate) mod skin;
 #[cfg(feature = "terminal-graphics")]
 mod skin_assets;
+mod skin_palette;
 mod styles;
 mod transport;
 pub use transport::run as run_transport_stdio;

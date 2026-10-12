@@ -61,6 +61,27 @@ impl ReplayGain {
         scalar
     }
 
+    pub fn scalar_f64(&self, mode: RgMode, preamp_db: f32, prevent_clipping: bool) -> f64 {
+        let gain = match mode {
+            RgMode::Off => return 1.0,
+            RgMode::Track => self.track_gain_db.or(self.album_gain_db),
+            RgMode::Album => self.album_gain_db.or(self.track_gain_db),
+        };
+        let Some(gain) = gain else {
+            return 1.0;
+        };
+        let mut scalar = 10.0f64.powf((f64::from(gain) + f64::from(preamp_db)) / 20.0);
+        let peak = match mode {
+            RgMode::Album => self.album_peak.or(self.track_peak),
+            _ => self.track_peak.or(self.album_peak),
+        };
+        if prevent_clipping {
+            if let Some(peak) = peak.filter(|&p| p > 0.0) {
+                scalar = scalar.min(1.0 / f64::from(peak));
+            }
+        }
+        scalar
+    }
     pub fn is_known(&self) -> bool {
         self.track_gain_db.is_some() || self.album_gain_db.is_some()
     }
@@ -73,8 +94,8 @@ impl ReplayGain {
 /// transparent in the bit-perfect case — and compresses only what would have
 /// clipped.
 #[inline]
-pub fn soft_clip(x: f32) -> f32 {
-    const KNEE: f32 = 0.9;
+pub fn soft_clip(x: f64) -> f64 {
+    const KNEE: f64 = 0.9;
     if x.abs() <= KNEE {
         return x;
     }
@@ -205,7 +226,7 @@ mod tests {
     #[test]
     fn soft_clip_is_exactly_transparent_below_the_knee() {
         // Matters for the bit-perfect claim: quiet audio must be untouched.
-        for x in [0.0f32, 0.1, -0.5, 0.89, -0.9, 0.9] {
+        for x in [0.0f64, 0.1, -0.5, 0.89, -0.9, 0.9] {
             assert_eq!(soft_clip(x), x, "{x} should pass through unchanged");
         }
     }
@@ -215,7 +236,7 @@ mod tests {
         // The curve asymptotes to full scale, so at large inputs it reaches
         // exactly 1.0 in f32 rather than approaching it. What matters is that it
         // never goes past.
-        for x in [1.5f32, 2.0, 10.0, 1000.0] {
+        for x in [1.5f64, 2.0, 10.0, 1000.0] {
             assert!(soft_clip(x) <= 1.0, "{x} produced {}", soft_clip(x));
             assert!(soft_clip(-x) >= -1.0, "-{x} produced {}", soft_clip(-x));
         }
@@ -226,7 +247,7 @@ mod tests {
         // Monotonic: no folding back, which would sound far worse than clipping.
         let mut prev = soft_clip(0.9);
         for i in 1..100 {
-            let v = soft_clip(0.9 + i as f32 * 0.05);
+            let v = soft_clip(0.9 + i as f64 * 0.05);
             assert!(v >= prev, "must be monotonic");
             prev = v;
         }

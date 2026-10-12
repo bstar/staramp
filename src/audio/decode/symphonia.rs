@@ -36,7 +36,7 @@ pub struct SymphoniaDecoder {
 
     /// Decoded interleaved samples not yet handed to the caller. Packets decode
     /// to a variable number of frames, so a leftover buffer is unavoidable.
-    buf: Option<SampleBuffer<f32>>,
+    buf: Option<SampleBuffer<f64>>,
     /// Read cursor into `buf`, in samples.
     buf_pos: usize,
     /// Valid samples in `buf`.
@@ -124,6 +124,8 @@ impl SymphoniaDecoder {
 
         let mut this = Self {
             spec: StreamSpec {
+                sample_format: starkit::pcm::SampleFormat::F64,
+                channel_mask: params.channels.map(|c| c.bits() as u64).unwrap_or(0),
                 sample_rate: declared_rate.unwrap_or(0),
                 channels: declared_channels.unwrap_or(0),
                 bit_depth: params.bits_per_sample,
@@ -142,7 +144,7 @@ impl SymphoniaDecoder {
             eos: false,
         };
 
-        if !this.spec_known {
+        {
             // Decode one packet to learn the format. The audio is kept, not
             // discarded — `fill` leaves it buffered for the first `read`.
             this.fill()
@@ -195,6 +197,16 @@ impl SymphoniaDecoder {
                         continue;
                     }
                     let sig = *decoded.spec();
+                    self.spec.channel_mask = u64::from(sig.channels.bits());
+                    self.spec.sample_format = match &decoded {
+                        symphonia::core::audio::AudioBufferRef::F32(_) => {
+                            starkit::pcm::SampleFormat::F32
+                        }
+                        symphonia::core::audio::AudioBufferRef::F64(_) => {
+                            starkit::pcm::SampleFormat::F64
+                        }
+                        _ => starkit::pcm::SampleFormat::I32,
+                    };
 
                     if !self.spec_known {
                         self.spec.sample_rate = sig.rate;
@@ -210,7 +222,7 @@ impl SymphoniaDecoder {
                         None => true,
                     };
                     if grow {
-                        self.buf = Some(SampleBuffer::<f32>::new(frames as u64, sig));
+                        self.buf = Some(SampleBuffer::<f64>::new(frames as u64, sig));
                     }
                     let buf = self.buf.as_mut().expect("just allocated");
                     buf.copy_interleaved_ref(decoded);
@@ -250,7 +262,7 @@ impl Decoder for SymphoniaDecoder {
         super::average_bitrate_kbps(self.file_size, self.total_frames, self.spec.sample_rate)
     }
 
-    fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+    fn read(&mut self, out: &mut [f64]) -> Result<usize> {
         let ch = self.spec.samples_per_frame();
         if ch == 0 {
             return Ok(0);

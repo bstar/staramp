@@ -390,9 +390,20 @@ impl EqState {
         self.work.clear();
     }
 
+    /// Compatibility adapter for analysis and existing float32 callers.
+    pub fn process(&mut self, settings: &EqSettings, buf: &mut [f32], channels: usize) {
+        if settings.is_transparent() {
+            return;
+        }
+        let mut wide: Vec<f64> = buf.iter().map(|&n| f64::from(n)).collect();
+        self.process_f64(settings, &mut wide, channels);
+        for (dst, src) in buf.iter_mut().zip(wide) {
+            *dst = src as f32;
+        }
+    }
     /// Apply in place to an interleaved buffer.
     #[inline]
-    pub fn process(&mut self, settings: &EqSettings, buf: &mut [f32], channels: usize) {
+    pub fn process_f64(&mut self, settings: &EqSettings, buf: &mut [f64], channels: usize) {
         if settings.is_transparent() {
             return;
         }
@@ -403,20 +414,20 @@ impl EqState {
         for frame in buf.chunks_mut(channels) {
             for (c, sample) in frame.iter_mut().enumerate() {
                 let state = &mut self.states[c.min(nch - 1)];
-                let mut x = *sample * settings.preamp_linear;
+                let mut x = *sample * 10.0f64.powf(f64::from(settings.preamp_db) / 20.0);
                 for (filter, coeffs) in state.iter_mut().zip(&settings.coeffs) {
-                    x = filter.process(coeffs, x);
+                    x = filter.process_f64(coeffs, x);
                 }
                 *sample = x;
             }
         }
     }
 
-    fn process_dynamic(&mut self, settings: &EqSettings, buf: &mut [f32], channels: usize) {
+    fn process_dynamic(&mut self, settings: &EqSettings, buf: &mut [f64], channels: usize) {
         self.ensure_dynamic(settings, channels);
         self.work.resize(buf.len(), 0.0);
         for (dst, src) in self.work.iter_mut().zip(buf.iter()) {
-            *dst = *src as f64;
+            *dst = *src;
         }
         for (stage_index, stage) in settings.stages.iter().enumerate() {
             match &stage.filter {
@@ -491,7 +502,7 @@ impl EqState {
             }
         }
         for (dst, src) in buf.iter_mut().zip(self.work.iter()) {
-            *dst = *src as f32;
+            *dst = *src;
         }
     }
 

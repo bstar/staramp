@@ -55,12 +55,12 @@ pub struct Adapting {
     /// what a 5.1 file on a stereo device still goes through.
     expand_mono: bool,
     /// Frames read from `inner`, before any channel expansion.
-    raw: Vec<f32>,
+    raw: Vec<f64>,
     /// Interleaved input as swresample sees it.
-    scratch: Vec<f32>,
+    scratch: Vec<f64>,
     /// Converted output not yet handed to the caller. swresample buffers
     /// internally as well, so this only holds what a `read` did not take.
-    pending: std::collections::VecDeque<f32>,
+    pending: std::collections::VecDeque<f64>,
     /// The inner decoder has returned 0 and the resampler has been drained.
     eos: bool,
     /// Position in **output** frames, in whatever domain the inner decoder
@@ -108,6 +108,11 @@ impl Adapting {
     /// bound for a multi-channel device has already been widened.
     fn mid_spec(in_spec: &StreamSpec, out: &StreamSpec) -> StreamSpec {
         StreamSpec {
+            channel_mask: if in_spec.channels == 1 && out.channels > 1 {
+                out.channel_mask
+            } else {
+                in_spec.channel_mask
+            },
             channels: if in_spec.channels == 1 && out.channels > 1 {
                 out.channels
             } else {
@@ -118,16 +123,16 @@ impl Adapting {
     }
 
     fn build(in_spec: &StreamSpec, out: &StreamSpec) -> Result<ff::software::resampling::Context> {
-        let packed = Sample::F32(SampleType::Packed);
+        let packed = Sample::F64(SampleType::Packed);
         ff::software::resampler(
             (
                 packed,
-                ff::ChannelLayout::default(in_spec.channels as i32),
+                starkit::pcm_output::channel_layout(in_spec.channel_mask, in_spec.channels),
                 in_spec.sample_rate,
             ),
             (
                 packed,
-                ff::ChannelLayout::default(out.channels as i32),
+                starkit::pcm_output::channel_layout(out.channel_mask, out.channels),
                 out.sample_rate,
             ),
         )
@@ -178,14 +183,17 @@ impl Adapting {
         }
 
         let mut input = ff::frame::Audio::new(
-            Sample::F32(SampleType::Packed),
+            Sample::F64(SampleType::Packed),
             got,
-            ff::ChannelLayout::default(mid_ch as i32),
+            starkit::pcm_output::channel_layout(
+                Self::mid_spec(&self.in_spec, &self.out_spec).channel_mask,
+                mid_ch as u16,
+            ),
         );
         input.set_rate(self.in_spec.sample_rate);
         // Packed layout keeps every channel interleaved in plane 0. The plane
         // is padded to libav's alignment, so only `got` frames of it are real.
-        input.plane_mut::<f32>(0)[..got * mid_ch].copy_from_slice(&self.scratch[..got * mid_ch]);
+        input.plane_mut::<f64>(0)[..got * mid_ch].copy_from_slice(&self.scratch[..got * mid_ch]);
 
         let mut out = self.out_frame(self.to_out(got as u64) as usize);
         self.swr
@@ -218,9 +226,9 @@ impl Adapting {
     /// rather than samples -- but there is no reason to be tight.
     fn out_frame(&self, frames: usize) -> ff::frame::Audio {
         let mut f = ff::frame::Audio::new(
-            Sample::F32(SampleType::Packed),
+            Sample::F64(SampleType::Packed),
             frames + 64,
-            ff::ChannelLayout::default(self.out_spec.channels as i32),
+            starkit::pcm_output::channel_layout(self.out_spec.channel_mask, self.out_spec.channels),
         );
         f.set_rate(self.out_spec.sample_rate);
         f
@@ -232,7 +240,7 @@ impl Adapting {
             return;
         }
         let ch = self.out_spec.channels as usize;
-        let plane: &[f32] = frame.plane(0);
+        let plane: &[f64] = frame.plane(0);
         let want = (frames * ch).min(plane.len());
         self.pending.extend(&plane[..want]);
     }
@@ -276,7 +284,7 @@ impl Decoder for Adapting {
         self.inner.bitrate_kbps()
     }
 
-    fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+    fn read(&mut self, out: &mut [f64]) -> Result<usize> {
         let ch = self.out_spec.channels as usize;
         if ch == 0 {
             return Ok(0);
@@ -346,6 +354,8 @@ mod tests {
         fn boxed(sample_rate: u32, channels: u16, len: u64) -> Box<dyn Decoder> {
             Box::new(Self {
                 spec: StreamSpec {
+                    sample_format: starkit::pcm::SampleFormat::F64,
+                    channel_mask: 0,
                     sample_rate,
                     channels,
                     bit_depth: Some(16),
@@ -366,7 +376,7 @@ mod tests {
         fn bitrate_kbps(&self) -> Option<u32> {
             None
         }
-        fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+        fn read(&mut self, out: &mut [f64]) -> Result<usize> {
             let ch = self.spec.channels as usize;
             let want = (out.len() / ch).min(self.len.saturating_sub(self.pos) as usize);
             for f in 0..want {
@@ -391,10 +401,10 @@ mod tests {
         }
     }
 
-    fn drain(d: &mut dyn Decoder) -> Vec<f32> {
+    fn drain(d: &mut dyn Decoder) -> Vec<f64> {
         let ch = d.spec().channels as usize;
         let mut all = Vec::new();
-        let mut buf = vec![0f32; 1024 * ch];
+        let mut buf = vec![0f64; 1024 * ch];
         loop {
             let n = d.read(&mut buf).expect("read");
             if n == 0 {
@@ -406,6 +416,8 @@ mod tests {
 
     fn out(sample_rate: u32, channels: u16) -> StreamSpec {
         StreamSpec {
+            sample_format: starkit::pcm::SampleFormat::F64,
+            channel_mask: 0,
             sample_rate,
             channels,
             bit_depth: None,

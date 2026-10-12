@@ -42,6 +42,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 starkit = { git = "https://github.com/bstar/starkit", tag = "v0.4.0", version = "0.4", features = [
     "image",
     "wsz",
+    "audio-output",
     "net",
 ] }
 
@@ -119,6 +120,7 @@ lofty = "0.22"
 
 # Content-addressed cache keys for album art.
 blake3 = "1"
+url = "2"
 
 # Config and themes. A real parser -- the reference implementation hand-rolls a
 # line scanner for both and silently ignores anything it does not recognise.
@@ -142,6 +144,7 @@ rustfft = "6"
 # Cargo unifies the two into one copy of one version, which is what matters:
 # an `Agent` built by `starkit::net::agent` is this crate's `Agent`.
 ureq = { version = "3", features = ["json"] }
+base64 = "0.22"
 serde_json = "1.0.151"
 md5 = "0.8"
 rpassword = "7"

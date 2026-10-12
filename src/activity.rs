@@ -1385,6 +1385,50 @@ pub fn print_status() -> Result<()> {
     Ok(())
 }
 
+pub fn print_snapshot() -> Result<()> {
+    let cfg = crate::config::Config::load()?;
+    let creds = Credentials::load();
+    let store = Store::open()?;
+    let providers: Vec<_> = Provider::ALL
+        .iter()
+        .map(|p| {
+            let enabled = match p {
+                Provider::Lastfm => cfg.scrobble.lastfm,
+                Provider::Listenbrainz => cfg.scrobble.listenbrainz,
+            };
+            serde_json::json!({
+                "name": p.label(),
+                "enabled": enabled,
+                "authenticated": creds.configured(*p),
+                "username": creds.username(*p),
+            })
+        })
+        .collect();
+    let recent: Vec<_> = store
+        .recent(5)?
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "title": r.title,
+                "artist": r.artist,
+                "album": r.album,
+                "state": r.state(),
+                "outcome": r.outcome,
+            })
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "providers": providers,
+            "pending": store.pending_count(),
+            "recent": recent,
+        })
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,6 +9,111 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### SSH audio · October 12
+
+Terminal and Classic now share standalone SSH audio with a single playback
+owner. The source-preserving PCM route retains 32-bit integers and float64,
+uses float64 DSP and requires explicit compatibility conversion when the local
+device cannot preserve the source. Disconnect pauses; seeking and reattaching
+replace queued audio generations. The output footer reports the local format.
+
+Linux checks passed for generated PCM over real loopback SSH, float64 volume,
+credits, pause/seek, disconnect/reattach, owner mirroring, device failure,
+legacy frontend handling and final drain. A real `--ssh` cell frontend played
+through an isolated CPAL/ALSA null device and advanced the remote clock with no
+server sound device. The graphical renderer and real frontend mouse/resize
+checks also passed. Physical listening and macOS audio hardware remain
+unverified. See `../ssh-audio.md` for the published KIT v0.4.0 dependency and use.
+
+### Local queue hover · October 11
+
+Queue hover now uses negotiated native surface hover fills, painted by KIT's
+frontend directly from physical pointer coordinates. Movement within the queue
+no longer requires controller input, state polling, scene rebuilding or a new
+scene transfer. Authoritative scene updates reapply the current local hover;
+selection remains controller-owned. Selected rows keep their selection color.
+Hover fills follow clipping/density transforms and disappear for folded panes
+and modals. Older clients retain the controller-rendered hover path.
+
+AMP pins KIT revision `a811b7c`. KIT's 493 full-feature unit tests, four media
+integration tests, 305 minimal-feature unit tests and doc tests pass, as does
+strict Clippy with the existing dead-code allowance. AMP's 893 unit tests
+(5 ignored), 12 embedding tests and native rack integration pass. Native checks
+cover adjacent pixel rows at both densities, unchanged base/selection, modal
+suppression, bounded hover references and the legacy rendering path. A real
+frontend PTY measured a queue hover repaint at 0.020 seconds while proving no
+controller input was sent and selection did not change. Strict Clippy passes.
+The Nix release build passes. Its combined PTY check covers seven resize
+transitions, local hover repaint at 0.010 seconds without controller input,
+1,500 motion reports and clean exit. The desktop frontend, relay and playback
+owner use the rebuilt executable; the 29,615-track queue, stopped playback state,
+view, theme and EQ/profile files were verified preserved.
+
+### Queue pointer response · October 11
+
+KIT now forwards the latest position in each queued hover burst instead of
+replaying every intermediate mouse position. The bounded drain yields to
+frame presentation and preserves every click, drag, wheel, key and resize
+event in order. A 1,500-report PTY burst reproduced input queue overflow in
+the previous frontend. KIT revision `ff8c17e` introduced the correction.
+
+Clicking a queue row now focuses the pane and selects the row on the same
+first left press. The next press can complete the normal double-click action;
+selection does not wait for another press after switching from a different
+pane. Slider and EQ graph focus behavior stays unchanged.
+
+KIT's full/minimal tests and strict Clippy pass. AMP's 893 unit tests (5
+ignored), 12 embedding tests and native rack integration pass, with first-click
+selection painted on the next frame at both densities without starting playback.
+The real frontend PTY passes seven resize transitions followed by 1,500 hover
+reports and a close click in 0.274 seconds. The sender uses small paced writes
+and concurrent output draining to avoid saturating the PTY itself; the previous
+release fails this same paced check. Strict Clippy passes.
+The Nix release build and the same resize/burst PTY check against that binary
+pass. The desktop frontend, relay and playback owner use the rebuilt executable;
+the 29,615-track queue order, stopped playback state, view, theme and EQ/profile
+files were verified preserved.
+
+### Terminal resize repaint · October 11
+
+KIT's presentation caches now include the viewport generation. A rapid
+shrink/grow sequence can finish at the original dimensions after the terminal
+has clipped or moved its image placements; matching pixels and dimensions are
+insufficient to reuse those placements. Every resize now replaces all image
+regions, retires the old IDs and invalidates the cell diff buffer. KIT revision
+`76ed6aa` introduced this correction.
+
+The rack clips scrolling modules above the footer, retains only the visible
+portion of bitmap corners in physical source pixels at 1x/2x, and cancels
+pointer captures tied to the previous geometry. This prevents footer overlap
+and failures when a pane is reduced to a fragment shorter than its corners.
+
+The regression first failed against the previous image cache. KIT's full and
+minimal feature tests and strict Clippy pass. AMP's 893 unit tests (5 ignored),
+12 embedding tests and native integration pass, including 110 render cases
+through partial pane corners at both densities. An isolated real frontend PTY
+verifies complete image replacement after unchanged-size, odd-pixel, growing,
+shrinking, density and native/cell-layout fallback transitions, plus clean exit
+and pixel mouse restoration. Strict Clippy, the Nix release build and the same
+PTY check against the release executable pass. The desktop frontend, relay and
+playback owner now use that executable; queue order, paused track/position,
+shared view, theme and EQ/profile files were verified unchanged. Physical
+macOS/SSH resize behavior remains unverified.
+
+### Clickable footer theme · October 11
+
+Clicking the footer's theme label cycles to the next available theme, wrapping
+at the end, through the existing theme action. Native clicks activate on the
+first press regardless of pane focus and leave reference palette mode so the
+selected theme appears and persists normally. The cell footer has the same
+click action.
+
+Formatting, strict Clippy, the native rack check at both densities and the Nix
+release build passed. An isolated real frontend PTY confirmed a footer click
+changes the theme and saves it on clean exit. The desktop uses the new release;
+its detached older playback owner was replaced, with queue order, paused track
+and position, shared view, theme and EQ files preserved.
+
 ### Contextual EQ details · October 11
 
 The native EQ no longer has a bottom strip of every band's parameters,

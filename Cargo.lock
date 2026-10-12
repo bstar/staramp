@@ -3409,6 +3409,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "base64 0.22.1",
  "blake3",
  "chardetng",
  "clap",
@@ -3441,6 +3442,7 @@ dependencies = [
  "unicode-normalization",
  "unicode-width",
  "ureq",
+ "url",
  "webbrowser",
 ]
 

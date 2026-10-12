@@ -16,6 +16,12 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Standalone SSH audio in terminal and Classic presentations with `--ssh`.
+  Playback stays on the server and bounded PCM streams to the local device;
+  disconnect pauses the shared player, and reattaching preserves its session.
+  Source precision, rate and speaker layout are preserved by default, with
+  explicit compatibility conversion for devices that require it.
+
 - **`L` puts the whole library back in the playlist.** After a playlist, a
   timeline or an artist list, the only way back to everything was to quit and
   start again. `L` rebuilds the library queue from the index, in the same
@@ -34,6 +40,10 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   track nobody resumes is not a long burst of I/O.
 
 ### Changed
+
+- Decoder, DSP and playback buffers use float64. Transparent SSH blocks retain
+  their original integer/float representation; processed audio carries float64
+  samples, with TPDF dither when quantizing to integer device output.
 
 - **The shared foundation now lives in its own crate, STAR/KIT**, and STAR/AMP
   depends on a tag of it rather than carrying it. The theme engine, the

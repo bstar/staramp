@@ -220,7 +220,7 @@ fn read_mono(decoder: &mut dyn Decoder, frames: usize) -> Result<Vec<f32>> {
             break;
         }
         for frame in interleaved[..got * channels].chunks_exact(channels) {
-            mono.push(frame.iter().copied().sum::<f32>() / channels as f32);
+            mono.push((frame.iter().copied().sum::<f64>() / channels as f64) as f32);
         }
     }
     Ok(mono)

@@ -12,8 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, StreamConfig};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use rtrb::Consumer;
 
 use super::tap::Tap;
@@ -43,7 +42,8 @@ impl RateMode {
 /// used to do -- meant the answer arrived after every decision that needed it,
 /// and a rate the device had refused was simply played at the wrong speed.
 pub struct Plan {
-    device: Option<cpal::Device>,
+    device: Option<starkit::pcm_output::Plan>,
+    pub source: starkit::pcm::Spec,
     pub device_name: String,
     /// What the device will actually run at.
     pub sample_rate: u32,
@@ -62,6 +62,12 @@ impl Plan {
         src: &crate::audio::decode::StreamSpec,
     ) -> crate::audio::decode::StreamSpec {
         crate::audio::decode::StreamSpec {
+            sample_format: src.sample_format,
+            channel_mask: if self.device.is_none() {
+                src.channel_mask
+            } else {
+                ffmpeg_next::ChannelLayout::default(i32::from(self.channels)).bits()
+            },
             sample_rate: self.sample_rate,
             channels: self.channels,
             bit_depth: src.bit_depth,
@@ -73,12 +79,16 @@ impl Plan {
     /// Both halves matter: a rate the device took is not bit-perfect if the
     /// channels had to be remixed to get there.
     pub fn is_bit_perfect(&self) -> bool {
-        self.rate_mode.is_bit_perfect() && self.remixed_from.is_none()
+        self.rate_mode.is_bit_perfect()
+            && self.remixed_from.is_none()
+            && self.device.as_ref().is_none_or(|d| !d.converted)
     }
 
     /// Whether a decoder producing `src` needs converting first.
     pub fn needs_adapting(&self, src: &crate::audio::decode::StreamSpec) -> bool {
-        src.sample_rate != self.sample_rate || src.channels != self.channels
+        src.sample_rate != self.sample_rate
+            || src.channels != self.channels
+            || (src.channel_mask != 0 && src.channel_mask != self.out_spec(src).channel_mask)
     }
 }
 
@@ -91,11 +101,20 @@ impl Plan {
 pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) -> Result<Plan> {
     if super::relay::enabled() {
         return Ok(Plan {
+            source: spec.pcm(),
             device: None,
             device_name: "SSH client".into(),
-            sample_rate: 48000,
-            channels: 2,
-            rate_mode: if spec.sample_rate == 48000 {
+            sample_rate: if super::relay::precise() {
+                spec.sample_rate
+            } else {
+                48000
+            },
+            channels: if super::relay::precise() {
+                spec.channels
+            } else {
+                2
+            },
+            rate_mode: if super::relay::precise() || spec.sample_rate == 48000 {
                 RateMode::Native
             } else {
                 RateMode::Resampled {
@@ -103,17 +122,19 @@ pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) ->
                     to: 48000,
                 }
             },
-            remixed_from: (spec.channels != 2).then_some(spec.channels),
+            remixed_from: (!super::relay::precise() && spec.channels != 2).then_some(spec.channels),
         });
     }
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow!("no default output device"))?;
-    let device_name = device.name().unwrap_or_else(|_| "<unknown>".into());
-
-    let wanted = fixed_rate.unwrap_or(spec.sample_rate);
-    let (sample_rate, channels) = choose_format(&device, wanted, spec.channels)?;
+    let device = starkit::pcm_output::Plan::select(
+        starkit::pcm::Spec {
+            sample_rate: fixed_rate.unwrap_or(spec.sample_rate),
+            ..spec.pcm()
+        },
+        true,
+    )?;
+    let device_name = device.device.name().unwrap_or_else(|_| "<unknown>".into());
+    let sample_rate = device.config.sample_rate.0;
+    let channels = device.config.channels;
 
     // Measured against the *file*, not against what was asked for: pinning the
     // device to 48 kHz and getting it is still a conversion for a 44.1 kHz
@@ -128,6 +149,7 @@ pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) ->
     };
 
     Ok(Plan {
+        source: spec.pcm(),
         device: Some(device),
         device_name,
         sample_rate,
@@ -176,6 +198,8 @@ impl OutputState {
 }
 
 pub struct Output {
+    device_pause: Option<Arc<AtomicBool>>,
+    errors: Option<crossbeam_channel::Receiver<String>>,
     stream: Option<cpal::Stream>,
     relay_stop: Arc<AtomicBool>,
     relay_worker: Option<std::thread::JoinHandle<()>>,
@@ -210,7 +234,7 @@ impl Output {
     /// asked for anything yet.
     pub fn open(
         plan: Plan,
-        mut consumer: Consumer<f32>,
+        consumer: Consumer<starkit::pcm::Sample>,
         source_done: Arc<AtomicBool>,
         tap: Arc<Tap>,
         start_paused: bool,
@@ -222,67 +246,34 @@ impl Output {
         let Plan {
             device,
             device_name,
+            source,
             sample_rate,
             channels,
             rate_mode,
             remixed_from,
         } = plan;
-
-        let config = StreamConfig {
-            channels,
-            sample_rate: SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Default,
-        };
-
         let state = Arc::new(OutputState::new(start_paused));
-        let cb_state = Arc::clone(&state);
-
-        let stream = device
-            .unwrap()
-            .build_output_stream(
-                &config,
-                move |out: &mut [f32], _| {
-                    // Everything here is allocation-free and lock-free. No I/O,
-                    // no mutex, no `Vec`. That rule is what lets a blocked disk
-                    // read stall the decoder without stalling the audio.
-                    if cb_state.paused.load(Ordering::Relaxed) {
-                        out.fill(0.0);
-                        return;
-                    }
-
-                    let chunk = consumer.read_chunk(out.len().min(consumer.slots()));
-                    let got = match chunk {
-                        Ok(c) => {
-                            let (a, b) = c.as_slices();
-                            out[..a.len()].copy_from_slice(a);
-                            out[a.len()..a.len() + b.len()].copy_from_slice(b);
-                            let n = a.len() + b.len();
-                            c.commit_all();
-                            n
-                        }
-                        Err(_) => 0,
-                    };
-
-                    out[got..].fill(0.0);
-                    cb_state.read_result(got, out.len(), source_done.load(Ordering::Acquire));
-
-                    // Tap what is going to the device, not what the decoder
-                    // produced: the ring holds ~200ms, and tapping upstream
-                    // showed the analyzer reacting that far ahead of the sound.
-                    tap.write(&out[..got], channels as usize);
-
-                    cb_state
-                        .frames_out
-                        .fetch_add((got / channels as usize) as u64, Ordering::Relaxed);
-                },
-                |err| tracing::error!("output stream error: {err}"),
-                None,
-            )
-            .context("building output stream")?;
-
+        let cb_state = state.clone();
+        let pause = Arc::new(AtomicBool::new(start_paused));
+        let (error_tx, error_rx) = crossbeam_channel::bounded(1);
+        let stream = device.unwrap().open(
+            consumer,
+            source,
+            pause.clone(),
+            error_tx,
+            move |values, wanted| {
+                cb_state.read_result(values.len(), wanted, source_done.load(Ordering::Acquire));
+                tap.write_f64(values, channels as usize);
+                cb_state
+                    .frames_out
+                    .fetch_add((values.len() / channels as usize) as u64, Ordering::Relaxed);
+            },
+        )?;
         stream.play().context("starting output stream")?;
 
         Ok(Self {
+            device_pause: Some(pause),
+            errors: Some(error_rx),
             stream: Some(stream),
             relay_stop: Arc::new(AtomicBool::new(false)),
             relay_worker: None,
@@ -298,7 +289,7 @@ impl Output {
 
     fn relay(
         plan: Plan,
-        mut consumer: Consumer<f32>,
+        mut consumer: Consumer<starkit::pcm::Sample>,
         done: Arc<AtomicBool>,
         tap: Arc<Tap>,
         paused: bool,
@@ -318,32 +309,85 @@ impl Output {
                         next = std::time::Instant::now();
                         continue;
                     }
-                    let count = consumer.slots().min(super::relay::FRAMES * 2) / 2 * 2;
-                    cb.read_result(
-                        count,
-                        super::relay::FRAMES * 2,
-                        done.load(Ordering::Acquire),
-                    );
+                    let precise = super::relay::precise();
+                    let channels = if precise { plan.channels as usize } else { 2 };
+                    let capacity = if precise {
+                        plan.source
+                            .block_frames()
+                            .min(starkit::pcm::MAX_BLOCK_BYTES / (channels * 8))
+                            * channels
+                    } else {
+                        super::relay::FRAMES * 2
+                    };
+                    let mut count = consumer.slots().min(capacity) / channels * channels;
+                    let mut processed = false;
+                    if count > 0 {
+                        // Never combine bypass samples and processed samples in
+                        // a packet; both metadata and integer conversion depend on it.
+                        let chunk = consumer.read_chunk(count).unwrap();
+                        let (a, b) = chunk.as_slices();
+                        processed = a.first().or_else(|| b.first()).unwrap().processed;
+                        count = a
+                            .iter()
+                            .chain(b.iter())
+                            .take_while(|s| s.processed == processed)
+                            .count()
+                            / channels
+                            * channels;
+                        // Read cursor is unchanged until values below are consumed.
+                    }
+                    cb.read_result(count, capacity, done.load(Ordering::Acquire));
                     if count == 0 {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                         next = std::time::Instant::now();
                         continue;
                     }
-                    let mut values = Vec::with_capacity(count);
-                    for _ in 0..count {
-                        values.push(consumer.pop().unwrap());
-                    }
-                    let samples = values
-                        .iter()
-                        .map(|v| (v.clamp(-1.0, 1.0) * 32767.0).round() as i16)
-                        .collect();
-                    if !super::relay::send(super::relay::Block { epoch, samples }, &worker_stop) {
+                    let values: Vec<f64> =
+                        (0..count).map(|_| consumer.pop().unwrap().value).collect();
+                    let pcm = if precise {
+                        let spec = if processed {
+                            starkit::pcm::Spec {
+                                format: starkit::pcm::SampleFormat::F64,
+                                valid_bits: Some(match plan.source.format {
+                                    starkit::pcm::SampleFormat::F32 => 24,
+                                    _ => plan.source.valid_bits.unwrap_or(64),
+                                }),
+                                ..plan.source
+                            }
+                        } else {
+                            plan.source
+                        };
+                        match spec.encode(&values) {
+                            Ok(data) => Some((plan.source, spec.format, processed, data)),
+                            Err(_) => break,
+                        }
+                    } else {
+                        None
+                    };
+                    let samples = if precise {
+                        Vec::new()
+                    } else {
+                        values
+                            .iter()
+                            .map(|v| (v.clamp(-1.0, 1.0) * 32767.0).round() as i16)
+                            .collect()
+                    };
+                    if !super::relay::send(
+                        super::relay::Block {
+                            epoch,
+                            samples,
+                            pcm,
+                        },
+                        &worker_stop,
+                    ) {
                         break;
                     }
-                    tap.write(&values, 2);
+                    tap.write_f64(&values, channels);
                     cb.frames_out
-                        .fetch_add((count / 2) as u64, Ordering::Relaxed);
-                    next += std::time::Duration::from_secs_f64(count as f64 / 96000.0);
+                        .fetch_add((count / channels) as u64, Ordering::Relaxed);
+                    next += std::time::Duration::from_secs_f64(
+                        count as f64 / (plan.sample_rate as f64 * channels as f64),
+                    );
                     while std::time::Instant::now() < next && !worker_stop.load(Ordering::Relaxed) {
                         std::thread::sleep(std::time::Duration::from_millis(1));
                     }
@@ -354,6 +398,8 @@ impl Output {
                 }
             })?;
         Ok(Self {
+            device_pause: None,
+            errors: None,
             stream: None,
             relay_stop: stop,
             relay_worker: Some(worker),
@@ -368,14 +414,23 @@ impl Output {
     }
 
     pub fn pause(&self) {
+        if let Some(pause) = &self.device_pause {
+            pause.store(true, Ordering::Relaxed);
+        }
         self.state.paused.store(true, Ordering::Relaxed);
     }
 
     pub fn resume(&self) {
+        if let Some(pause) = &self.device_pause {
+            pause.store(false, Ordering::Relaxed);
+        }
         self.state.buffering.store(true, Ordering::Relaxed);
         self.state.paused.store(false, Ordering::Relaxed);
     }
 
+    pub fn error(&self) -> Option<String> {
+        self.errors.as_ref().and_then(|rx| rx.try_recv().ok())
+    }
     pub fn stop(&self) {
         self.relay_stop.store(true, Ordering::Relaxed);
         if let Some(stream) = &self.stream {
@@ -479,10 +534,17 @@ mod relay_tests {
         for _ in receiver.try_iter() {}
         let (mut producer, consumer) = crate::audio::ring::create(48000, 2);
         for _ in 0..1920 {
-            producer.push(0.5).unwrap();
+            producer.push(0.5.into()).unwrap();
         }
         let output = Output::relay(
             Plan {
+                source: starkit::pcm::Spec {
+                    sample_rate: 48000,
+                    channels: 2,
+                    channel_mask: 3,
+                    format: starkit::pcm::SampleFormat::I32,
+                    valid_bits: Some(16),
+                },
                 device: None,
                 device_name: "test".into(),
                 sample_rate: 48000,

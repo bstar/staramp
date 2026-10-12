@@ -1,5 +1,10 @@
 # A library on another machine
 
+To keep the player and library on the server and send decoded audio to your
+local machine, use `staramp --ssh music-server`. Both the terminal and Classic
+rack support this mode; see [SSH audio](ssh-audio.md). The `remote` command
+below instead runs the player locally and reads compressed files over SFTP.
+
 The music is on the machine under the desk; you are on the laptop. STAR/AMP
 opens one SSH connection and plays the files through it.
 

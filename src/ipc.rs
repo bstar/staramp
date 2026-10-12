@@ -374,6 +374,71 @@ fn handle_with_activity(
     let rest = (!rest.is_empty()).then_some(rest);
 
     match cmd {
+        "audio-route" => {
+            let Some(token) = parts
+                .next()
+                .and_then(|n| n.parse::<u64>().ok())
+                .filter(|&n| n != 0)
+            else {
+                return "error: invalid audio route".into();
+            };
+            crate::audio::relay::claim(token);
+            crate::audio::relay::set_precise(true);
+            player.send(Command::AudioRelay(true));
+            "ok".into()
+        }
+        "audio-detach" => {
+            if parts.next().and_then(|n| n.parse::<u64>().ok())
+                == Some(crate::audio::relay::route())
+            {
+                player.send(Command::Pause);
+                crate::audio::relay::claim(0);
+            }
+            "ok".into()
+        }
+        "audio-progress" | "audio-finished" => {
+            let token = parts.next().and_then(|n| n.parse::<u64>().ok());
+            let epoch = parts.next().and_then(|n| n.parse::<u64>().ok());
+            if token == Some(crate::audio::relay::route())
+                && epoch == Some(crate::audio::relay::current_epoch())
+            {
+                if cmd == "audio-finished" {
+                    player.send(Command::AudioFinished(epoch.unwrap()));
+                } else if let Some(frames) = parts.next().and_then(|n| n.parse::<u64>().ok()) {
+                    crate::audio::relay::publish_played(frames.min(player.state.output_frames()));
+                }
+            }
+            "ok".into()
+        }
+        "audio-pcm" => {
+            if parts.next().and_then(|n| n.parse::<u64>().ok())
+                != Some(crate::audio::relay::route())
+            {
+                return "error: audio route belongs to another frontend".into();
+            }
+            serde_json::to_string(&crate::audio::relay::Poll {
+                playing: player.state.playing.load(Ordering::Relaxed),
+                paused: player.state.paused.load(Ordering::Relaxed),
+                draining: crate::audio::relay::draining(),
+                finished: player.state.output_finished(),
+                compatibility: crate::audio::relay::compatibility(),
+                packet: crate::audio::relay::packet(),
+            })
+            .unwrap()
+        }
+        "audio-compatibility" => {
+            match parts.next() {
+                Some("on") => crate::audio::relay::set_compatibility(true),
+                Some("off") => crate::audio::relay::set_compatibility(false),
+                None => return crate::audio::relay::compatibility().to_string(),
+                _ => return "error: expected on or off".into(),
+            }
+            if crate::audio::relay::enabled() && crate::audio::relay::precise() {
+                player.send(Command::AudioRelay(true));
+            }
+            "ok".into()
+        }
+
         "play" => {
             player.send(Command::Resume);
             "ok".into()
@@ -578,6 +643,16 @@ fn handle_with_activity(
         }
         "status" => {
             let st = &player.state;
+            let (index, total, shuffle, repeat) = {
+                let q = player.queue.lock().unwrap();
+                (
+                    q.current_index().map(|_| q.view_cursor() + 1).unwrap_or(0),
+                    q.len(),
+                    q.shuffled(),
+                    q.repeat().to_string(),
+                )
+            };
+            let track_revision = st.track_revision.load(Ordering::Relaxed);
             let state = match st.state() {
                 PlayState::Playing => "playing",
                 PlayState::Paused => "paused",
@@ -596,7 +671,8 @@ fn handle_with_activity(
             // JSON by hand: one object with fixed keys does not justify a
             // serialisation dependency on the control path.
             format!(
-                r#"{{"state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{}}}"#,
+                r#"{{"version":"{}","state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
+                env!("CARGO_PKG_VERSION"),
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
@@ -1359,7 +1435,13 @@ mod tests {
         let (_path, stop, client) = serving();
         assert_eq!(ask(&client, "ping"), "pong");
         assert_eq!(ask(&client, "ping"), "pong");
-        assert!(ask(&client, "status").starts_with('{'), "status is JSON");
+        let status: serde_json::Value = serde_json::from_str(&ask(&client, "status")).unwrap();
+        assert_eq!(status["index"], 0);
+        assert_eq!(status["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(status["total"], 0);
+        assert_eq!(status["shuffle"], false);
+        assert_eq!(status["repeat"], "Off");
+        assert_eq!(status["trackId"], "/org/staramp/track/0");
         assert_eq!(ask(&client, "volume"), "1.00");
         assert!(ask(&client, "nonsense").starts_with("error:"));
         // And the connection still works after an error.

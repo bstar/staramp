@@ -25,7 +25,7 @@ use crate::vfs::Vfs;
 const BACKOFF: Duration = Duration::from_millis(2);
 
 /// Fraction of the ring to fill before letting the device start.
-const PREFILL: f32 = 0.5;
+const PREFILL: f64 = 0.5;
 
 /// Give up waiting for the prefill after this long. A very short file, or a slow
 /// first read off a cold disk, must not stall startup indefinitely.
@@ -33,12 +33,12 @@ const PREFILL_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Block until the ring holds enough audio to cover the first few callbacks.
 fn prefill(
-    consumer: &rtrb::Consumer<f32>,
+    consumer: &rtrb::Consumer<starkit::pcm::Sample>,
     sample_rate: u32,
     channels: u16,
     source_done: &AtomicBool,
 ) {
-    let target = (ring::capacity_samples(sample_rate, channels) as f32 * PREFILL) as usize;
+    let target = (ring::capacity_samples(sample_rate, channels) as f64 * PREFILL) as usize;
     let deadline = std::time::Instant::now() + PREFILL_TIMEOUT;
     while consumer.slots() < target {
         // A file shorter than the prefill target would otherwise spin here.
@@ -135,7 +135,7 @@ impl Playback {
                 .spawn(move || -> Result<()> {
                     // Sized to a comfortable multiple of a typical device quantum,
                     // and unrelated to the ring: this is just working space.
-                    let mut buf = vec![0f32; 4096 * ch];
+                    let mut buf = vec![0f64; 4096 * ch];
                     loop {
                         if thread_stop.load(Ordering::Relaxed) {
                             break;
@@ -157,7 +157,7 @@ impl Playback {
                             // Space was checked above, so this cannot fail; if it
                             // somehow does, dropping a sample beats panicking on the
                             // decode thread.
-                            let _ = producer.push(s);
+                            let _ = producer.push(s.into());
                         }
                         thread_frames.fetch_add(frames as u64, Ordering::Relaxed);
                     }

@@ -10,7 +10,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-/// 32-bit float PCM writer. Float because that is what the decoders produce, and
+/// 64-bit float PCM writer. Float because that is what the decoders produce, and
 /// converting to 16-bit here would make the comparison test prove the wrong thing.
 pub struct WavWriter {
     out: BufWriter<File>,
@@ -32,7 +32,7 @@ impl WavWriter {
 
     fn write_header(&mut self, sample_rate: u32) -> Result<()> {
         let ch = self.channels;
-        let bits = 32u16;
+        let bits = 64u16;
         let block_align = ch * bits / 8;
         let byte_rate = sample_rate * block_align as u32;
 
@@ -56,17 +56,17 @@ impl WavWriter {
     }
 
     /// Append interleaved samples.
-    pub fn write(&mut self, samples: &[f32]) -> Result<()> {
+    pub fn write(&mut self, samples: &[f64]) -> Result<()> {
         // A stack buffer keeps this off the allocator on the hot path.
         let mut chunk = [0u8; 4096];
-        for block in samples.chunks(chunk.len() / 4) {
-            let n = block.len() * 4;
+        for block in samples.chunks(chunk.len() / 8) {
+            let n = block.len() * 8;
             for (i, s) in block.iter().enumerate() {
-                chunk[i * 4..i * 4 + 4].copy_from_slice(&s.to_le_bytes());
+                chunk[i * 8..i * 8 + 8].copy_from_slice(&s.to_le_bytes());
             }
             self.out.write_all(&chunk[..n])?;
         }
-        self.data_bytes += (samples.len() * 4) as u32;
+        self.data_bytes += (samples.len() * 8) as u32;
         Ok(())
     }
 

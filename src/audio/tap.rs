@@ -41,6 +41,17 @@ impl Tap {
     ///
     /// Called from the audio callback: no allocation, no locking, no branching
     /// on anything that could stall.
+    /// Downconvert only the visualizer copy, never the playback ring.
+    pub fn write_f64(&self, interleaved: &[f64], channels: usize) {
+        let mut scratch = [0.0f32; 256];
+        for frames in interleaved.chunks(channels * scratch.len()) {
+            let count = frames.len() / channels;
+            for (out, frame) in scratch.iter_mut().zip(frames.chunks_exact(channels)) {
+                *out = (frame.iter().sum::<f64>() / channels as f64) as f32;
+            }
+            self.write(&scratch[..count], 1);
+        }
+    }
     pub fn write(&self, interleaved: &[f32], channels: usize) {
         if channels == 0 || self.buf.is_empty() {
             return;

@@ -188,7 +188,7 @@ fn player_button(
 ) {
     if let Some(art) = art {
         art.button(s, r, action, active);
-        let face = super::skin::button_rect(r);
+        let face = super::skin_palette::button_rect(r);
         if art.fixed_label(s, face, text, &art.button_ink(action, active), true) {
             s.hits.push(HitRegion {
                 rect: r,
@@ -272,7 +272,7 @@ pub(super) fn player_surface(
     use starkit::native_surface::classic::{self, Colors};
     let m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
     let mut c = if artwork.is_some() {
-        super::skin::colors(palette)
+        super::skin_palette::colors(palette)
     } else {
         Colors::new(
             palette.bg,
@@ -287,8 +287,8 @@ pub(super) fn player_surface(
     }
     let accent = c.accent.clone();
     let border = hex(palette.border);
-    let header_ink = super::skin::tone(palette, "#bbc6d5", true);
-    let led_off = super::skin::inactive_led(palette);
+    let header_ink = super::skin_palette::tone(palette, "#bbc6d5", true);
+    let led_off = super::skin_palette::inactive_led(palette);
     let fg = c.ink.clone();
     let w = w.min((8_000_000 / u32::from(h.max(1))) as u16);
     let mut s = Surface::new(w, h, hex(palette.bg));
@@ -1033,7 +1033,7 @@ pub fn track_surface(
     close_button(
         &mut surface,
         R::new(width.saturating_sub(close_width + 6), 4, close_width, row),
-        &super::skin::colors(palette),
+        &super::skin_palette::colors(palette),
         "picker_close",
         false,
     );

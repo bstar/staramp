@@ -31,6 +31,7 @@ mod vfs;
 mod view;
 mod vis;
 
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -61,6 +62,17 @@ struct Cli {
     #[cfg(feature = "terminal-graphics")]
     #[arg(long, hide = true)]
     directory: Option<PathBuf>,
+    /// Run the player on an SSH host and play sound locally.
+    #[arg(long, global = true)]
+    ssh: Option<String>,
+    #[arg(long, global = true)]
+    ssh_config: Option<PathBuf>,
+    #[arg(long, global = true, default_value = "staramp")]
+    remote_executable: String,
+    #[arg(long, global = true, default_value = "player")]
+    session: String,
+    #[arg(long, global = true)]
+    attach: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -108,6 +120,8 @@ enum ScrobbleCmd {
     Auth { provider: activity::Provider },
     /// Show configured providers and queued submissions.
     Status,
+    /// Show local listening history and provider delivery state as JSON.
+    Snapshot,
     /// Remove a provider's saved credentials and disable it.
     Logout { provider: activity::Provider },
 }
@@ -119,12 +133,7 @@ enum Command {
     RenderRack { output: PathBuf },
     /// Run the native Classic Rack inside Kitty. F9 switches presentation.
     #[cfg(feature = "terminal-graphics")]
-    Graphical {
-        target: Option<PathBuf>,
-        /// Run playback on this SSH host; rendering stays in the local terminal.
-        #[arg(long)]
-        ssh: Option<String>,
-    },
+    Graphical { target: Option<PathBuf> },
     /// Run a standalone player using the versioned JSON-lines embed protocol.
     #[command(hide = true)]
     Embed {
@@ -279,6 +288,17 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    // The Nix build uses Nix's libasound, which must load a plugin built
+    // against the same libraries. Do this before any audio or worker threads.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("ALSA_PLUGIN_DIR").is_none() {
+        if let Some(dir) = option_env!("STARAMP_ALSA_PLUGIN_DIR") {
+            if !dir.is_empty() {
+                std::env::set_var("ALSA_PLUGIN_DIR", dir);
+            }
+        }
+    }
+
     let cli = Cli::parse();
 
     #[cfg(feature = "terminal-graphics")]
@@ -296,6 +316,30 @@ fn main() -> Result<()> {
         };
     }
 
+    #[cfg(feature = "terminal-graphics")]
+    if cli.graphical_server.is_none() {
+        let graphical = matches!(cli.command, Some(Command::Graphical { .. }));
+        let player_launch = matches!(
+            cli.command,
+            None | Some(Command::Ui { .. }) | Some(Command::Graphical { .. })
+        );
+        if player_launch
+            && (cli.ssh.is_some() || graphical || std::env::var_os("SSH_CONNECTION").is_some())
+        {
+            let target = match &cli.command {
+                Some(Command::Ui { target, .. }) | Some(Command::Graphical { target }) => {
+                    target.clone()
+                }
+                _ => None,
+            };
+            return launch_session(&cli, target, !graphical);
+        }
+    }
+    #[cfg(not(feature = "terminal-graphics"))]
+    anyhow::ensure!(
+        cli.ssh.is_none(),
+        "SSH playback requires a build with terminal-graphics enabled"
+    );
     // Before anything creates a file under them. What staramp keeps is the
     // shape of a music collection and a record of what was listened to, which
     // is nobody else's business on a shared machine.
@@ -325,31 +369,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "terminal-graphics")]
         Some(Command::RenderRack { output }) => ui::app::App::render_rack_references(&output),
         #[cfg(feature = "terminal-graphics")]
-        Some(Command::Graphical { target, ssh }) => {
-            use starkit::terminal_graphics::client::{self, Launch};
-            client::run_with_preference(
-                Launch {
-                    executable: if ssh.is_some() {
-                        "staramp".into()
-                    } else {
-                        std::env::current_exe()?.to_string_lossy().into_owned()
-                    },
-                    host: ssh,
-                    ssh_config: None,
-                    session: format!("rack-{}", std::process::id()),
-                    directory: target.map(|p| p.to_string_lossy().into_owned()),
-                    attach_only: false,
-                    play: None,
-                },
-                |_| None,
-                || None,
-                client::PresentationOptions::default(),
-                client::PresentationPreference {
-                    cells: false,
-                    path: paths::config_dir()?.join("presentation"),
-                },
-            )
-        }
+        Some(Command::Graphical { .. }) => unreachable!("handled before startup"),
         Some(Command::Embed { .. }) => unreachable!("handled before startup"),
         Some(Command::Decode {
             input,
@@ -381,6 +401,7 @@ fn main() -> Result<()> {
         Some(Command::Scrobble { cmd }) => match cmd {
             ScrobbleCmd::Auth { provider } => activity::auth(provider),
             ScrobbleCmd::Status => activity::print_status(),
+            ScrobbleCmd::Snapshot => activity::print_snapshot(),
             ScrobbleCmd::Logout { provider } => activity::logout(provider),
         },
         Some(Command::Query {
@@ -486,7 +507,7 @@ fn cmd_decode(
 
     let mut wav = WavWriter::create(&output, spec.sample_rate, spec.channels)?;
     // 8192 frames is a decode-side working size, unrelated to the audio ring.
-    let mut buf = vec![0f32; 8192 * ch];
+    let mut buf = vec![0f64; 8192 * ch];
 
     let began = Instant::now();
     let mut written: u64 = 0;
@@ -1823,7 +1844,7 @@ fn cmd_tui_mode(
     graphics_override: Option<String>,
     native_session: Option<&str>,
 ) -> Result<()> {
-    let cfg = config::Config::load().unwrap_or_default();
+    let mut cfg = config::Config::load().unwrap_or_default();
 
     // Before anything touches the terminal. Detecting a graphics protocol
     // means writing a query and reading the answer off stdin, and once the app
@@ -1871,6 +1892,18 @@ fn cmd_tui_mode(
         return app.run();
     }
 
+    // A fresh install has no index to open read-only. Ask for the library
+    // before starting the player, and leave a non-interactive launch with
+    // actionable instructions instead of a SQLite error.
+    let index = index_path()?;
+    let first_run = native_session.is_none() && target.is_none() && !index.exists();
+    if first_run {
+        if !first_run_setup(&cfg)? {
+            return Ok(());
+        }
+        cfg = config::Config::load()?;
+    }
+
     // With no argument, open on the configured playlist directory. A curated
     // playlist is a far better starting point than thirty thousand tracks in
     // album order, and it is what the playlists exist for.
@@ -1879,7 +1912,6 @@ fn cmd_tui_mode(
         _ => Vec::new(),
     };
 
-    let index = index_path()?;
     let (root, items) = if native_session.is_some() && target.is_none() && !index.exists() {
         // The graphical player can open its Library and Playlist controls
         // before the first scan. Do not hide errors from an existing index.
@@ -1893,6 +1925,10 @@ fn cmd_tui_mode(
         build_queue(&cfg, target.as_deref(), &index)?
     };
     if items.is_empty() && playlists.is_empty() && native_session.is_none() {
+        if first_run {
+            println!("No playable tracks found. Try `staramp scan <music-directory>` or open a folder with `staramp ui <folder>`.");
+            return Ok(());
+        }
         anyhow::bail!(
             "nothing to play — run `staramp scan <dir>` first, or pass a playlist or directory"
         );
@@ -1921,13 +1957,52 @@ fn cmd_tui_mode(
 }
 
 #[cfg(feature = "terminal-graphics")]
-fn graphical_relay(name: &str, target: Option<&Path>, attach_only: bool) -> Result<()> {
+fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()> {
+    use starkit::terminal_graphics::{
+        client::{self, Launch},
+        terminal_bridge,
+    };
+    if cli.ssh.is_none() {
+        if let Some(terminal) = terminal_bridge::probe()? {
+            let socket = ensure_graphical(&cli.session, target.as_deref(), cli.attach)?;
+            return terminal.relay_with_presentation(&socket, None, Some(cells));
+        }
+        anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/KIT Kitty integration.");
+    }
+    paths::init_private_dirs();
+    client::run_with_preference(
+        Launch {
+            executable: if cli.ssh.is_some() {
+                cli.remote_executable.clone()
+            } else {
+                std::env::current_exe()?.to_string_lossy().into_owned()
+            },
+            host: cli.ssh.clone(),
+            ssh_config: cli.ssh_config.clone(),
+            session: cli.session.clone(),
+            directory: target.map(|p| p.to_string_lossy().into_owned()),
+            attach_only: cli.attach,
+            play: None,
+        },
+        |_| None,
+        || None,
+        client::PresentationOptions::default(),
+        client::PresentationPreference {
+            cells,
+            path: paths::config_dir()?.join("presentation"),
+        },
+    )
+}
+
+#[cfg(feature = "terminal-graphics")]
+fn ensure_graphical(name: &str, target: Option<&Path>, attach_only: bool) -> Result<PathBuf> {
     use starkit::terminal_graphics::session;
     let root = paths::runtime_dir()?.join("graphical");
     let socket = session::socket_path(&root, name)?;
-    if attach_only {
-        return session::relay(&socket);
+    if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+        return Ok(socket);
     }
+    anyhow::ensure!(!attach_only, "No running player session named {name}");
     let mut child = std::process::Command::new(std::env::current_exe()?);
     child.args(["--graphical-server", name]);
     if let Some(target) = target {
@@ -1936,18 +2011,70 @@ fn graphical_relay(name: &str, target: Option<&Path>, attach_only: bool) -> Resu
     let mut child = child
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()?;
     for _ in 0..200 {
-        if socket.exists() {
-            return session::relay(&socket);
+        if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+            return Ok(socket);
         }
         if let Some(status) = child.try_wait()? {
-            anyhow::bail!("Graphical player exited: {status}");
+            anyhow::bail!("Player session exited: {status}");
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
     let _ = child.kill();
-    anyhow::bail!("Graphical player did not become ready")
+    let _ = child.wait();
+    anyhow::bail!("Player session did not become ready")
+}
+#[cfg(feature = "terminal-graphics")]
+fn graphical_relay(name: &str, target: Option<&Path>, attach_only: bool) -> Result<()> {
+    starkit::terminal_graphics::session::relay(&ensure_graphical(name, target, attach_only)?)
+}
+
+fn first_run_setup(cfg: &config::Config) -> Result<bool> {
+    eprintln!("Welcome to STAR/AMP. Choose a music folder to build your library index.");
+    if !io::stdin().is_terminal() {
+        eprintln!("Run `staramp scan <music-directory>`, then launch `staramp` again.");
+        return Ok(false);
+    }
+
+    loop {
+        match &cfg.library_root {
+            Some(root) => eprint!("Music folder [{}] (q to quit): ", root.display()),
+            None => eprint!("Music folder (q to quit): "),
+        }
+        io::stderr().flush()?;
+        let mut answer = String::new();
+        if io::stdin().read_line(&mut answer)? == 0 || answer.trim() == "q" {
+            eprintln!("Run `staramp scan <music-directory>` when you're ready.");
+            return Ok(false);
+        }
+        let typed = answer.trim().trim_matches(['\'', '"']);
+        let root = if typed.is_empty() {
+            match &cfg.library_root {
+                Some(root) => root.clone(),
+                None => {
+                    eprintln!("Enter a folder, or q to quit.");
+                    continue;
+                }
+            }
+        } else if let Some(rest) = typed.strip_prefix("~/") {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(rest)
+        } else {
+            PathBuf::from(typed)
+        };
+        if !root.is_dir()
+            || std::fs::read_dir(&root).is_ok_and(|mut entries| entries.next().is_none())
+        {
+            eprintln!(
+                "{} is not a populated directory. Choose another folder.",
+                root.display()
+            );
+            continue;
+        }
+        cmd_scan(Some(root), false)?;
+        return Ok(true);
+    }
 }
 
 fn cmd_query(expr: String, count_only: bool, explain: bool) -> Result<()> {

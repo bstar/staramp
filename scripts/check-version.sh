@@ -15,6 +15,8 @@ expect() { # name actual
 
 expect Cargo.lock \
   "$(awk '/^name = "staramp"$/{getline; gsub(/version = "|"/,""); print; exit}' Cargo.lock)"
+expect 'Omarchy plugin manifest' "$(jq -r '.version' manifest.json)"
+expect 'Omarchy widget' "$(awk -F'"' '/readonly property string pluginVersion:/{print $2; exit}' omarchy/Widget.qml)"
 
 grep -q 'cargoToml.package.version' flake.nix || {
   echo "flake.nix hard-codes a version; it should read Cargo.toml" >&2

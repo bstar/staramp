@@ -275,6 +275,18 @@ probe must advance its native clock; a static 0:00 frame proves no playback.
 
 ## Embedded SSH audio output
 
+Standalone `--ssh` and terminal bridge sessions use negotiated `audio_pcm_v2`.
+Both terminal and Classic presentations share one playback owner; a mirror
+forwards its audio-route lease and bounded PCM polling over IPC. Disconnect
+pauses that owner. Generation-scoped progress and final-drain acknowledgements
+keep the clock from running ahead of local playback. Older frontends pause with
+an update notice. Conversion is explicit in Player settings and the output
+footer; no local-device failure may move sound to the server.
+Decoder/DSP/rings are float64, while blocks retain source I32/F32/F64 format
+when transparent and carry float64 plus processing provenance otherwise.
+DSD-decoded PCM retains its rate; native DSD/DoP is outside this path.
+See `docs/ssh-audio.md` and `scripts/test-ssh-pcm.py` for development and checks.
+
 `audio::relay` is the optional `audio_relay_v1` output for embedded playback.
 Its virtual output uses a bounded PCM queue and the player clock, without a host
 sound device. Embedded JSONL credits prevent a stalled frontend from blocking

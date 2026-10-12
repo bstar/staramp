@@ -560,6 +560,7 @@ mod tests {
             uri: "A/B/01.flac".into(),
             detail,
             art: None,
+            desktop_art_url: None,
             image: img.map(std::sync::Arc::new),
             source: None,
             choice: 0,

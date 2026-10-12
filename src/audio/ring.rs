@@ -18,7 +18,13 @@ pub fn capacity_samples(sample_rate: u32, channels: u16) -> usize {
     (frames as usize * channels as usize).next_power_of_two()
 }
 
-pub fn create(sample_rate: u32, channels: u16) -> (Producer<f32>, Consumer<f32>) {
+pub fn create(
+    sample_rate: u32,
+    channels: u16,
+) -> (
+    Producer<starkit::pcm::Sample>,
+    Consumer<starkit::pcm::Sample>,
+) {
     RingBuffer::new(capacity_samples(sample_rate, channels))
 }
 

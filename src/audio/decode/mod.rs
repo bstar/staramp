@@ -1,7 +1,7 @@
 //! Decoding.
 //!
 //! One trait spans every backend. Everything downstream of this module speaks
-//! **interleaved `f32` frames** and nothing else — that is the only sane common
+//! **interleaved `f64` frames** and nothing else — that is the only sane common
 //! currency between symphonia's typed `AudioBufferRef` variants and libavcodec's
 //! planar output.
 
@@ -19,6 +19,8 @@ use crate::vfs::Media;
 /// What a decoder is producing, discovered when the stream is opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamSpec {
+    pub sample_format: starkit::pcm::SampleFormat,
+    pub channel_mask: u64,
     pub sample_rate: u32,
     pub channels: u16,
     /// Source bit depth, where the container reports one. Display and the
@@ -27,13 +29,22 @@ pub struct StreamSpec {
 }
 
 impl StreamSpec {
+    pub fn pcm(self) -> starkit::pcm::Spec {
+        starkit::pcm::Spec {
+            sample_rate: self.sample_rate,
+            channels: self.channels,
+            channel_mask: self.channel_mask,
+            format: self.sample_format,
+            valid_bits: self.bit_depth,
+        }
+    }
     /// Samples per frame. Interleaved buffers are `frames * channels` long.
     pub fn samples_per_frame(&self) -> usize {
         self.channels as usize
     }
 }
 
-/// A seekable source of interleaved `f32` audio.
+/// A seekable source of interleaved `f64` audio.
 ///
 /// Positions are in **frames**, absolute, and relative to the backing file —
 /// `SliceDecoder` is what translates those into cue-virtual-track coordinates,
@@ -41,12 +52,12 @@ impl StreamSpec {
 pub trait Decoder: Send {
     fn spec(&self) -> StreamSpec;
 
-    /// Fill `out` with interleaved `f32`. Returns the number of **frames**
+    /// Fill `out` with interleaved `f64`. Returns the number of **frames**
     /// written; `0` means end of stream.
     ///
     /// `out.len()` should be a multiple of `spec().channels`; a partial trailing
     /// frame is not written.
-    fn read(&mut self, out: &mut [f32]) -> Result<usize>;
+    fn read(&mut self, out: &mut [f64]) -> Result<usize>;
 
     /// Seek to an absolute frame. Returns the frame actually landed on, which
     /// may precede the request when the container only indexes coarsely.
@@ -123,7 +134,7 @@ pub enum Backend {
 /// > typical `.wv`. Symphonia's probe finds it, reads the (entirely correct)
 /// > embedded `fmt ` chunk, reports the right sample rate and channel count, and
 /// > then decodes the WavPack-compressed payload as though it were raw PCM. The
-/// > result is not an error. It is `f32::MAX` noise with plausible metadata.
+/// > result is not an error. It is `f64::MAX` noise with plausible metadata.
 ///
 /// A trust-the-probe design therefore produces *silent* corruption on exactly
 /// the formats we added a second backend for. Extension decides the backend;
@@ -327,9 +338,9 @@ mod remote_decode {
         }
     }
 
-    fn drain(mut d: Box<dyn Decoder>) -> Vec<f32> {
+    fn drain(mut d: Box<dyn Decoder>) -> Vec<f64> {
         let mut all = Vec::new();
-        let mut buf = vec![0f32; 4096];
+        let mut buf = vec![0f64; 4096];
         loop {
             match d.read(&mut buf) {
                 Ok(0) => break,
@@ -421,12 +432,133 @@ mod remote_decode {
             let b = remote.seek(frame).unwrap();
             assert_eq!(a, b, "landed on a different frame seeking to {frame}");
 
-            let mut la = vec![0f32; 2048];
-            let mut rb = vec![0f32; 2048];
+            let mut la = vec![0f64; 2048];
+            let mut rb = vec![0f64; 2048];
             let na = local.read(&mut la).unwrap();
             let nr = remote.read(&mut rb).unwrap();
             assert_eq!(na, nr, "frames read after seeking to {frame}");
             assert_eq!(la[..na], rb[..nr], "audio after seeking to {frame}");
         }
+    }
+}
+
+#[cfg(test)]
+mod precision_tests {
+    use super::*;
+    fn wave(path: &Path, rate: u32, channels: u16, tag: u16, bits: u16, data: &[u8]) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&tag.to_le_bytes());
+        bytes.extend_from_slice(&channels.to_le_bytes());
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        let align = channels * bits / 8;
+        bytes.extend_from_slice(&(rate * u32::from(align)).to_le_bytes());
+        bytes.extend_from_slice(&align.to_le_bytes());
+        bytes.extend_from_slice(&bits.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(data);
+        std::fs::write(path, bytes).unwrap();
+    }
+    fn verify(path: &Path, expected: &[f64], rate: u32, channels: u16) {
+        // Exercise both backend implementations, independent of extension routing.
+        for mut decoder in [
+            Box::new(
+                symphonia::SymphoniaDecoder::open(crate::vfs::Media::Local(path.into()), "fixture")
+                    .unwrap(),
+            ) as Box<dyn Decoder>,
+            Box::new(
+                libav::LibavDecoder::open(crate::vfs::Media::Local(path.into()), "fixture")
+                    .unwrap(),
+            ),
+        ] {
+            assert_eq!(decoder.spec().sample_rate, rate);
+            assert_eq!(decoder.spec().channels, channels);
+            let mut samples = vec![0.0; expected.len() + channels as usize * 16];
+            let got = decoder.read(&mut samples).unwrap();
+            assert_eq!(got * channels as usize, expected.len());
+            assert_eq!(
+                samples[..expected.len()]
+                    .iter()
+                    .map(|s| s.to_bits())
+                    .collect::<Vec<_>>(),
+                expected.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
+                "{}",
+                decoder.codec()
+            );
+            let seek = decoder.seek(0).unwrap();
+            assert_eq!(seek, 0);
+            let count = decoder.read(&mut samples).unwrap();
+            assert_eq!(count, got);
+            assert_eq!(&samples[..expected.len()], expected);
+        }
+    }
+    #[test]
+    fn full_integer_precision_at_native_rates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("precision.wav");
+        for rate in [44100, 48000, 96000, 192000] {
+            for bits in [16u16, 24, 32] {
+                for channels in [1, 2, 6] {
+                    let max = (1i64 << (bits - 1)) - 1;
+                    let min = -(1i64 << (bits - 1));
+                    let values = [min, min + 1, -1, 0, 1, max - 1, max];
+                    let values: Vec<_> = values
+                        .into_iter()
+                        .flat_map(|v| std::iter::repeat_n(v, channels as usize))
+                        .collect();
+                    let mut data = Vec::new();
+                    for &value in &values {
+                        data.extend_from_slice(&value.to_le_bytes()[..bits as usize / 8]);
+                    }
+                    wave(&path, rate, channels, 1, bits, &data);
+                    let expected: Vec<_> = values
+                        .iter()
+                        .map(|&v| v as f64 / (1u64 << (bits - 1)) as f64)
+                        .collect();
+                    verify(&path, &expected, rate, channels);
+                }
+            }
+        }
+    }
+    #[test]
+    fn float_sources_keep_every_sample_bit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("double.wav");
+        let values = [
+            -0.0,
+            0.0,
+            -0.9999999999999999,
+            0.5000000000000001,
+            f64::MIN_POSITIVE,
+        ];
+        wave(
+            &path,
+            96000,
+            1,
+            3,
+            64,
+            &values
+                .into_iter()
+                .flat_map(f64::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+        verify(&path, &values, 96000, 1);
+        let values = [-0.0f32, 0.0, -0.99999994, 0.50000006, f32::MIN_POSITIVE];
+        wave(
+            &path,
+            44100,
+            1,
+            3,
+            32,
+            &values
+                .into_iter()
+                .flat_map(f32::to_le_bytes)
+                .collect::<Vec<_>>(),
+        );
+        verify(&path, &values.map(f64::from), 44100, 1);
     }
 }

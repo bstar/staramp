@@ -8,7 +8,7 @@ use crate::audio::dsp::apo::{Filter, Width};
 use crate::embed::{native, render::PlayerRenderState, GraphicsConfig, Palette};
 use starkit::native_surface::{
     classic::{self, Colors},
-    HitRegion, PixelRect as R, Primitive, Surface,
+    HitRegion, HoverFill, PixelRect as R, Primitive, Surface,
 };
 use starkit::terminal_graphics::{
     protocol::{Component, Input, Scene, Viewport},
@@ -173,6 +173,7 @@ struct EqDrag {
 
 pub struct Rack<'a> {
     app: &'a mut App,
+    audio: super::ssh_audio::RemoteAudio,
     revision: u64,
     cells: bool,
     paths: bool,
@@ -195,6 +196,7 @@ pub struct Rack<'a> {
     folded: std::collections::HashSet<String>,
     skin: crate::embed::skin::PlayerSkin,
     skins: bool,
+    local_hover: bool,
     reference_colors: bool,
     density: u16,
     resume_scroll: usize,
@@ -270,6 +272,7 @@ impl App {
             &root,
             name,
             Rack {
+                audio: Default::default(),
                 app: self,
                 revision: 0,
                 cells: false,
@@ -292,6 +295,7 @@ impl App {
                 modules: Vec::new(),
                 skin: crate::embed::skin::PlayerSkin::new()?,
                 skins: false,
+                local_hover: false,
                 reference_colors: cfg.ui.graphical_palette == "classic",
                 density: 1,
                 resume_scroll: 0,
@@ -511,6 +515,7 @@ impl Rack<'_> {
         let folded = self.folded.contains(name);
         if folded {
             s.height = 38;
+            s.hover_fills.clear();
             s.nodes.retain(|node| node.rect().y < 32);
             // The frame spans the original height; replace it with a compact header frame.
             s.nodes.retain(|node| node.rect().height <= 32);
@@ -1512,7 +1517,7 @@ impl Rack<'_> {
             let index = self.app.queue.scroll + line;
             let r = R::new(body.x, body.y + line as u16 * row_h, body.width, row_h);
             let action = format!("playlist:{index}");
-            let hovered = self.skin.hovered.as_deref() == Some(&action);
+            let hovered = !self.local_hover && self.skin.hovered.as_deref() == Some(&action);
             if let playlist::Row::Section {
                 label: title,
                 tracks,
@@ -1523,7 +1528,13 @@ impl Rack<'_> {
             {
                 // Same seam as ASCII: fold control, year/album label, an
                 // uninterrupted rule across the spare space, then track count.
-                if hovered {
+                if self.local_hover {
+                    s.hover_fills.push(HoverFill {
+                        node: s.nodes.len() as u16,
+                        color: c.title.clone(),
+                    });
+                    s.fill(r, &c.inset, 0);
+                } else if hovered {
                     s.fill(r, &c.title, 0);
                 }
                 native::heading_depth(&mut s, r, if hovered { &c.title } else { &c.inset }, &c.ink);
@@ -1584,7 +1595,17 @@ impl Rack<'_> {
                 };
                 let selected = index == selected_row;
                 let active = playing == Some(*i);
-                if selected {
+                if self.local_hover {
+                    s.hover_fills.push(HoverFill {
+                        node: s.nodes.len() as u16,
+                        color: if selected {
+                            selection_fill.clone()
+                        } else {
+                            c.title.clone()
+                        },
+                    });
+                    s.fill(r, if selected { &selection_fill } else { &c.inset }, 0);
+                } else if selected {
                     s.fill(r, &selection_fill, 0);
                 } else if hovered {
                     s.fill(r, &c.title, 0);
@@ -1828,6 +1849,13 @@ impl Rack<'_> {
         }
         false
     }
+    fn use_theme_palette(&mut self) {
+        self.reference_colors = false;
+        self.app.saving.pending.insert(
+            ("ui".into(), "graphical_palette".into()),
+            crate::config::edit::Value::Str("theme".into()),
+        );
+    }
     fn action(&mut self, name: &str, x: u16, y: u16) {
         tracing::debug!(action = name, x, y, "Graphical control activated");
         if let Some(module) = name.strip_prefix("fold:") {
@@ -1865,6 +1893,10 @@ impl Rack<'_> {
             "queue-remove" => a.handle(Action::RemoveTagged),
             "queue-tag" => a.handle(Action::TagRow),
             "help" => a.handle(Action::Help),
+            "theme-next" => {
+                a.handle(Action::NextTheme);
+                self.use_theme_palette();
+            }
             "close:app" => a.handle(Action::Quit),
             "close:eq" => a.handle(Action::ToggleEqPanel),
             "close:album" => a.handle(Action::ToggleAlbumPanel),
@@ -1952,20 +1984,29 @@ impl Rack<'_> {
         }
     }
 }
-fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u16, name: &str) {
+fn append(
+    target: &mut Surface,
+    mut source: Surface,
+    x: u16,
+    y: i32,
+    visible: std::ops::Range<u16>,
+    density: u16,
+    name: &str,
+) {
     // Clip offscreen modules without shrinking their font or altering rack geometry.
     target.assets.append(&mut source.assets);
-    let limit = target.height;
+    let limit = target.height.min(visible.end);
     let translate = |r: R| -> Option<R> {
         let yy = i32::from(r.y) + y;
-        let start = yy.max(i32::from(minimum));
+        let start = yy.max(i32::from(visible.start));
         let end = (yy + i32::from(r.height)).min(i32::from(limit));
         if end <= start {
             return None;
         }
         Some(R::new(r.x + x, start as u16, r.width, (end - start) as u16))
     };
-    for node in &mut source.nodes {
+    let mut node_indices = vec![None; source.nodes.len()];
+    for (index, node) in source.nodes.iter_mut().enumerate() {
         let original = node.rect();
         let Some(rect) = translate(original) else {
             continue;
@@ -1988,15 +2029,19 @@ fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u1
             if rect.height != original.height {
                 let cut_top = rect.y as i32 - (original.y as i32 + y);
                 let cut_bottom = original.height as i32 - cut_top - rect.height as i32;
-                if cut_top > 0 {
-                    source.y += insets[1];
-                    source.height -= insets[1];
-                    insets[1] = 0;
-                }
-                if cut_bottom > 0 {
-                    source.height -= insets[3];
-                    insets[3] = 0;
-                }
+                // Atlas crops and corner insets remain physical pixels even
+                // while destination rectangles use the logical rack density.
+                let height = rect.height * density;
+                let top = insets[1]
+                    .saturating_sub(cut_top as u16 * density)
+                    .min(height);
+                let bottom = insets[3]
+                    .saturating_sub(cut_bottom as u16 * density)
+                    .min(height - top);
+                source.y += insets[1] - top;
+                source.height -= insets[1] - top + insets[3] - bottom;
+                insets[1] = top;
+                insets[3] = bottom;
             }
         }
         match node {
@@ -2015,7 +2060,16 @@ fn append(target: &mut Surface, mut source: Surface, x: u16, y: i32, minimum: u1
                 *r = rect;
             }
         }
+        node_indices[index] = Some(target.nodes.len() as u16);
         target.nodes.push(node.clone());
+    }
+    for hover in source.hover_fills {
+        if let Some(node) = node_indices[usize::from(hover.node)] {
+            target.hover_fills.push(HoverFill {
+                node,
+                color: hover.color,
+            });
+        }
     }
     for hit in source.hits {
         if let Some(rect) = translate(hit.rect).filter(|r| r.height == hit.rect.height) {
@@ -2048,9 +2102,23 @@ impl Controller for Rack<'_> {
         }
     }
     fn capabilities(&mut self, c: starkit::terminal_graphics::capabilities::Capabilities) {
+        self.audio.capabilities(self.app, c);
         self.paths = c.native_paths;
+        self.local_hover = c.surface_hover;
         self.skins = c.native_skins && c.native_surfaces;
         self.cells = c.cell_presentation.unwrap_or(false);
+    }
+    fn detached(&mut self) {
+        self.audio.detached(self.app);
+    }
+    fn media(&mut self, message: starkit::terminal_graphics::media::ToHost) {
+        self.audio.receive(self.app, message);
+    }
+    fn media_chunks(&mut self) -> Vec<starkit::terminal_graphics::protocol::ServerMessage> {
+        self.audio.chunks(self.app)
+    }
+    fn effects(&mut self) -> Vec<starkit::terminal_graphics::protocol::ServerMessage> {
+        self.audio.effects(self.app)
     }
     fn supports_presentation_switch(&self) -> bool {
         true
@@ -2066,6 +2134,16 @@ impl Controller for Rack<'_> {
         self.eq_drag = None;
     }
     fn scene(&mut self, v: Viewport) -> Scene {
+        if v != self.viewport {
+            if self.eq_dirty {
+                self.app.finish_eq_edit();
+                self.eq_dirty = false;
+            }
+            self.drag = None;
+            self.eq_drag = None;
+            self.playlist_bars.release();
+            self.skin.hovered = None;
+        }
         self.viewport = v;
         self.revision += 1;
         self.overlay = false;
@@ -2134,6 +2212,7 @@ impl Controller for Rack<'_> {
         self.density = density;
         let w = v.width as u16 / density;
         let h = v.height as u16 / density;
+        let footer_y = h - font - 12;
         let mut surface = Surface::new(w, h, "transparent".into());
         if self.skins {
             if let Err(error) = self.skin.prepare(&palette, density, self.radius == 0) {
@@ -2175,7 +2254,7 @@ impl Controller for Rack<'_> {
         if self.app.panels.focus == Focus::Player {
             self.focus_outline(&mut player);
         }
-        append(&mut surface, player, 0, 0, 0, "player");
+        append(&mut surface, player, 0, 0, 0..footer_y, density, "player");
         classic::label(
             &mut surface,
             R::new(w - 114, 7, 70, 24),
@@ -2266,7 +2345,8 @@ impl Controller for Rack<'_> {
                 module,
                 x,
                 y - i32::from(self.offset),
-                top,
+                top..footer_y,
+                density,
                 name,
             );
         }
@@ -2274,7 +2354,6 @@ impl Controller for Rack<'_> {
         // Use the ASCII status model, but lay out native segments in pixels.
         // A flattened terminal row can clip away the right-hand indicators
         // when the native and terminal font advances differ.
-        let footer_y = h - font - 12;
         let (shuffled, repeat) = {
             let queue = self.app.player.queue.lock().unwrap();
             (queue.shuffled(), queue.repeat())
@@ -2305,14 +2384,12 @@ impl Controller for Rack<'_> {
             }
         );
         let theme_width = (theme.width() as u16 * advance).min(status_x.saturating_sub(104));
-        classic::label(
-            &mut surface,
-            R::new(88, footer_y, theme_width, font + 12),
-            theme,
-            &c.ink,
-            font,
-            false,
-        );
+        let theme_rect = R::new(88, footer_y, theme_width, font + 12);
+        classic::label(&mut surface, theme_rect, theme, &c.ink, font, false);
+        surface.hits.push(HitRegion {
+            rect: theme_rect,
+            action: "theme-next".into(),
+        });
         let message_x = 88 + theme_width + 24;
         let mut x = status_x;
         for (index, (text, lit)) in segments.iter().enumerate() {
@@ -2352,12 +2429,13 @@ impl Controller for Rack<'_> {
             );
             x += width;
         }
-        if let Some((status, _)) = self
-            .app
-            .status
-            .as_ref()
-            .filter(|(_, t)| t.elapsed() < Duration::from_secs(4))
-        {
+        if let Some(status) = self.app.audio_output.as_deref().or_else(|| {
+            self.app
+                .status
+                .as_ref()
+                .filter(|(_, t)| t.elapsed() < Duration::from_secs(4))
+                .map(|(s, _)| s.as_str())
+        }) {
             classic::label(
                 &mut surface,
                 R::new(
@@ -2464,12 +2542,16 @@ impl Controller for Rack<'_> {
                         );
                     }
                 }
+                surface.hover_fills.clear();
                 surface.hits.clear();
                 surface.hits.push(HitRegion {
                     rect: r,
                     action: "modal".into(),
                 });
             }
+        }
+        if self.overlay {
+            surface.hover_fills.clear();
         }
         if density > 1 {
             surface = surface.at_density(density).expect("bounded rack density");
@@ -2666,11 +2748,7 @@ impl Controller for Rack<'_> {
                         );
                     }
                     if theme_before != self.app.look.theme.name {
-                        self.reference_colors = false;
-                        self.app.saving.pending.insert(
-                            ("ui".into(), "graphical_palette".into()),
-                            crate::config::edit::Value::Str("theme".into()),
-                        );
+                        self.use_theme_palette();
                     }
                     if before != self.app.panels.focus {
                         self.skin.focused = None;
@@ -2767,17 +2845,20 @@ impl Controller for Rack<'_> {
                     u32::from(x) * self.viewport.width / u32::from(self.viewport.columns.max(1)),
                     u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
                 ]);
-                // Closing the application must work on the first click,
-                // regardless of which pane currently has focus.
-                if action == "down"
-                    && button == 0
-                    && self.surface.as_ref().is_some_and(|s| {
-                        s.hit(px as u16, py as u16)
-                            .is_some_and(|hit| hit.action == "close:app")
-                    })
-                {
-                    self.action("close:app", px as u16, py as u16);
-                    return;
+                // Global controls act immediately regardless of pane focus.
+                if action == "down" && button == 0 {
+                    if let Some(name) = self
+                        .surface
+                        .as_ref()
+                        .and_then(|s| s.hit(px as u16, py as u16))
+                        .filter(|hit| {
+                            matches!(hit.action.as_str(), "close:app" | "theme-next" | "help")
+                        })
+                        .map(|hit| hit.action.clone())
+                    {
+                        self.action(&name, px as u16, py as u16);
+                        return;
+                    }
                 }
                 if action == "down" {
                     if let Some(name) = self
@@ -2805,21 +2886,24 @@ impl Controller for Rack<'_> {
                             self.drag = None;
                             self.eq_drag = None;
                             self.playlist_bars.release();
-                            // Transport buttons act on the first press from any
-                            // pane. Keep focus-only presses for sliders/graphs so
-                            // selecting a pane never starts an unintended drag.
-                            let transport = button == 0
+                            // Row selection and transport buttons act on the
+                            // first left press. Keep focus-only presses for
+                            // sliders and graphs.
+                            let immediate = button == 0
                                 && self
                                     .surface
                                     .as_ref()
                                     .and_then(|s| s.hit(px as u16, py as u16))
                                     .is_some_and(|hit| {
-                                        matches!(
-                                            hit.action.as_str(),
-                                            "previous" | "play" | "pause" | "stop" | "next"
-                                        )
+                                        hit.action
+                                            .strip_prefix("playlist:")
+                                            .is_some_and(|row| row.parse::<usize>().is_ok())
+                                            || matches!(
+                                                hit.action.as_str(),
+                                                "previous" | "play" | "pause" | "stop" | "next"
+                                            )
                                     });
-                            if !transport {
+                            if !immediate {
                                 return;
                             }
                         }
@@ -2914,7 +2998,15 @@ impl Controller for Rack<'_> {
                     .as_ref()
                     .and_then(|s| s.hit(px as u16, py as u16))
                     .map(|h| h.action.clone());
-                self.skin.hovered = hit.clone();
+                self.skin.hovered = if self.local_hover
+                    && hit.as_deref().is_some_and(|name| {
+                        name.strip_prefix("playlist:")
+                            .is_some_and(|row| row.parse::<usize>().is_ok())
+                    }) {
+                    None
+                } else {
+                    hit.clone()
+                };
                 if action == "down" && button == 0 {
                     self.skin.pressed = hit.clone();
                     self.drag = hit.clone();
@@ -2987,6 +3079,7 @@ impl Controller for Rack<'_> {
         self.app.quit
     }
     fn shutdown(&mut self) {
+        self.audio.detached(self.app);
         self.app.shutdown();
     }
 }
@@ -3041,6 +3134,7 @@ impl App {
         app.panels.history = true;
         app.panels.playlist = true;
         let mut rack = Rack {
+            audio: Default::default(),
             app: &mut app,
             revision: 0,
             cells: false,
@@ -3063,6 +3157,7 @@ impl App {
             modules: Vec::new(),
             skin: crate::embed::skin::PlayerSkin::new()?,
             skins: true,
+            local_hover: true,
             reference_colors: true,
             density: 1,
             resume_scroll: 0,
@@ -3079,7 +3174,7 @@ impl App {
                 "INSERT INTO dir (id, rel_path, scan_gen) VALUES (1, '', 1);
                  INSERT INTO file (id, dir_id, rel_path, size, mtime_ns, kind, scan_gen)
                  VALUES (1, 1, 'fixture.flac', 0, 0, 0, 1),
-                        (2, 1, 'cover.png', 0, 0, 2, 1);",
+                        (2, 1, 'fixture.png', 0, 0, 2, 1);",
             )?;
             let uri = rack.app.current_uri().expect("fixture current track");
             db.conn.execute(
@@ -3092,7 +3187,7 @@ impl App {
                 24,
                 starkit::image::Rgba([164, 215, 145, 255]),
             )
-            .save(library.path().join("cover.png"))?;
+            .save(library.path().join("fixture.png"))?;
             rack.app.art = crate::library::art::Watcher::spawn(
                 index,
                 Arc::new(crate::vfs::Vfs::local(library.path())),
@@ -3105,6 +3200,9 @@ impl App {
                 rows: 90,
                 generation: 0,
             };
+            // A desktop media service also requests covers with Album closed.
+            // This fixture exercises the panel-only lazy lookup path.
+            rack.app.mpris = None;
             rack.app.panels.album = false;
             rack.scene(viewport);
             assert!(rack.app.art_uri.is_none(), "closed Album stays idle");
@@ -3669,6 +3767,28 @@ impl App {
         assert_eq!(i32::from(toolbar.rect.y), start + i32::from(height) - 35);
         // The production terminal uses real pixel dimensions, including tall,
         // odd-sized and 4K windows. Fixed glyphs must never be rescaled to fit.
+        // Resize through partial pane corners as well as complete layouts.
+        // A one-pixel fragment must not retain a full nine-slice corner, and
+        // the scrolling modules must leave the status footer unobstructed.
+        for density in [1u16, 2] {
+            for height in 480..535u16 {
+                let v = Viewport {
+                    width: u32::from(900 * density),
+                    height: u32::from(height * density),
+                    columns: 90,
+                    rows: height / 20,
+                    generation: u64::from(height),
+                };
+                let scene = rack.scene(v);
+                assert_eq!(rack.density, density);
+                let footer = (height - 24) * density;
+                for node in &rack.surface.as_ref().unwrap().nodes {
+                    let r = node.rect();
+                    assert!(r.y + r.height <= footer || r.y >= footer);
+                }
+                starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            }
+        }
         for (width, height, rows) in [(1400, 2000, 100), (2737, 1801, 56), (3840, 2160, 67)] {
             let v = Viewport {
                 width,
@@ -3757,11 +3877,13 @@ impl App {
                 }));
                 let status_area = Rect::new(0, 0, columns, 1);
                 let mut status = starkit::ratatui::buffer::Buffer::empty(status_area);
+                rack.app.look.theme_selection_until = Some(Instant::now() + Duration::from_secs(3));
                 rack.app.draw_status(status_area, &mut status);
                 let status_text = (0..columns)
                     .map(|x| status[(x, 0)].symbol())
                     .collect::<String>();
-                assert!(status_text.contains(&theme_label));
+                assert!(status_text.contains(&format!("theme: {}", rack.app.look.theme.name)));
+                rack.app.look.theme_selection_until = None;
                 for component in &scene.components {
                     if let Component::Surface { surface, .. } = component {
                         surface.validate()?;
@@ -3997,7 +4119,6 @@ impl App {
             .find(|h| h.action == "playlist:1")
             .unwrap()
             .rect;
-        let previous_cursor = rack.app.queue.cursor;
         rack.input(Input::Pointer {
             action: "down".into(),
             button: 0,
@@ -4007,10 +4128,10 @@ impl App {
             modifiers: 0,
         });
         assert_eq!(rack.app.panels.focus, Focus::Playlist);
-        assert_eq!(rack.app.queue.cursor, previous_cursor);
-        assert!(rack.drag.is_none());
+        assert_eq!(rack.app.queue.cursor, 1);
+        assert_eq!(rack.drag.as_deref(), Some("playlist:1"));
         rack.input(Input::Pointer {
-            action: "down".into(),
+            action: "up".into(),
             button: 0,
             x: hit.x / 10,
             y: hit.y / 20,
@@ -4075,6 +4196,10 @@ impl App {
             if rack.app.panels.focus != focus
                 && rack.app.over.settings.is_none()
                 && !matches!(name, "previous" | "play" | "pause" | "stop" | "next")
+                && !(button == 0
+                    && name
+                        .strip_prefix("playlist:")
+                        .is_some_and(|row| row.parse::<usize>().is_ok()))
             {
                 rack.scene(rack.viewport);
                 press_button(rack, name, button);
@@ -4098,6 +4223,47 @@ impl App {
                 pixel: Some([u32::from(x), u32::from(y)]),
                 modifiers: 0,
             });
+        }
+        // Footer clicks cycle once without first focusing the pane underneath,
+        // including wraparound and switching out of reference palette mode.
+        {
+            let original_theme = rack.app.look.theme.clone();
+            let original_index = rack.app.look.index;
+            let original_reference = rack.reference_colors;
+            let original_focus = rack.app.panels.focus;
+            for density in [1, 2] {
+                rack.app.look.index = rack.app.look.ids.len() - 1;
+                rack.reference_colors = true;
+                rack.app.panels.focus = Focus::Equalizer;
+                let viewport = Viewport {
+                    width: 1400 * density,
+                    height: 1200 * density,
+                    columns: 140,
+                    rows: 60,
+                    generation: 0,
+                };
+                for index in 0..rack.app.look.ids.len() {
+                    rack.scene(viewport);
+                    press_button(&mut rack, "theme-next", 0);
+                    assert_eq!(rack.app.look.index, index);
+                    assert_eq!(
+                        rack.app.look.theme.id,
+                        crate::theme::builtin::resolve_named(&rack.app.look.ids[index])
+                            .0
+                            .id
+                    );
+                    assert!(!rack.reference_colors);
+                    assert_eq!(rack.app.panels.focus, Focus::Equalizer);
+                }
+            }
+            let area = Rect::new(4, 40, 140, 1);
+            rack.app.status_click(area, area.x + 9);
+            assert_eq!(rack.app.look.index, 0, "cell footer cycles too");
+            rack.app.look.theme = original_theme;
+            rack.app.look.index = original_index;
+            rack.reference_colors = original_reference;
+            rack.app.panels.focus = original_focus;
+            rack.scene(v);
         }
         // A restored high-frequency profile must match the audio response on
         // the first playback frame, without selecting and loading it again.
@@ -4867,6 +5033,100 @@ impl App {
         click(&mut rack, "playlist:0");
         rack.scene(viewport);
         assert_eq!(rack.app.queue.rows.rows().len(), 8);
+        // A single row press must both focus the queue and select that row;
+        // no second press or double-click timeout is required for feedback.
+        let target = match rack.app.queue.rows.rows()[2] {
+            playlist::Row::Track(index) => index,
+            _ => panic!("expected selectable track"),
+        };
+        let original_cursor = rack.app.queue.cursor;
+        let original_click = rack.app.edit.last_click;
+        let playing_uri = rack.app.player.current_item().map(|item| item.uri);
+        for density in [1, 2] {
+            let view = Viewport {
+                width: viewport.width * density,
+                height: viewport.height * density,
+                ..viewport
+            };
+            rack.app.panels.focus = Focus::Player;
+            rack.app.queue.cursor = usize::from(target == 0);
+            rack.app.edit.last_click = Default::default();
+            let before = rack.scene(view);
+            let row = rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .find(|h| h.action == "playlist:2")
+                .unwrap()
+                .rect;
+            let point = (
+                u32::from(row.x + row.width - 2),
+                u32::from(row.y + row.height / 2),
+            );
+            let before = starkit::terminal_graphics::renderer::render_reference(&before)?;
+            press_button(&mut rack, "playlist:2", 0);
+            assert_eq!(rack.app.panels.focus, Focus::Playlist);
+            assert_eq!(
+                rack.app.queue.cursor, target,
+                "first click must select immediately"
+            );
+            let scene = rack.scene(view);
+            let after = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            assert_ne!(
+                before.get_pixel(point.0, point.1),
+                after.get_pixel(point.0, point.1),
+                "the next frame must paint the new row highlight"
+            );
+            assert_eq!(
+                rack.app.player.current_item().map(|item| item.uri),
+                playing_uri,
+                "a single selection must not start playback"
+            );
+        }
+        rack.app.queue.cursor = original_cursor;
+        rack.app.edit.last_click = original_click;
+        rack.scene(viewport);
+        for local in [true, false] {
+            rack.local_hover = local;
+            rack.skin.hovered = None;
+            let before = rack.scene(viewport);
+            let row = rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .find(|h| h.action == "playlist:2")
+                .unwrap()
+                .rect;
+            let cursor = rack.app.queue.cursor;
+            rack.input(Input::Pointer {
+                action: "move".into(),
+                button: 0,
+                x: row.x / 10,
+                y: row.y / 20,
+                pixel: Some([u32::from(row.x + 2), u32::from(row.y + 2)]),
+                modifiers: 0,
+            });
+            assert_eq!(rack.app.queue.cursor, cursor, "hover cannot select a row");
+            let after = rack.scene(viewport);
+            if local {
+                assert!(rack.skin.hovered.is_none());
+                assert!(
+                    before.same_content(&after),
+                    "local hover needs no new controller scene"
+                );
+                assert!(!rack.surface.as_ref().unwrap().hover_fills.is_empty());
+            } else {
+                assert_eq!(rack.skin.hovered.as_deref(), Some("playlist:2"));
+                assert!(rack.surface.as_ref().unwrap().hover_fills.is_empty());
+            }
+        }
+        rack.local_hover = true;
+        rack.skin.hovered = None;
+        rack.scene(viewport);
         let source = match rack.app.queue.rows.rows()[2] {
             playlist::Row::Track(i) => rack.app.queue.items[i].clone(),
             _ => panic!("expected track"),

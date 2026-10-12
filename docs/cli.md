@@ -2,6 +2,9 @@
 
 `staramp` with no arguments opens the player. Everything else is a subcommand,
 and `staramp --help` lists them all; each has its own `--help`.
+On first launch, when no library index exists, it asks for a music folder and
+scans it before opening the player. A non-interactive launch prints the setup
+command and exits successfully.
 
 ## The library
 
@@ -27,6 +30,8 @@ staramp cue-report ~/Music                  # how your cue sheets classify
 staramp ui "/path/to/an/album"              # a folder, with no index
 staramp ui some-playlist.m3u                # a playlist
 staramp remote music-server                 # a library over SSH
+staramp --ssh music-server                  # remote player, local sound
+staramp --ssh music-server graphical        # Classic rack, local sound
 staramp import ~/Music-Inbox                # review a staging inbox
 staramp play "album/01 - track.flac"        # one file, no UI
 ```
@@ -41,14 +46,15 @@ staramp probe  "album/01 - track.flac"      # codec, rate, depth, channels, leng
 staramp decode "album/01 - track.flac" -o out.wav --start 30 --duration 10
 ```
 
-`decode` writes the samples to a WAV without involving the audio device. It
+`decode` writes float64 PCM to a WAV without involving the audio device. It
 exists to prove sample accuracy against a known-good reference, and it is the
 first thing to reach for if a file sounds wrong:
 
 ```sh
 staramp decode in.flac -o mine.wav
-ffmpeg -i in.flac -f wav -acodec pcm_f32le theirs.wav
-cmp mine.wav theirs.wav
+ffmpeg -i in.flac -f f64le reference.pcm
+ffmpeg -i mine.wav -f f64le actual.pcm
+cmp actual.pcm reference.pcm
 ```
 
 ## Maintenance
@@ -63,6 +69,7 @@ staramp analyze --status                    # sonic-index coverage
 staramp analyze --all                       # analyze everything pending
 staramp scrobble auth lastfm                # store a provider's credentials
 staramp scrobble status                     # providers and queued submissions
+staramp scrobble snapshot                   # JSON provider state and recent local listens
 staramp scrobble logout lastfm              # forget them and disable it
 ```
 

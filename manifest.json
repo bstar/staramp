@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "bstar.staramp",
+  "name": "STAR/AMP Media",
+  "version": "0.1.1",
+  "author": "bstar",
+  "description": "Now playing and playback controls for STAR/AMP",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "omarchy/Widget.qml" },
+  "barWidget": {
+    "displayName": "STAR/AMP Media",
+    "description": "Playback, artwork, seek, volume and queue status",
+    "category": "Media",
+    "defaultSection": "center",
+    "allowMultiple": false
+  }
+}

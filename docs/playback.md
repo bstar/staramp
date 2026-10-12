@@ -40,6 +40,14 @@ tracks.
 
 ## Bit-perfect output
 
+Decoding and DSP now use float64 throughout. Transparent paths retain integer
+PCM through 32 bits and float64 PCM without a float32 intermediate. Device
+selection accounts for sample representation and precision as well as rate and
+channels; integer precision reduction after processing uses TPDF dither.
+DSD-decoded PCM keeps the decoder's original rate until an output conversion is
+needed. Native DSD and DoP are not implemented. [SSH audio](ssh-audio.md) uses
+the same engine with an explicit compatibility conversion option.
+
 The device is opened at the file's own sample rate, so anything the device can
 take is played untouched. The header says `bit-perfect` when that is the case.
 

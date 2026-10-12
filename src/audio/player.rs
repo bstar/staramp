@@ -35,7 +35,7 @@ const BACKOFF: Duration = Duration::from_millis(2);
 /// unity is passed through untouched, because that is the bit-perfect path --
 /// the header says so, and a limiter quietly sitting in it would make that a
 /// lie for any track that legitimately peaks near full scale.
-fn needs_limiting(settings: &super::dsp::eq::EqSettings, scale: f32) -> bool {
+fn needs_limiting(settings: &super::dsp::eq::EqSettings, scale: f64) -> bool {
     !settings.is_transparent() || scale > 1.0
 }
 
@@ -64,6 +64,8 @@ pub enum Command {
     SeekTo(f64),
     SeekBy(f64),
     AudioRelay(bool),
+    /// A frontend has consumed the final frame of this output generation.
+    AudioFinished(u64),
     Quit,
 }
 
@@ -152,6 +154,20 @@ impl PlayerState {
                     .load()
                     .as_ref()
                     .is_some_and(|output| output.buffering.load(Ordering::Relaxed)))
+    }
+
+    pub fn output_frames(&self) -> u64 {
+        self.output
+            .load()
+            .as_ref()
+            .map(|s| s.frames_out.load(Ordering::Relaxed))
+            .unwrap_or(0)
+    }
+    pub fn output_finished(&self) -> bool {
+        self.output
+            .load()
+            .as_ref()
+            .is_some_and(|s| s.finished.load(Ordering::Acquire))
     }
 
     pub fn state(&self) -> PlayState {
@@ -409,10 +425,11 @@ impl Drop for Player {
 /// Everything the worker needs for the currently open output.
 struct Stream {
     output: Output,
-    producer: rtrb::Producer<f32>,
+    producer: rtrb::Producer<starkit::pcm::Sample>,
     source_done: Arc<AtomicBool>,
     sample_rate: u32,
     channels: u16,
+    spec: StreamSpec,
     /// False until the ring holds enough to cover the first few callbacks.
     ///
     /// A freshly opened device starts pulling at once, so without this the
@@ -432,7 +449,7 @@ struct PreparedTrack {
     decoder: Box<dyn Decoder>,
     src_spec: super::decode::StreamSpec,
     album: Option<source::CueAlbum>,
-    first_pcm: Vec<f32>,
+    first_pcm: Vec<f64>,
     first_frames: usize,
 }
 
@@ -446,7 +463,7 @@ struct CrossfadeTrack {
     decoder: Box<dyn Decoder>,
     src_spec: super::decode::StreamSpec,
     album: Option<source::CueAlbum>,
-    gain: f32,
+    gain: f64,
 }
 
 /// Gives the normal decode loop the block read during preparation before it
@@ -456,7 +473,7 @@ struct CrossfadeTrack {
 /// gapless than the original path.
 struct PrefixedDecoder {
     inner: Box<dyn Decoder>,
-    prefix: Vec<f32>,
+    prefix: Vec<f64>,
     cursor: usize,
     channels: usize,
     base_position: u64,
@@ -464,7 +481,7 @@ struct PrefixedDecoder {
 }
 
 impl PrefixedDecoder {
-    fn new(inner: Box<dyn Decoder>, prefix: Vec<f32>, prefix_frames: usize) -> Self {
+    fn new(inner: Box<dyn Decoder>, prefix: Vec<f64>, prefix_frames: usize) -> Self {
         let channels = inner.spec().channels as usize;
         let base_position = inner.position().saturating_sub(prefix_frames as u64);
         Self {
@@ -483,7 +500,7 @@ impl Decoder for PrefixedDecoder {
         self.inner.spec()
     }
 
-    fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+    fn read(&mut self, out: &mut [f64]) -> Result<usize> {
         let capacity = out.len() / self.channels * self.channels;
         let from_prefix = (self.prefix.len() - self.cursor).min(capacity);
         out[..from_prefix].copy_from_slice(&self.prefix[self.cursor..self.cursor + from_prefix]);
@@ -565,7 +582,7 @@ enum Crossfade {
     Opening {
         from: TrackUri,
         to: TrackUri,
-        gain: f32,
+        gain: f64,
         result: Receiver<Result<Option<PreparedTrack>>>,
     },
     /// The successor is open and waiting for the fade point. Reads of the
@@ -573,7 +590,7 @@ enum Crossfade {
     Ready {
         from: TrackUri,
         to: TrackUri,
-        gain: f32,
+        gain: f64,
         track: PreparedTrack,
     },
     /// The successor is playing under the current track. `done` counts the
@@ -637,14 +654,14 @@ fn run(
     let mut stream: Option<Stream> = None;
     // Recomputed when a track opens. Constant for a track by definition, so
     // there is nothing to do between boundaries.
-    let mut rg_scalar = 1.0f32;
+    let mut rg_scalar = 1.0f64;
     // A track's tags resolved against the current settings. Read at the
     // boundary rather than per buffer: the settings can change mid-track, and
     // taking them here is what makes the change land on a track edge instead of
     // stepping the level under the listener.
     let level = |gain: &ReplayGain| {
         let s = rg.load();
-        let scalar = gain.scalar(s.0, s.1, s.2);
+        let scalar = gain.scalar_f64(s.0, s.1, s.2);
         // Logged because "is ReplayGain doing anything?" is otherwise
         // unanswerable from outside: a track with no tags and a track the
         // setting is ignoring both sound exactly like no gain at all.
@@ -660,8 +677,8 @@ fn run(
     // into the page cache before the drive it lives on spins down.
     let mut backing: Option<std::path::PathBuf> = None;
     let mut eq_state = EqState::new(2);
-    let mut scratch: Vec<f32> = Vec::new();
-    let mut crossfade_scratch: Vec<f32> = Vec::new();
+    let mut scratch: Vec<f64> = Vec::new();
+    let mut crossfade_scratch: Vec<f64> = Vec::new();
 
     loop {
         // Drain commands first: responsiveness beats a full ring.
@@ -673,6 +690,7 @@ fn run(
                     fade = Crossfade::Idle;
                     decoder = None;
                     stream = None;
+                    super::relay::set_draining(false);
                     state.loading.store(false, Ordering::Relaxed);
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
@@ -687,6 +705,7 @@ fn run(
                     fade = Crossfade::Idle;
                     decoder = None;
                     stream = None;
+                    super::relay::set_draining(false);
                     state.loading.store(false, Ordering::Relaxed);
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
@@ -714,6 +733,16 @@ fn run(
                             &mut backing,
                             fixed_rate,
                         );
+                    }
+                }
+                Command::AudioFinished(epoch) => {
+                    if epoch == super::relay::current_epoch() && super::relay::draining() {
+                        state.playing.store(false, Ordering::Relaxed);
+                        state.position_frames.store(
+                            state.duration_frames.load(Ordering::Relaxed),
+                            Ordering::Relaxed,
+                        );
+                        super::relay::set_draining(false);
                     }
                 }
                 Command::Pause => {
@@ -832,6 +861,12 @@ fn run(
                     let seconds = state.position_secs();
                     let paused = state.paused.load(Ordering::Relaxed);
                     super::relay::set_enabled(enabled);
+                    if !state.playing.load(Ordering::Relaxed) {
+                        if queued.loading {
+                            state.pending_loads.fetch_sub(1, Ordering::AcqRel);
+                        }
+                        continue;
+                    }
                     if let Some((uri, gain)) = queue
                         .lock()
                         .unwrap()
@@ -947,6 +982,11 @@ fn run(
             }
         }
 
+        if let Some(error) = stream.as_ref().and_then(|s| s.output.error()) {
+            stream = None;
+            decoder = None;
+            fail_track(&state, format!("audio device: {error}"));
+        }
         // Move the crossfade along. Only `Idle` and the two preparing states
         // have anything to do here: a fade in progress is driven by the reads
         // below and ends at the outgoing decoder's EOF, and a missed one waits
@@ -1080,9 +1120,12 @@ fn run(
                                 }
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
+                                    super::relay::set_draining(true);
                                     decoder = None;
                                     state.loading.store(false, Ordering::Relaxed);
-                                    state.playing.store(false, Ordering::Relaxed);
+                                    if !super::relay::precise() || super::relay::route() == 0 {
+                                        state.playing.store(false, Ordering::Relaxed);
+                                    }
                                 }
                             }
                             did_work = true;
@@ -1167,9 +1210,12 @@ fn run(
                                 }
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
+                                    super::relay::set_draining(true);
                                     decoder = None;
                                     state.loading.store(false, Ordering::Relaxed);
-                                    state.playing.store(false, Ordering::Relaxed);
+                                    if !super::relay::precise() || super::relay::route() == 0 {
+                                        state.playing.store(false, Ordering::Relaxed);
+                                    }
                                 }
                             }
                             did_work = true;
@@ -1186,8 +1232,8 @@ fn run(
                                     .unwrap_or(0);
                                 let fade_frames = (CROSSFADE_SECS * s.sample_rate as u64).max(1);
                                 for frame in 0..frames {
-                                    let progress = ((*done + frame as u64 + 1) as f32
-                                        / fade_frames as f32)
+                                    let progress = ((*done + frame as u64 + 1) as f64
+                                        / fade_frames as f64)
                                         .min(1.0);
                                     for channel in 0..ch {
                                         let i = frame * ch + channel;
@@ -1205,12 +1251,12 @@ fn run(
                             let settings = eq.load();
                             let vol = *volume.lock().unwrap();
                             let buf = &mut scratch[..frames * ch];
-                            eq_state.process(&settings, buf, ch);
+                            eq_state.process_f64(&settings, buf, ch);
                             // One multiply for both: ReplayGain levels the track,
                             // volume is where the listener put the slider.
                             // While fading, the mix above has already applied
                             // each track's own gain.
-                            let scale = vol * if fading { 1.0 } else { rg_scalar };
+                            let scale = f64::from(vol) * if fading { 1.0 } else { rg_scalar };
                             if scale != 1.0 {
                                 for x in buf.iter_mut() {
                                     *x *= scale;
@@ -1224,12 +1270,31 @@ fn run(
                             // and a limiter in it would be a lie.
                             let limiting = needs_limiting(&settings, scale);
                             for &x in buf.iter() {
-                                let _ = s.producer.push(if limiting { soft_clip(x) } else { x });
+                                let _ = s.producer.push(starkit::pcm::Sample {
+                                    value: if limiting { soft_clip(x) } else { x },
+                                    processed: fading || scale != 1.0 || !settings.is_transparent(),
+                                });
                             }
                             if s.primed {
                                 state.loading.store(false, Ordering::Relaxed);
                             }
-                            state.position_frames.store(d.position(), Ordering::Relaxed);
+                            let buffered = (ring::capacity_samples(s.sample_rate, s.channels)
+                                - s.producer.slots())
+                                as u64
+                                / u64::from(s.channels);
+                            let outstanding = if super::relay::precise() {
+                                s.output
+                                    .state
+                                    .frames_out
+                                    .load(Ordering::Relaxed)
+                                    .saturating_sub(super::relay::played())
+                            } else {
+                                0
+                            };
+                            state.position_frames.store(
+                                d.position().saturating_sub(buffered + outstanding),
+                                Ordering::Relaxed,
+                            );
                             state.underruns.store(
                                 s.output.state.underruns.load(Ordering::Relaxed),
                                 Ordering::Relaxed,
@@ -1263,6 +1328,26 @@ fn run(
             }
         }
 
+        if super::relay::precise() && super::relay::draining() {
+            if let Some(s) = &stream {
+                let outstanding = s
+                    .output
+                    .state
+                    .frames_out
+                    .load(Ordering::Relaxed)
+                    .saturating_sub(super::relay::played());
+                let buffered = (ring::capacity_samples(s.sample_rate, s.channels)
+                    - s.producer.slots()) as u64
+                    / u64::from(s.channels);
+                state.position_frames.store(
+                    state
+                        .duration_frames
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(outstanding + buffered),
+                    Ordering::Relaxed,
+                );
+            }
+        }
         if !did_work {
             thread::sleep(BACKOFF);
         }
@@ -1335,11 +1420,7 @@ fn maybe_prepare_album_successor(
     let (tx, result) = bounded(1);
     let worker_vfs = Arc::clone(vfs);
     let worker_to = to.clone();
-    let target = super::decode::StreamSpec {
-        sample_rate: stream.sample_rate,
-        channels: stream.channels,
-        bit_depth: None,
-    };
+    let target = stream.spec;
     let spawned = thread::Builder::new()
         .name("staramp-album-preload".into())
         .spawn(move || {
@@ -1374,6 +1455,9 @@ fn prepare_album_track(
         backing_path: _,
     } = opened;
     let src_spec = decoder.spec();
+    if super::relay::precise() && src_spec != target {
+        return Ok(None);
+    }
 
     // Crossfade requires both tracks to produce the current device shape. The
     // normal player may reopen the device for a native rate/channel change,
@@ -1468,7 +1552,7 @@ fn start_crossfade(
     vfs: &Arc<Vfs>,
     queue: &Arc<Mutex<Queue>>,
     stream: &Stream,
-    level: &dyn Fn(&ReplayGain) -> f32,
+    level: &dyn Fn(&ReplayGain) -> f64,
     fixed_rate: Option<u32>,
     read_index: bool,
     fade: &mut Crossfade,
@@ -1487,6 +1571,8 @@ fn start_crossfade(
         return;
     }
     let target = super::decode::StreamSpec {
+        sample_format: starkit::pcm::SampleFormat::F64,
+        channel_mask: 0,
         sample_rate: stream.sample_rate,
         channels: stream.channels,
         bit_depth: None,
@@ -1731,7 +1817,7 @@ fn warm_next(
 ///
 /// Left as a named call rather than deleted so the two seek paths keep pointing
 /// at the one place a fix belongs.
-fn drain(p: &mut rtrb::Producer<f32>) {
+fn drain(p: &mut rtrb::Producer<starkit::pcm::Sample>) {
     let _ = p;
 }
 
@@ -1752,6 +1838,7 @@ fn open_track(
 ) {
     // Publish before the first filesystem access: metadata/open can wait for
     // a sleeping USB drive, and the UI must remain able to explain that wait.
+    super::relay::set_draining(false);
     state.loading.store(true, Ordering::Relaxed);
     state.playing.store(false, Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
@@ -1823,7 +1910,7 @@ fn open_track(
     // now share one stream instead of tearing it down between them.
     let needs_new_stream = stream
         .as_ref()
-        .map(|s| needs_rebuild(s.sample_rate, s.channels, &spec))
+        .map(|s| needs_rebuild(s.sample_rate, s.channels, &spec) || s.spec != spec)
         .unwrap_or(true);
 
     if needs_new_stream {
@@ -1853,6 +1940,7 @@ fn open_track(
                     source_done,
                     sample_rate: spec.sample_rate,
                     channels: spec.channels,
+                    spec,
                     primed: false,
                     opened_at: std::time::Instant::now(),
                 });
@@ -2104,7 +2192,7 @@ mod tests {
     }
 
     struct NumberedDecoder {
-        samples: Vec<f32>,
+        samples: Vec<f64>,
         cursor: usize,
     }
 
@@ -2113,7 +2201,7 @@ mod tests {
             spec(44_100, 2)
         }
 
-        fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+        fn read(&mut self, out: &mut [f64]) -> Result<usize> {
             let count = out.len().min(self.samples.len() - self.cursor);
             out[..count].copy_from_slice(&self.samples[self.cursor..self.cursor + count]);
             self.cursor += count;
@@ -2144,6 +2232,8 @@ mod tests {
 
     fn spec(rate: u32, ch: u16) -> StreamSpec {
         StreamSpec {
+            sample_format: starkit::pcm::SampleFormat::F64,
+            channel_mask: 0,
             sample_rate: rate,
             channels: ch,
             bit_depth: Some(16),
@@ -2182,7 +2272,7 @@ mod tests {
 
     #[test]
     fn prepared_pcm_is_emitted_once_even_when_the_ring_takes_small_chunks() {
-        let samples: Vec<f32> = (0..20).map(|n| n as f32).collect();
+        let samples: Vec<f64> = (0..20).map(|n| n as f64).collect();
         let inner = NumberedDecoder {
             samples: samples.clone(),
             // Preparation already decoded the first four stereo frames.
@@ -2260,10 +2350,10 @@ mod tests {
     #[test]
     fn limiting_holds_full_scale_without_touching_ordinary_levels() {
         use crate::audio::dsp::gain::soft_clip;
-        for x in [0.0f32, 0.1, -0.5, 0.89, -0.89] {
+        for x in [0.0f64, 0.1, -0.5, 0.89, -0.89] {
             assert_eq!(soft_clip(x), x, "{x} was altered below the knee");
         }
-        for x in [1.0f32, 4.0, 1e6, -1e6, -3.0] {
+        for x in [1.0f64, 4.0, 1e6, -1e6, -3.0] {
             let y = soft_clip(x);
             assert!(y.abs() <= 1.0, "{x} left the output at {y}");
             assert_eq!(y.signum(), x.signum(), "{x} changed sign");

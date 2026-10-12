@@ -1090,7 +1090,7 @@ mod against_openssh {
 
         let drain = |mut d: Box<dyn decode::Decoder>| {
             let mut all = Vec::new();
-            let mut buf = vec![0f32; 4096];
+            let mut buf = vec![0f64; 4096];
             while let Ok(frames) = d.read(&mut buf) {
                 if frames == 0 {
                     break;

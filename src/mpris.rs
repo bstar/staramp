@@ -5,7 +5,8 @@
 //! system's quickshell bar keys off `cliamp` and `mpd` explicitly — so a new
 //! player is visible but not preferred until that list is updated.
 
-use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 
 use mpris_server::zbus::fdo;
 use mpris_server::{
@@ -17,15 +18,42 @@ use crate::audio::player::{Command, PlayState, Player};
 
 pub const BUS_NAME: &str = "staramp";
 
+#[derive(PartialEq)]
+struct MprisSnapshot {
+    volume: Option<f64>,
+    shuffle: Option<bool>,
+    loop_status: Option<LoopStatus>,
+    next: Option<bool>,
+    previous: Option<bool>,
+    play: Option<bool>,
+    pause: Option<bool>,
+    seek: Option<bool>,
+}
+
 /// Bridges the player to the MPRIS interfaces.
 pub struct MprisBridge {
     player: Arc<Player>,
     activity: crate::activity::Control,
+    artwork: Arc<Mutex<Option<(String, String)>>>,
 }
 
 impl MprisBridge {
-    pub fn new(player: Arc<Player>, activity: crate::activity::Control) -> Self {
-        Self { player, activity }
+    pub fn new(
+        player: Arc<Player>,
+        activity: crate::activity::Control,
+        artwork: Arc<Mutex<Option<(String, String)>>>,
+    ) -> Self {
+        Self {
+            player,
+            activity,
+            artwork,
+        }
+    }
+
+    fn track_id(&self) -> Option<TrackId> {
+        self.player.current_item()?;
+        let revision = self.player.state.track_revision.load(Ordering::Relaxed);
+        TrackId::try_from(format!("/org/staramp/track/{revision}")).ok()
     }
 }
 
@@ -71,19 +99,11 @@ impl RootInterface for MprisBridge {
     }
 
     async fn supported_uri_schemes(&self) -> fdo::Result<Vec<String>> {
-        Ok(vec!["file".into()])
+        Ok(Vec::new())
     }
 
     async fn supported_mime_types(&self) -> fdo::Result<Vec<String>> {
-        Ok(vec![
-            "audio/flac".into(),
-            "audio/mpeg".into(),
-            "audio/ogg".into(),
-            "audio/mp4".into(),
-            "audio/x-ape".into(),
-            "audio/x-wavpack".into(),
-            "audio/x-musepack".into(),
-        ])
+        Ok(Vec::new())
     }
 }
 
@@ -101,13 +121,17 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn pause(&self) -> fdo::Result<()> {
-        self.player.send(Command::Pause);
+        if self.player.state.state() == PlayState::Playing {
+            self.player.send(Command::Pause);
+        }
         Ok(())
     }
 
     async fn play_pause(&self) -> fdo::Result<()> {
-        self.player.send(Command::TogglePause);
-        Ok(())
+        match self.player.state.state() {
+            PlayState::Playing => self.pause().await,
+            PlayState::Paused | PlayState::Stopped => self.play().await,
+        }
     }
 
     async fn stop(&self) -> fdo::Result<()> {
@@ -117,18 +141,30 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn play(&self) -> fdo::Result<()> {
-        self.player.send(Command::Resume);
+        if self.player.state.state() == PlayState::Stopped {
+            if let Some(index) = self.player.queue.lock().unwrap().current_index() {
+                self.player.send(Command::PlayIndex(index));
+            }
+        } else {
+            self.player.send(Command::Resume);
+        }
         Ok(())
     }
 
     async fn seek(&self, offset: Time) -> fdo::Result<()> {
+        if !self.can_seek().await? {
+            return Ok(());
+        }
         self.activity.seek_end();
         self.player
             .send(Command::SeekBy(offset.as_micros() as f64 / 1_000_000.0));
         Ok(())
     }
 
-    async fn set_position(&self, _track: TrackId, position: Time) -> fdo::Result<()> {
+    async fn set_position(&self, track: TrackId, position: Time) -> fdo::Result<()> {
+        if self.track_id().as_ref() != Some(&track) || !self.can_seek().await? {
+            return Ok(());
+        }
         self.activity.seek_end();
         self.player
             .send(Command::SeekTo(position.as_micros() as f64 / 1_000_000.0));
@@ -156,7 +192,14 @@ impl PlayerInterface for MprisBridge {
         })
     }
 
-    async fn set_loop_status(&self, _: LoopStatus) -> mpris_server::zbus::Result<()> {
+    async fn set_loop_status(&self, status: LoopStatus) -> mpris_server::zbus::Result<()> {
+        use crate::playlist::queue::RepeatMode;
+        let mode = match status {
+            LoopStatus::None => RepeatMode::Off,
+            LoopStatus::Playlist => RepeatMode::All,
+            LoopStatus::Track => RepeatMode::One,
+        };
+        self.player.queue.lock().unwrap().set_repeat(mode);
         Ok(())
     }
 
@@ -189,19 +232,20 @@ impl PlayerInterface for MprisBridge {
             if let Some(a) = &item.artist {
                 m.set_artist(Some(vec![a.clone()]));
             }
+            m.set_album(item.album.clone());
+            m.set_album_artist(item.album_artist.clone().map(|a| vec![a]));
             if let Some(d) = item.duration_secs {
                 m.set_length(Some(Time::from_secs(d)));
             }
-            // A stable id per queue position; MPRIS requires a valid object path.
-            let idx = self
-                .player
-                .queue
-                .lock()
-                .unwrap()
-                .current_index()
-                .unwrap_or(0);
-            if let Ok(id) = TrackId::try_from(format!("/org/staramp/track/{idx}")) {
+            if let Some(id) = self.track_id() {
                 m.set_trackid(Some(id));
+            }
+            if let Ok(art) = self.artwork.lock() {
+                if let Some((uri, url)) = art.as_ref() {
+                    if uri == &item.uri.to_string() {
+                        m.set_art_url(Some(url.clone()));
+                    }
+                }
             }
         }
         Ok(m)
@@ -231,23 +275,23 @@ impl PlayerInterface for MprisBridge {
     }
 
     async fn can_go_next(&self) -> fdo::Result<bool> {
-        Ok(true)
+        Ok(self.player.current_item().is_some() && self.player.queue.lock().unwrap().len() > 1)
     }
 
     async fn can_go_previous(&self) -> fdo::Result<bool> {
-        Ok(true)
+        Ok(self.player.current_item().is_some() && self.player.queue.lock().unwrap().len() > 1)
     }
 
     async fn can_play(&self) -> fdo::Result<bool> {
-        Ok(true)
+        Ok(self.player.current_item().is_some())
     }
 
     async fn can_pause(&self) -> fdo::Result<bool> {
-        Ok(true)
+        Ok(self.player.state.state() == PlayState::Playing)
     }
 
     async fn can_seek(&self) -> fdo::Result<bool> {
-        Ok(true)
+        Ok(self.player.current_item().is_some() && self.player.state.duration_secs() > 0.0)
     }
 
     async fn can_control(&self) -> fdo::Result<bool> {
@@ -262,6 +306,8 @@ impl PlayerInterface for MprisBridge {
 /// not a player that refuses to start.
 pub fn spawn(player: Arc<Player>, activity: crate::activity::Control) -> Option<MprisHandle> {
     let (tx, rx) = std::sync::mpsc::channel::<MprisEvent>();
+    let artwork = Arc::new(Mutex::new(None));
+    let bridge_artwork = Arc::clone(&artwork);
 
     std::thread::Builder::new()
         .name("staramp-mpris".into())
@@ -277,14 +323,19 @@ pub fn spawn(player: Arc<Player>, activity: crate::activity::Control) -> Option<
                 }
             };
             rt.block_on(async move {
-                let server = match Server::new(BUS_NAME, MprisBridge::new(player, activity)).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        tracing::warn!("mpris unavailable: {e}");
-                        return;
-                    }
-                };
+                let server =
+                    match Server::new(BUS_NAME, MprisBridge::new(player, activity, bridge_artwork))
+                        .await
+                    {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!("mpris unavailable: {e}");
+                            return;
+                        }
+                    };
                 tracing::info!("mpris: org.mpris.MediaPlayer2.{BUS_NAME}");
+
+                let mut last_extra: Option<MprisSnapshot> = None;
 
                 loop {
                     // A blocking recv would park the runtime, so poll instead.
@@ -312,6 +363,75 @@ pub fn spawn(player: Arc<Player>, activity: crate::activity::Control) -> Option<
                                 .await;
                         }
                         Err(std::sync::mpsc::TryRecvError::Empty) => {
+                            let now = MprisSnapshot {
+                                volume: server.imp().volume().await.ok(),
+                                shuffle: server.imp().shuffle().await.ok(),
+                                loop_status: server.imp().loop_status().await.ok(),
+                                next: server.imp().can_go_next().await.ok(),
+                                previous: server.imp().can_go_previous().await.ok(),
+                                play: server.imp().can_play().await.ok(),
+                                pause: server.imp().can_pause().await.ok(),
+                                seek: server.imp().can_seek().await.ok(),
+                            };
+                            if last_extra.as_ref() != Some(&now) {
+                                let mut changed = Vec::new();
+                                if last_extra
+                                    .as_ref()
+                                    .is_none_or(|old| old.volume != now.volume)
+                                {
+                                    if let Some(v) = now.volume {
+                                        changed.push(Property::Volume(v));
+                                    }
+                                }
+                                if last_extra
+                                    .as_ref()
+                                    .is_none_or(|old| old.shuffle != now.shuffle)
+                                {
+                                    if let Some(v) = now.shuffle {
+                                        changed.push(Property::Shuffle(v));
+                                    }
+                                }
+                                if last_extra
+                                    .as_ref()
+                                    .is_none_or(|old| old.loop_status != now.loop_status)
+                                {
+                                    if let Some(v) = now.loop_status {
+                                        changed.push(Property::LoopStatus(v));
+                                    }
+                                }
+                                if last_extra.as_ref().is_none_or(|old| old.next != now.next) {
+                                    if let Some(v) = now.next {
+                                        changed.push(Property::CanGoNext(v));
+                                    }
+                                }
+                                if last_extra
+                                    .as_ref()
+                                    .is_none_or(|old| old.previous != now.previous)
+                                {
+                                    if let Some(v) = now.previous {
+                                        changed.push(Property::CanGoPrevious(v));
+                                    }
+                                }
+                                if last_extra.as_ref().is_none_or(|old| old.play != now.play) {
+                                    if let Some(v) = now.play {
+                                        changed.push(Property::CanPlay(v));
+                                    }
+                                }
+                                if last_extra.as_ref().is_none_or(|old| old.pause != now.pause) {
+                                    if let Some(v) = now.pause {
+                                        changed.push(Property::CanPause(v));
+                                    }
+                                }
+                                if last_extra.as_ref().is_none_or(|old| old.seek != now.seek) {
+                                    if let Some(v) = now.seek {
+                                        changed.push(Property::CanSeek(v));
+                                    }
+                                }
+                                if !changed.is_empty() {
+                                    let _ = server.properties_changed(changed).await;
+                                }
+                                last_extra = Some(now);
+                            }
                             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         }
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
@@ -321,7 +441,7 @@ pub fn spawn(player: Arc<Player>, activity: crate::activity::Control) -> Option<
         })
         .ok()?;
 
-    Some(MprisHandle { tx })
+    Some(MprisHandle { tx, artwork })
 }
 
 pub enum MprisEvent {
@@ -333,11 +453,19 @@ pub enum MprisEvent {
 
 pub struct MprisHandle {
     tx: std::sync::mpsc::Sender<MprisEvent>,
+    artwork: Arc<Mutex<Option<(String, String)>>>,
 }
 
 impl MprisHandle {
     pub fn notify(&self, e: MprisEvent) {
         let _ = self.tx.send(e);
+    }
+
+    pub fn set_artwork(&self, uri: Option<String>, url: Option<String>) {
+        if let Ok(mut art) = self.artwork.lock() {
+            *art = uri.zip(url);
+        }
+        self.notify(MprisEvent::TrackChanged);
     }
 }
 

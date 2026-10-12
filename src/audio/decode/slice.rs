@@ -79,7 +79,7 @@ impl Decoder for SliceDecoder {
         self.inner.bitrate_kbps()
     }
 
-    fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+    fn read(&mut self, out: &mut [f64]) -> Result<usize> {
         self.ensure_positioned()?;
 
         let ch = self.spec().samples_per_frame();
@@ -144,6 +144,8 @@ mod tests {
     impl Decoder for Ramp {
         fn spec(&self) -> StreamSpec {
             StreamSpec {
+                sample_format: starkit::pcm::SampleFormat::F64,
+                channel_mask: 0,
                 sample_rate: 44_100,
                 channels: 1,
                 bit_depth: Some(16),
@@ -155,10 +157,10 @@ mod tests {
         fn bitrate_kbps(&self) -> Option<u32> {
             None
         }
-        fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+        fn read(&mut self, out: &mut [f64]) -> Result<usize> {
             let n = out.len().min((self.len - self.pos) as usize);
             for (i, slot) in out[..n].iter_mut().enumerate() {
-                *slot = (self.pos + i as u64) as f32;
+                *slot = (self.pos + i as u64) as f64;
             }
             self.pos += n as u64;
             Ok(n)
@@ -182,7 +184,7 @@ mod tests {
     #[test]
     fn reads_only_within_the_window() {
         let mut s = SliceDecoder::new(ramp(1000), 100, Some(150));
-        let mut buf = [0f32; 200];
+        let mut buf = [0f64; 200];
         let n = s.read(&mut buf).unwrap();
         assert_eq!(n, 50, "must stop at the track boundary");
         assert_eq!(buf[0], 100.0, "must start at the window start");
@@ -193,7 +195,7 @@ mod tests {
     #[test]
     fn an_unbounded_track_runs_to_end_of_file() {
         let mut s = SliceDecoder::new(ramp(120), 100, None);
-        let mut buf = [0f32; 200];
+        let mut buf = [0f64; 200];
         assert_eq!(s.read(&mut buf).unwrap(), 20);
         assert_eq!(buf[0], 100.0);
     }
@@ -207,7 +209,7 @@ mod tests {
         assert_eq!(s.seek(25).unwrap(), 25);
         assert_eq!(s.position(), 25);
 
-        let mut buf = [0f32; 10];
+        let mut buf = [0f64; 10];
         s.read(&mut buf).unwrap();
         assert_eq!(buf[0], 325.0, "but the underlying read is absolute");
     }
@@ -216,7 +218,7 @@ mod tests {
     fn seeking_past_the_end_clamps_into_the_track() {
         let mut s = SliceDecoder::new(ramp(1000), 300, Some(400));
         assert_eq!(s.seek(9999).unwrap(), 100);
-        let mut buf = [0f32; 10];
+        let mut buf = [0f64; 10];
         assert_eq!(s.read(&mut buf).unwrap(), 0);
     }
 
@@ -224,7 +226,7 @@ mod tests {
     fn retarget_to_an_adjacent_track_does_not_seek() {
         // The gapless fast path: consecutive cue tracks in one file.
         let mut s = SliceDecoder::new(ramp(1000), 0, Some(50));
-        let mut buf = [0f32; 50];
+        let mut buf = [0f64; 50];
         assert_eq!(s.read(&mut buf).unwrap(), 50);
 
         s.retarget(50, Some(100));
@@ -240,7 +242,7 @@ mod tests {
         // track is in this file but not the next one along, so the window has
         // to be moved *and* the decoder repositioned. Still no file opened.
         let mut s = SliceDecoder::new(ramp(1000), 0, Some(50));
-        let mut buf = [0f32; 50];
+        let mut buf = [0f64; 50];
         assert_eq!(s.read(&mut buf).unwrap(), 50);
 
         s.retarget(700, Some(750));
@@ -255,7 +257,7 @@ mod tests {
     fn retarget_back_to_the_same_window_replays_it() {
         // Repeat-one on a cue track: `next` hands back the track just played.
         let mut s = SliceDecoder::new(ramp(1000), 100, Some(150));
-        let mut buf = [0f32; 50];
+        let mut buf = [0f64; 50];
         assert_eq!(s.read(&mut buf).unwrap(), 50);
         assert_eq!(s.read(&mut buf).unwrap(), 0, "the track is done");
 

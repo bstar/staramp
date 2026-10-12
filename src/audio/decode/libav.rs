@@ -55,7 +55,7 @@ pub struct LibavDecoder {
     cancel: Option<Arc<AtomicBool>>,
 
     /// Converted interleaved samples not yet handed to the caller.
-    buf: Vec<f32>,
+    buf: Vec<f64>,
     buf_pos: usize,
 
     pos: u64,
@@ -128,7 +128,12 @@ impl LibavDecoder {
             .unwrap_or_else(|| "audio".to_string());
 
         let in_rate = decoder.rate();
-        let layout = decoder.channel_layout();
+        let declared_layout = decoder.channel_layout();
+        let layout = if declared_layout.is_empty() {
+            ff::ChannelLayout::default(i32::from(decoder.channels()))
+        } else {
+            declared_layout
+        };
         let channels = layout.channels() as u16;
         if in_rate == 0 || channels == 0 {
             return Err(anyhow!(
@@ -136,20 +141,12 @@ impl LibavDecoder {
             ));
         }
 
-        // DSD decodes to PCM at a rate far above anything a sound device will
-        // accept (the reference .dsf files come out at 705600 Hz). Bring those
-        // down here, to a rate that is in PipeWire's allowed-rates list, rather
-        // than pushing an unplayable rate downstream and resampling twice.
-        let out_rate = normalise_rate(in_rate);
-        if out_rate != in_rate {
-            tracing::info!("{name}: resampling {in_rate} Hz -> {out_rate} Hz at the decoder");
-        }
-
-        // Everything downstream speaks packed f32. libav hands out planar for
-        // most of these codecs, so this conversion is not optional.
+        // Preserve the decoder's original PCM rate and precision. Device
+        // compatibility conversion belongs at the output boundary.
+        let out_rate = in_rate;
         let resampler = ff::software::resampler(
             (decoder.format(), layout, in_rate),
-            (Sample::F32(SampleType::Packed), layout, out_rate),
+            (Sample::F64(SampleType::Packed), layout, out_rate),
         )
         .with_context(|| format!("{name}: building resampler"))?;
 
@@ -171,6 +168,12 @@ impl LibavDecoder {
 
         Ok(Self {
             spec: StreamSpec {
+                sample_format: match decoder.format() {
+                    Sample::F32(_) => starkit::pcm::SampleFormat::F32,
+                    Sample::F64(_) => starkit::pcm::SampleFormat::F64,
+                    _ => starkit::pcm::SampleFormat::I32,
+                },
+                channel_mask: layout.bits(),
                 sample_rate: out_rate,
                 channels,
                 bit_depth: bit_depth_of(&decoder),
@@ -234,16 +237,28 @@ impl LibavDecoder {
     fn drain_frames(&mut self) -> Result<()> {
         let mut decoded = ff::frame::Audio::empty();
         while self.decoder.receive_frame(&mut decoded).is_ok() {
+            if decoded.channel_layout().is_empty() {
+                decoded
+                    .set_channel_layout(ff::ChannelLayout::default(i32::from(decoded.channels())));
+            }
             let mut converted = ff::frame::Audio::empty();
-            self.resampler
-                .run(&decoded, &mut converted)
-                .map_err(|e| anyhow!("resampling: {e}"))?;
+            self.resampler.run(&decoded, &mut converted).map_err(|e| {
+                anyhow!(
+                    "resampling: {e}; frame {:?} {} Hz {:?}, expected {:?} {} Hz {:?}",
+                    decoded.format(),
+                    decoded.rate(),
+                    decoded.channel_layout(),
+                    self.resampler.input().format,
+                    self.resampler.input().rate,
+                    self.resampler.input().channel_layout
+                )
+            })?;
             self.append(&converted);
         }
         Ok(())
     }
 
-    /// Append a packed-f32 frame's samples.
+    /// Append a packed-f64 frame's samples.
     fn append(&mut self, frame: &ff::frame::Audio) {
         let frames = frame.samples();
         if frames == 0 {
@@ -253,7 +268,7 @@ impl LibavDecoder {
         // Packed layout keeps every channel interleaved in plane 0, but the
         // plane is padded to libav's alignment, so the frame count -- not the
         // plane length -- decides how much is real audio.
-        let plane: &[f32] = frame.plane(0);
+        let plane: &[f64] = frame.plane(0);
         let want = frames * ch;
         self.buf.extend_from_slice(&plane[..want.min(plane.len())]);
     }
@@ -272,7 +287,7 @@ impl Decoder for LibavDecoder {
         super::average_bitrate_kbps(self.file_size, self.total_frames, self.spec.sample_rate)
     }
 
-    fn read(&mut self, out: &mut [f32]) -> Result<usize> {
+    fn read(&mut self, out: &mut [f64]) -> Result<usize> {
         let ch = self.spec.samples_per_frame();
         if ch == 0 {
             return Ok(0);
@@ -328,33 +343,18 @@ impl Decoder for LibavDecoder {
     }
 }
 
-/// Map a decoder output rate onto something a sound device will actually take.
-///
-/// Only DSD needs this in practice: its PCM output lands in the hundreds of
-/// kHz. Everything else passes through untouched so the bit-perfect path stays
-/// bit-perfect.
-fn normalise_rate(rate: u32) -> u32 {
-    const ALLOWED: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
-    if rate <= 192_000 {
-        return rate;
-    }
-    // Stay in the same family: 44.1k-derived rates halve down to 176400,
-    // 48k-derived ones to 192000.
-    let target = if rate.is_multiple_of(44_100) {
-        176_400
-    } else {
-        192_000
-    };
-    debug_assert!(ALLOWED.contains(&target));
-    target
-}
-
 fn rescale_to_frames(value: i64, time_base: ff::Rational, rate: u32) -> u64 {
     let secs = value as f64 * f64::from(time_base.numerator()) / f64::from(time_base.denominator());
     (secs * rate as f64).max(0.0) as u64
 }
 
 fn bit_depth_of(decoder: &ff::decoder::Audio) -> Option<u32> {
+    // The storage container may be i32 for a 24-bit lossless source.
+    let raw = unsafe { (*decoder.as_ptr()).bits_per_raw_sample };
+    if raw > 0 {
+        return Some(raw as u32);
+    }
+
     match decoder.format() {
         Sample::U8(_) => Some(8),
         Sample::I16(_) => Some(16),
@@ -363,25 +363,5 @@ fn bit_depth_of(decoder: &ff::decoder::Audio) -> Option<u32> {
         Sample::F64(_) => None,
         Sample::I64(_) => Some(64),
         Sample::None => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::normalise_rate;
-
-    #[test]
-    fn ordinary_rates_pass_through_untouched() {
-        for r in [44100, 48000, 88200, 96000, 176400, 192000, 22050, 32000] {
-            assert_eq!(normalise_rate(r), r);
-        }
-    }
-
-    #[test]
-    fn dsd_rates_come_down_into_the_allowed_set() {
-        // The reference .dsf files decode to 705600 Hz, which no device takes.
-        assert_eq!(normalise_rate(705_600), 176_400);
-        assert_eq!(normalise_rate(2_822_400), 176_400);
-        assert_eq!(normalise_rate(384_000), 192_000);
     }
 }

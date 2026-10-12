@@ -26,6 +26,7 @@ pub struct MirrorState {
     /// Empty when the leader is stopped, or is an older build.
     pub uri: String,
     pub position: f64,
+    pub buffered: f64,
     pub duration: f64,
     pub volume: f32,
     pub shuffle: bool,
@@ -232,6 +233,7 @@ pub fn parse_state(src: &str) -> Option<MirrorState> {
         title: field(src, "title").map(unescape).unwrap_or_default(),
         uri: field(src, "uri").map(unescape).unwrap_or_default(),
         position: num("position").unwrap_or(0.0),
+        buffered: num("buffered").unwrap_or_else(|| num("position").unwrap_or(0.0)),
         duration: num("duration").unwrap_or(0.0),
         volume: num("volume").unwrap_or(1.0) as f32,
         shuffle: field(src, "shuffle") == Some("true"),
@@ -282,6 +284,14 @@ pub fn parse_queue(src: &str) -> Vec<QueueItem> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn buffer_endpoint_survives_mirroring_and_older_owners() {
+        let current = super::parse_state(r#"{"position":10,"buffered":14}"#).unwrap();
+        assert_eq!(current.buffered, 14.);
+        let older = super::parse_state(r#"{"position":10}"#).unwrap();
+        assert_eq!(older.buffered, older.position);
+    }
+
     use super::*;
 
     const SAMPLE: &str = r#"{"state":"playing","artist":"Angra","title":"Nova Era","position":134.50,"duration":300.00,"volume":0.800,"shuffle":true,"repeat":"All","index":41,"total":103,"revision":7,"rate":44100,"depth":16,"channels":2,"codec":"flac","bitrate":1006,"bit_perfect":true,"uri":"Angra/1996 - Holy Land/03.flac","bands":"009950"}"#;

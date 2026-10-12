@@ -382,6 +382,7 @@ fn handle_with_activity(
             else {
                 return "error: invalid audio route".into();
             };
+            crate::audio::relay::set_cache_mode(parts.next() == Some("cache"));
             crate::audio::relay::claim(token);
             crate::audio::relay::set_precise(true);
             player.send(Command::AudioRelay(true));
@@ -396,7 +397,7 @@ fn handle_with_activity(
             }
             "ok".into()
         }
-        "audio-progress" | "audio-finished" => {
+        "audio-progress" | "audio-finished" | "audio-buffered" => {
             let token = parts.next().and_then(|n| n.parse::<u64>().ok());
             let epoch = parts.next().and_then(|n| n.parse::<u64>().ok());
             if token == Some(crate::audio::relay::route())
@@ -405,7 +406,15 @@ fn handle_with_activity(
                 if cmd == "audio-finished" {
                     player.send(Command::AudioFinished(epoch.unwrap()));
                 } else if let Some(frames) = parts.next().and_then(|n| n.parse::<u64>().ok()) {
-                    crate::audio::relay::publish_played(frames.min(player.state.output_frames()));
+                    if cmd == "audio-buffered" {
+                        crate::audio::relay::publish_received(
+                            frames.min(player.state.output_frames()),
+                        );
+                    } else {
+                        crate::audio::relay::publish_played(
+                            frames.min(player.state.output_frames()),
+                        );
+                    }
                 }
             }
             "ok".into()
@@ -417,6 +426,7 @@ fn handle_with_activity(
                 return "error: audio route belongs to another frontend".into();
             }
             serde_json::to_string(&crate::audio::relay::Poll {
+                epoch: crate::audio::relay::current_epoch(),
                 playing: player.state.playing.load(Ordering::Relaxed),
                 paused: player.state.paused.load(Ordering::Relaxed),
                 draining: crate::audio::relay::draining(),
@@ -684,11 +694,12 @@ fn handle_with_activity(
             // JSON by hand: one object with fixed keys does not justify a
             // serialisation dependency on the control path.
             format!(
-                r#"{{"version":"{}","state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
+                r#"{{"version":"{}","state":"{state}","artist":{},"title":{},"position":{:.2},"buffered":{:.3},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
                 env!("CARGO_PKG_VERSION"),
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
+                st.buffered_secs(),
                 st.duration_secs(),
                 player.volume(),
                 player.crossfade(),
@@ -752,7 +763,7 @@ fn handle_with_activity(
                 .unwrap_or_default();
 
             format!(
-                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"grouping":{grouping},"group_desc":{group_desc},"arranged":{arranged},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"loading":{},"view":{view_revision},"bands":"{bands}"}}"#,
+                r#"{{"state":"{}","artist":{},"title":{},"position":{:.2},"buffered":{:.3},"duration":{:.2},"volume":{:.3},"shuffle":{shuffle},"group":{group},"grouping":{grouping},"group_desc":{group_desc},"arranged":{arranged},"repeat":"{repeat}","crossfade":{},"index":{index},"total":{total},"revision":{revision},"rate":{},"depth":{},"channels":{},"codec":{},"bitrate":{},"bit_perfect":{},"uri":{},"loading":{},"view":{view_revision},"bands":"{bands}"}}"#,
                 match st.state() {
                     PlayState::Playing => "playing",
                     PlayState::Paused => "paused",
@@ -761,6 +772,7 @@ fn handle_with_activity(
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
+                st.buffered_secs(),
                 st.duration_secs(),
                 player.volume(),
                 player.crossfade(),

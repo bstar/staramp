@@ -955,6 +955,7 @@ mod tests {
             state: PlayState::Playing,
             loading: false,
             position: 30.,
+            buffered: 30.,
             duration: 120.,
             volume: 0.5,
             repeat: RepeatMode::Off,
@@ -983,6 +984,55 @@ mod tests {
             error: [240, 60, 60],
         }
     }
+    #[test]
+    fn thicker_seek_bar_renders_played_buffered_and_empty_at_both_densities() {
+        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut state = state();
+        state.buffered = 84.;
+        for density in [1, 2] {
+            let surface = skin
+                .surface_at_density(
+                    1352 * density,
+                    230 * density,
+                    GraphicsConfig {
+                        cell_width: 8 * density,
+                        cell_height: 16 * density,
+                    },
+                    &palette(),
+                    &state,
+                    8,
+                    density,
+                )
+                .unwrap();
+            let seek = surface
+                .hits
+                .iter()
+                .find(|hit| hit.action == "seek")
+                .unwrap()
+                .rect;
+            let image = SurfaceOverlayRenderer::new("monospace")
+                .render(
+                    &starkit::image::RgbaImage::new(
+                        u32::from(surface.width),
+                        u32::from(surface.height),
+                    ),
+                    &surface,
+                )
+                .unwrap();
+            let x = |fraction: f64| u32::from(seek.x) + (f64::from(seek.width) * fraction) as u32;
+            let y = u32::from(seek.y + seek.height / 2);
+            let played = image.get_pixel(x(0.1), y);
+            let buffered = image.get_pixel(x(0.5), y);
+            let empty = image.get_pixel(x(0.9), y);
+            assert_ne!(played, buffered);
+            assert_ne!(buffered, empty);
+            for dy in 0..3 * density {
+                assert_eq!(image.get_pixel(x(0.5), y + u32::from(dy)), buffered);
+            }
+        }
+    }
+
     #[test]
     fn silver_shading_and_metal_buttons_render_at_both_densities() {
         let mut skin = PlayerSkin::new().unwrap();

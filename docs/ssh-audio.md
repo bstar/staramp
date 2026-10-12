@@ -26,6 +26,18 @@ than creating a second decoder. Disconnecting pauses the persistent session;
 reattaching leaves it paused until you resume. Seeking and reattaching discard
 stale queued audio. A new frontend takes the audio route from an older one.
 
+The progress bar shows played audio in the accent color, locally received audio
+in a muted silver color, and the remaining track in a charcoal groove. Matching
+frontends negotiate whole-song caching: PCM downloads as fast as credits allow
+into an anonymous temporary file on the listening machine. Credits return after
+writing each block, independently of playback. The cache is discarded on seek,
+track change, route close or disconnect; pause retains it and downloading
+continues. Gain/EQ changes refresh processed audio from the audible position.
+The buffered range uses received sample counts and is shared with mirroring
+windows. Local playback and credit refill run independently of terminal drawing,
+so workspace changes do not need UI frames to keep audio supplied. Downloaded
+EOF does not advance the queue until the local audio device finishes playback.
+
 The default route preserves source sample rate, channel layout and PCM precision.
 Integer sources through 32 bits and float32/float64 sources retain their values
 when EQ, ReplayGain, volume and crossfade are transparent. Processing uses
@@ -45,10 +57,11 @@ update rather than silently receiving the old fixed 48 kHz/16-bit route.
 
 DSD files are decoded to PCM at the decoder's original PCM rate. Native DSD and
 DoP are outside this route. High rates and many channels require proportionally
-more bandwidth; transport and playback queues are bounded and stop accepting
-audio when the local frontend stops consuming it.
+more bandwidth and temporary disk space. Transport and playback memory remain
+bounded; the temporary file can hold the whole current song. Older PCM frontends
+retain their bounded playback credit window.
 
-STAR/AMP pins the published STAR/KIT v0.4.0 release. Cargo fetches the shared
+STAR/AMP pins the published STAR/KIT v0.5.0 release. Cargo fetches the shared
 PCM and frontend implementation automatically; no adjacent KIT checkout is
 needed. Remove any development `.cargo/config.toml` path override before
 building this release.

@@ -375,6 +375,7 @@ impl Rack<'_> {
             state: st.state(),
             loading: st.is_loading(),
             position: st.position_secs(),
+            buffered: st.buffered_secs(),
             duration: st.duration_secs(),
             volume: a.player.volume(),
             repeat,
@@ -3120,6 +3121,7 @@ impl App {
         app.player.state.bit_depth.store(16, Relaxed);
         app.player.state.duration_frames.store(298 * 44100, Relaxed);
         app.player.state.position_frames.store(69 * 44100, Relaxed);
+        app.player.state.buffered_frames.store(105 * 44100, Relaxed);
         app.player.state.codec.store(Arc::new("FLAC".into()));
         app.player.state.playing.store(true, Relaxed);
         app.player.state.bit_perfect.store(true, Relaxed);

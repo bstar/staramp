@@ -201,6 +201,7 @@ pub struct PlayerRenderState {
     pub state: PlayState,
     pub loading: bool,
     pub position: f64,
+    pub buffered: f64,
     pub duration: f64,
     pub volume: f32,
     pub repeat: RepeatMode,
@@ -224,6 +225,7 @@ impl PlayerRenderState {
         if self.loading || (!self.has_items && self.state == PlayState::Stopped) {
             if self.state == PlayState::Stopped {
                 self.position = 0.;
+                self.buffered = 0.;
                 self.duration = 0.;
             }
             self.tech.clear();
@@ -319,6 +321,7 @@ fn source_buffer(width: u16, palette: &Palette, player: &PlayerRenderState) -> B
         state: player.state,
         loading: player.loading,
         position: player.position,
+        buffered: player.buffered,
         duration: player.duration,
         volume: player.volume,
         repeat: player.repeat,
@@ -501,6 +504,7 @@ mod tests {
             state: PlayState::Playing,
             loading: false,
             position: 30.0,
+            buffered: 30.0,
             duration: 120.0,
             volume: 0.5,
             repeat: RepeatMode::Off,

@@ -96,6 +96,8 @@ impl Command {
 /// What the UI reads. All atomics, so rendering never blocks the audio path.
 pub struct PlayerState {
     pub position_frames: AtomicU64,
+    /// End of decoded audio ready in the output pipeline, in track frames.
+    pub buffered_frames: AtomicU64,
     pub duration_frames: AtomicU64,
     pub sample_rate: AtomicU64,
     pub channels: AtomicU64,
@@ -125,6 +127,7 @@ impl PlayerState {
     fn new() -> Self {
         Self {
             position_frames: AtomicU64::new(0),
+            buffered_frames: AtomicU64::new(0),
             duration_frames: AtomicU64::new(0),
             sample_rate: AtomicU64::new(0),
             channels: AtomicU64::new(2),
@@ -183,6 +186,15 @@ impl PlayerState {
     pub fn position_secs(&self) -> f64 {
         let rate = self.sample_rate.load(Ordering::Relaxed).max(1);
         self.position_frames.load(Ordering::Relaxed) as f64 / rate as f64
+    }
+
+    pub fn buffered_secs(&self) -> f64 {
+        if self.state() == PlayState::Stopped {
+            return 0.0;
+        }
+        let rate = self.sample_rate.load(Ordering::Relaxed).max(1);
+        let end = self.buffered_frames.load(Ordering::Relaxed) as f64 / rate as f64;
+        end.max(self.position_secs()).min(self.duration_secs())
     }
 
     pub fn duration_secs(&self) -> f64 {
@@ -650,6 +662,9 @@ fn run(
     let mut warmed: Option<String> = None;
     let mut album_preload: Option<AlbumPreload> = None;
     let mut fade = Crossfade::Idle;
+    let mut relay_drained_epoch = 0;
+    let mut relay_drained_revision = 0;
+    let mut cached_dsp: Option<(u64, f32, Arc<super::dsp::eq::EqSettings>)> = None;
 
     let mut stream: Option<Stream> = None;
     // Recomputed when a track opens. Constant for a track by definition, so
@@ -695,6 +710,7 @@ fn run(
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
                     state.position_frames.store(0, Ordering::Relaxed);
+                    state.buffered_frames.store(0, Ordering::Relaxed);
                     state.last_error.store(None);
                 }
                 Command::ReplaceQueueAndPlay {
@@ -710,6 +726,7 @@ fn run(
                     state.playing.store(false, Ordering::Relaxed);
                     state.paused.store(false, Ordering::Relaxed);
                     state.position_frames.store(0, Ordering::Relaxed);
+                    state.buffered_frames.store(0, Ordering::Relaxed);
                     state.last_error.store(None);
                     let track = {
                         let mut q = queue.lock().unwrap();
@@ -737,7 +754,11 @@ fn run(
                 }
                 Command::AudioFinished(epoch) => {
                     if epoch == super::relay::current_epoch() && super::relay::draining() {
-                        state.playing.store(false, Ordering::Relaxed);
+                        relay_drained_epoch = epoch;
+                        relay_drained_revision = state.track_revision.load(Ordering::Relaxed);
+                        if !super::relay::cache_mode() {
+                            state.playing.store(false, Ordering::Relaxed);
+                        }
                         state.position_frames.store(
                             state.duration_frames.load(Ordering::Relaxed),
                             Ordering::Relaxed,
@@ -746,8 +767,10 @@ fn run(
                     }
                 }
                 Command::Pause => {
-                    if let Some(s) = &stream {
-                        s.output.pause();
+                    if !super::relay::cache_mode() {
+                        if let Some(s) = &stream {
+                            s.output.pause();
+                        }
                     }
                     state.paused.store(true, Ordering::Relaxed);
                     let _ = warm_paused(&backing, warm_budget);
@@ -760,11 +783,13 @@ fn run(
                 }
                 Command::TogglePause => {
                     let now = !state.paused.load(Ordering::Relaxed);
-                    if let Some(s) = &stream {
-                        if now {
-                            s.output.pause()
-                        } else {
-                            s.output.resume()
+                    if !super::relay::cache_mode() {
+                        if let Some(s) = &stream {
+                            if now {
+                                s.output.pause()
+                            } else {
+                                s.output.resume()
+                            }
                         }
                     }
                     state.paused.store(now, Ordering::Relaxed);
@@ -936,7 +961,13 @@ fn run(
                 Command::SeekBy(delta) => {
                     if let Some(d) = decoder.as_mut() {
                         let rate = d.spec().sample_rate as f64;
-                        let cur = d.position() as f64 / rate;
+                        // Downloading may already be at EOF. Relative seeks
+                        // start at what the listener hears, not the decoder.
+                        let cur = if super::relay::cache_mode() {
+                            state.position_secs()
+                        } else {
+                            d.position() as f64 / rate
+                        };
                         let frame = ((cur + delta).max(0.0) * rate) as u64;
                         if let Ok(landed) = d.seek(frame) {
                             state.position_frames.store(landed, Ordering::Relaxed);
@@ -960,6 +991,34 @@ fn run(
             }
         }
 
+        // Cached processed PCM must be regenerated from the audible position
+        // when gain or EQ changes, rather than applying minutes later.
+        if super::relay::cache_mode() {
+            let epoch = super::relay::current_epoch();
+            let settings = eq.load();
+            let vol = *volume.lock().unwrap();
+            if cached_dsp
+                .as_ref()
+                .is_some_and(|(old_epoch, old_vol, old_eq)| {
+                    *old_epoch == epoch && (*old_vol != vol || !Arc::ptr_eq(old_eq, &settings))
+                })
+            {
+                if let (Some(d), Some(s)) = (decoder.as_mut(), stream.as_mut()) {
+                    let frame = state.position_frames.load(Ordering::Relaxed);
+                    let reset = d.seek(frame).and_then(|landed| {
+                        state.position_frames.store(landed, Ordering::Relaxed);
+                        reset_relay(s, &d.spec(), &tap, &state)
+                    });
+                    if let Err(error) = reset {
+                        fail_track(&state, format!("audio cache refresh: {error:#}"));
+                    }
+                    eq_state.reset();
+                    fade = Crossfade::Idle;
+                }
+            }
+            cached_dsp = Some((super::relay::current_epoch(), vol, eq.load()));
+        }
+
         // Start a freshly opened device as soon as it has something to play,
         // or after the deadline whatever happens. Checked here rather than
         // after a successful read so that a decoder erroring on its first call
@@ -975,7 +1034,7 @@ fn run(
                     // Priming decides *when* it may start, not *whether* it
                     // should. Pausing during a track change and having the
                     // next track start itself anyway is a bug worth naming.
-                    if !state.paused.load(Ordering::Relaxed) {
+                    if !state.paused.load(Ordering::Relaxed) || super::relay::cache_mode() {
                         s.output.resume();
                     }
                 }
@@ -1043,7 +1102,7 @@ fn run(
         if let (Some(s), Some(d)) = (stream.as_mut(), decoder.as_mut()) {
             let ch = s.channels as usize;
             let free = s.producer.slots();
-            if free >= ch * 64 {
+            if free >= ch * 64 && !(super::relay::cache_mode() && super::relay::draining()) {
                 let want = (free / ch).min(4096);
                 let read_want = match &fade {
                     // Stop exactly on the fade point so the successor's first
@@ -1076,6 +1135,17 @@ fn run(
                         scratch.resize(read_want * ch, 0.0);
                     }
                     match d.read(&mut scratch[..read_want * ch]) {
+                        Ok(0)
+                            if super::relay::cache_mode()
+                                && relay_drained_epoch != super::relay::current_epoch() =>
+                        {
+                            // Downloading EOF is not audible EOF. Keep this
+                            // decoder and queue item until the local cache drains.
+                            s.source_done.store(true, Ordering::Release);
+                            super::relay::set_draining(true);
+                            state.loading.store(false, Ordering::Relaxed);
+                            did_work = true;
+                        }
                         Ok(0) if matches!(fade, Crossfade::Fading { .. }) => {
                             // The outgoing track is spent and its successor has
                             // been playing under it for the length of the fade.
@@ -1120,10 +1190,13 @@ fn run(
                                 }
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
-                                    super::relay::set_draining(true);
+                                    super::relay::set_draining(!super::relay::cache_mode());
                                     decoder = None;
                                     state.loading.store(false, Ordering::Relaxed);
-                                    if !super::relay::precise() || super::relay::route() == 0 {
+                                    if !super::relay::precise()
+                                        || super::relay::route() == 0
+                                        || super::relay::cache_mode()
+                                    {
                                         state.playing.store(false, Ordering::Relaxed);
                                     }
                                 }
@@ -1175,6 +1248,7 @@ fn run(
                                             Ordering::Relaxed,
                                         );
                                         state.position_frames.store(0, Ordering::Relaxed);
+                                        state.buffered_frames.store(0, Ordering::Relaxed);
                                         state.track_revision.fetch_add(1, Ordering::Relaxed);
                                     } else if let Some(prepared) = album_edge
                                         .as_ref()
@@ -1210,10 +1284,13 @@ fn run(
                                 }
                                 None => {
                                     s.source_done.store(true, Ordering::Release);
-                                    super::relay::set_draining(true);
+                                    super::relay::set_draining(!super::relay::cache_mode());
                                     decoder = None;
                                     state.loading.store(false, Ordering::Relaxed);
-                                    if !super::relay::precise() || super::relay::route() == 0 {
+                                    if !super::relay::precise()
+                                        || super::relay::route() == 0
+                                        || super::relay::cache_mode()
+                                    {
                                         state.playing.store(false, Ordering::Relaxed);
                                     }
                                 }
@@ -1328,6 +1405,34 @@ fn run(
             }
         }
 
+        if super::relay::cache_mode()
+            && relay_drained_epoch == super::relay::current_epoch()
+            && state.track_revision.load(Ordering::Relaxed) != relay_drained_revision
+        {
+            if let (Some(d), Some(s)) = (decoder.as_ref(), stream.as_mut()) {
+                if let Err(error) = reset_relay(s, &d.spec(), &tap, &state) {
+                    fail_track(&state, format!("audio cache next track: {error:#}"));
+                }
+            }
+        }
+        if let Some(d) = decoder.as_ref() {
+            let mut end = d.position();
+            if super::relay::cache_mode() {
+                if let Some(s) = &stream {
+                    let in_ring = (ring::capacity_samples(s.sample_rate, s.channels)
+                        - s.producer.slots()) as u64
+                        / u64::from(s.channels);
+                    let in_transit = s
+                        .output
+                        .state
+                        .frames_out
+                        .load(Ordering::Relaxed)
+                        .saturating_sub(super::relay::received());
+                    end = end.saturating_sub(in_ring + in_transit);
+                }
+            }
+            state.buffered_frames.store(end, Ordering::Relaxed);
+        }
         if super::relay::precise() && super::relay::draining() {
             if let Some(s) = &stream {
                 let outstanding = s
@@ -1842,6 +1947,7 @@ fn open_track(
     state.loading.store(true, Ordering::Relaxed);
     state.playing.store(false, Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
+    state.buffered_frames.store(0, Ordering::Relaxed);
     state.duration_frames.store(0, Ordering::Relaxed);
     state.last_error.store(None);
     let opened = match source::open(vfs, index, uri) {
@@ -1981,6 +2087,7 @@ fn open_track(
         .duration_frames
         .store(dec.total_frames().unwrap_or(0), Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
+    state.buffered_frames.store(0, Ordering::Relaxed);
     state.playing.store(true, Ordering::Relaxed);
     state.paused.store(false, Ordering::Relaxed);
     state.last_error.store(None);
@@ -2003,6 +2110,7 @@ fn fail_track(state: &PlayerState, message: String) {
     state.playing.store(false, Ordering::Relaxed);
     state.paused.store(false, Ordering::Relaxed);
     state.position_frames.store(0, Ordering::Relaxed);
+    state.buffered_frames.store(0, Ordering::Relaxed);
     state.duration_frames.store(0, Ordering::Relaxed);
     state.sample_rate.store(0, Ordering::Relaxed);
     state.channels.store(0, Ordering::Relaxed);
@@ -2038,6 +2146,7 @@ fn reset_relay(
     tap: &Arc<Tap>,
     state: &PlayerState,
 ) -> Result<()> {
+    super::relay::set_draining(false);
     let plan = super::output::plan(spec, None)?;
     let (producer, consumer) = ring::create(s.sample_rate, s.channels);
     let source_done = Arc::new(AtomicBool::new(false));
@@ -2300,6 +2409,24 @@ mod tests {
         assert_eq!(s.state(), PlayState::Playing);
         s.paused.store(true, Ordering::Relaxed);
         assert_eq!(s.state(), PlayState::Paused);
+    }
+
+    #[test]
+    fn buffered_endpoint_clamps_to_track_and_clears_when_stopped() {
+        let s = PlayerState::new();
+        s.sample_rate.store(48_000, Ordering::Relaxed);
+        s.duration_frames.store(48_000 * 60, Ordering::Relaxed);
+        s.position_frames.store(48_000 * 10, Ordering::Relaxed);
+        s.buffered_frames.store(48_000 * 15, Ordering::Relaxed);
+        assert_eq!(s.buffered_secs(), 0.);
+        s.playing.store(true, Ordering::Relaxed);
+        assert_eq!(s.buffered_secs(), 15.);
+        s.paused.store(true, Ordering::Relaxed);
+        assert_eq!(s.buffered_secs(), 15.);
+        s.buffered_frames.store(48_000 * 100, Ordering::Relaxed);
+        assert_eq!(s.buffered_secs(), 60.);
+        s.buffered_frames.store(0, Ordering::Relaxed);
+        assert_eq!(s.buffered_secs(), 10.);
     }
 
     #[test]

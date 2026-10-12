@@ -59,11 +59,16 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         assert result.returncode == 0, result.stderr
         return result.stdout.strip()
 
+    # Initialize disposable history before its UI and worker readers start.
+    initialized = subprocess.run(command(['scrobble', 'status']), env=env,
+                                 capture_output=True, text=True, timeout=10)
+    assert initialized.returncode == 0, initialized.stderr
+
     process = None
     server_pid = None
     server_pids = set()
     messages = None
-    def attach(only=False, cells=True, name='proof', precise=True):
+    def attach(only=False, cells=True, name='proof', precise=True, cache=False):
         global process, messages, server_pid
         cmd = ['--graphical-relay', name] + (['--attach-only'] if only else ['--directory', str(song)])
         process = subprocess.Popen(command(cmd), env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -82,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
              viewport=dict(columns=100, rows=40, width=1000, height=800, generation=1),
              capabilities=dict(image_transport='none', pixel_geometry='estimated', pointer_precision='cells',
                  keyboard=True, paste=True, presentation_ack=True, native_surfaces=True, native_paths=True,
-                 audio_pcm_v2=precise, local_media=False, cell_presentation=cells, presentation_switch=True))
+                 audio_pcm_v2=precise, audio_cache_v1=cache, local_media=False, cell_presentation=cells, presentation_switch=True))
         hello = wait(lambda m: m['type'] == 'hello')
         server_pid = int(hello['epoch'].split('-')[0])
         server_pids.add(server_pid)
@@ -95,7 +100,13 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
     def wait(predicate, timeout=8):
         deadline = time.monotonic() + timeout
         while True:
-            message = messages.get(timeout=max(.01, deadline-time.monotonic()))
+            try:
+                message = messages.get(timeout=max(.01, deadline-time.monotonic()))
+            except queue.Empty:
+                print('Timed out; status:', ctl('status'))
+                for log in root.rglob('staramp.log'):
+                    print(log.read_text()[-5000:])
+                raise
             if message['type'] == 'error':
                 for log in root.rglob('staramp.log'):
                     print(log.read_text()[-3000:])
@@ -114,6 +125,10 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
              input=dict(kind='key', code=code, modifiers=0))
         assert wait(lambda m: m['type'] == 'ack' and m['id'] == number)['accepted']
 
+    def play_first():
+        first = json.loads(ctl('queue'))[0]['uri']['File']['rel_path']
+        assert ctl('play-uri', first) == 'ok'
+
     def credit(opened, count):
         send(type='media', message=dict(kind='audio_credit', session=opened['session'], epoch=opened['epoch'], blocks=count))
 
@@ -124,7 +139,7 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         assert 'ssh_audio_compatibility = true' in (data / 'config.toml').read_text()
         assert ctl('audio-compatibility', 'off') == 'ok'
         assert 'ssh_audio_compatibility = false' in (data / 'config.toml').read_text()
-        key('char: ', 1)
+        play_first()
         opened = media('pcm_open')
         assert opened['spec']['sample_rate'] == 48000
         assert opened['spec']['channels'] == 2
@@ -135,6 +150,10 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         raw = b''.join(base64.b64decode(b['data']) for b in blocks)
         assert raw == payload[:len(raw)], '32-bit PCM changed in transport'
         assert all(b['epoch'] == opened['epoch'] for b in blocks)
+        status = json.loads(ctl('status'))
+        assert status['position'] < status['buffered'] <= status['duration'], status
+        mirror = json.loads(ctl('mirror'))
+        assert mirror['buffered'] > mirror['position'], mirror
         # Exhausted credits must not prevent controls or disconnect cleanup.
         assert ctl('pause') == 'ok'
         closed = media('pcm_close')
@@ -177,7 +196,7 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         assert ctl('stop') == 'ok'
         media('pcm_close')
         assert ctl('volume', '1') == 'ok'
-        key('char: ', 3)
+        play_first()
         final = media('pcm_open')
         # The receiver controls pacing through credits. It must be able to
         # refill faster than playback after a scheduling/network delay.
@@ -185,8 +204,16 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         credit(final, 8)
         received = bytearray()
         while True:
-            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_chunk', 'pcm_end'))['message']
-            assert event['epoch'] == final['epoch']
+            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_open', 'pcm_chunk', 'pcm_end'))['message']
+            # Stop/resume can replace the worker after the first packet is
+            # announced. A real frontend cancels that epoch and credits the new one.
+            if event['kind'] == 'pcm_open':
+                final = event
+                received.clear()
+                credit(final, 8)
+                continue
+            if event['epoch'] != final['epoch']:
+                continue
             if event['kind'] == 'pcm_end':
                 break
             received.extend(base64.b64decode(event['data']))
@@ -208,7 +235,7 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         # A second controller uses the original owner via IPC.
         attach(name='mirror', cells=True)
         assert json.loads(ctl('status'))['state'] == 'stopped'
-        key('char: ', 1)
+        play_first()
         mirrored = media('pcm_open')
         credit(mirrored, 1)
         block = media('pcm_chunk')
@@ -234,6 +261,98 @@ with tempfile.TemporaryDirectory(prefix='amp-pcm-', dir='/tmp') as temporary:
         attach(name='restart')
         assert ctl('audio-compatibility') == 'true', 'Restart lost compatibility preference'
         assert ctl('audio-compatibility', 'off') == 'ok'
+        # Negotiate the disk cache against the same owner. Receive the entire
+        # track without claiming any audible progress, then pause the full cache.
+        process.stdin.close()
+        process.wait(timeout=5)
+        attach(only=True, cache=True, name='restart')
+        second_song = root / 'second.wav'
+        second_song.write_bytes(song.read_bytes())
+        playlist = root / 'two.m3u'
+        playlist.write_text(song.name + '\n' + second_song.name + '\n')
+        assert ctl('load-playlist', str(playlist)) == 'ok'
+        assert ctl('volume', '1') == 'ok'
+        play_first()
+        cached = media('pcm_open')
+        media('pcm_cache')
+        credit(cached, 8)
+        received = bytearray()
+        began = time.monotonic()
+        while True:
+            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_chunk', 'pcm_end'))['message']
+            assert event['epoch'] == cached['epoch']
+            if event['kind'] == 'pcm_end':
+                break
+            received.extend(base64.b64decode(event['data']))
+            send(type='media', message=dict(kind='pcm_buffered', session=cached['session'], epoch=cached['epoch'], frames=len(received)//8))
+            credit(cached, 1)
+        assert received == payload
+        assert time.monotonic() - began < 3
+        status = json.loads(ctl('status'))
+        assert status['state'] == 'playing' and status['position'] < .1, status
+        assert status['buffered'] >= 3.99 and status['index'] == 1, status
+        assert ctl('pause') == 'ok'
+        assert media('pcm_pause')['paused']
+        assert ctl('play') == 'ok'
+        assert not media('pcm_pause')['paused']
+        # A gain change after the entire song is cached must refresh its epoch.
+        assert ctl('volume', '0.5') == 'ok'
+        refreshed = media('pcm_open')
+        assert refreshed['epoch'] > cached['epoch']
+        media('pcm_cache')
+        credit(refreshed, 8)
+        received = bytearray()
+        while True:
+            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_chunk', 'pcm_end'))['message']
+            if event['kind'] == 'pcm_end':
+                break
+            assert event['processed'] and event['format'] == 'f64', event
+            received.extend(base64.b64decode(event['data']))
+            credit(refreshed, 1)
+        assert len(received) == len(payload) * 2
+        assert ctl('seek', '1') == 'ok'
+        seeked = media('pcm_open')
+        media('pcm_cache')
+        assert seeked['epoch'] > refreshed['epoch']
+        # Old cache telemetry must not mark the replacement range as received.
+        send(type='media', message=dict(kind='pcm_buffered', session=refreshed['session'], epoch=refreshed['epoch'], frames=999999999))
+        credit(seeked, 8)
+        remaining = bytearray()
+        while True:
+            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_chunk', 'pcm_end'))['message']
+            assert event['epoch'] == seeked['epoch']
+            if event['kind'] == 'pcm_end':
+                break
+            remaining.extend(base64.b64decode(event['data']))
+            send(type='media', message=dict(kind='pcm_buffered', session=seeked['session'], epoch=seeked['epoch'], frames=len(remaining)//16))
+            credit(seeked, 1)
+        landed = 4 - len(remaining) / (48000 * 16)
+        status = json.loads(ctl('status'))
+        # The WAV demuxer lands on a packet boundary; verify that precise
+        # received samples and audible position agree with that landing.
+        assert abs(landed - 1) < .05, (landed, status)
+        assert abs(status['position'] - landed) < .011 and status['buffered'] >= 3.99, status
+        send(type='media', message=dict(kind='pcm_finished', session=seeked['session'], epoch=seeked['epoch']))
+        media('pcm_close')
+        successor = media('pcm_open')
+        media('pcm_cache')
+        assert successor['epoch'] > refreshed['epoch']
+        assert json.loads(ctl('status'))['index'] == 2
+        credit(successor, 8)
+        while True:
+            event = wait(lambda m: m['type'] == 'media' and m['message']['kind'] in ('pcm_chunk', 'pcm_end'))['message']
+            assert event['epoch'] == successor['epoch']
+            if event['kind'] == 'pcm_end':
+                break
+            credit(successor, 1)
+        assert json.loads(ctl('status'))['state'] == 'playing'
+        send(type='media', message=dict(kind='pcm_finished', session=successor['session'], epoch=successor['epoch']))
+        media('pcm_close')
+        deadline = time.monotonic() + 3
+        while json.loads(ctl('status'))['state'] != 'stopped':
+            assert time.monotonic() < deadline
+            time.sleep(.02)
+        print('Whole-song cache: exact PCM, complete buffer, audible EOF, pause/resume and immediate gain refresh passed')
         key('char:q', 6)
         assert process.wait(timeout=5) == 0
         server_pid = None

@@ -128,7 +128,26 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
                     fields = dict(item.split(b'=', 1) for item in region.split(b',') if b'=' in item)
                     covered += int(fields[b'c']) * int(fields[b'r'])
                 assert covered >= rows * columns, f'Incomplete image replacement after resize to {geometry}: {covered} cells'
-            print(json.dumps({'resize_redraws': 7, 'coalesced_round_trip': True,
+            # A rapid shrink/grow may be coalesced into a single SIGWINCH;
+            # the final presentation must cover the settled window completely.
+            start = len(output)
+            for shape in [(20, 75, 750, 400), (42, 130, 1300, 840), (37, 96, 1152, 814)]:
+                geometry[:] = shape
+                fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *geometry))
+            pump(3)
+            assert child.poll() is None, diagnostic()
+            wire = bytes(output[start:])
+            assert b'\x1b[2J' in wire, 'No redraw at the settled size after rapid resizing'
+            assert b'\x1b_Ga=T,' in wire, 'No image replacement after rapid resizing'
+            covered = 0
+            for region in re.findall(rb'\x1b_Ga=T,([^;]*);', wire):
+                fields = dict(item.split(b'=', 1) for item in region.split(b',') if b'=' in item)
+                covered += int(fields[b'c']) * int(fields[b'r'])
+            assert covered >= geometry[0] * geometry[1], 'Settled window was only partially replaced'
+            geometry[:] = 40, 100, 1000, 800
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *geometry))
+            pump(2)
+            print(json.dumps({'resize_redraws': 9, 'rapid_drag_settled': True, 'coalesced_round_trip': True,
                               'grow_shrink': True, 'density_changes': True,
                               'native_fallback_round_trip': True}))
         if args.local_hover:
@@ -199,9 +218,15 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
                           'main_close_exits_frontend': True, 'pixel_mode_restored': True}))
     finally:
         # Every child belongs to this private process group, never a user session.
-        try:
-            os.killpg(child.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        # macOS can reject signalling an exited group leader. Enumerate only
+        # this private group's remaining processes, owned by the test user.
+        members = subprocess.check_output(['ps', '-axo', 'pid=,pgid=,uid='], text=True)
+        for member in members.splitlines():
+            pid, group, uid = map(int, member.split())
+            if group == child.pid and uid == os.getuid():
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
         child.wait(timeout=5)
         os.close(master)

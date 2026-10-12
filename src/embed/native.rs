@@ -8,6 +8,28 @@ use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
 use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
+/// Muted silver separates received audio from the accent and charcoal groove.
+fn buffer_color() -> String {
+    "#9ba5b3".into()
+}
+
+fn seek_track_color(palette: &Palette) -> String {
+    hex(std::array::from_fn(|i| {
+        ((u16::from(palette.bg[i]) * 3 + u16::from(palette.border[i])) / 4) as u8
+    }))
+}
+
+fn buffered_width(state: &PlayerRenderState, width: u16) -> u16 {
+    if state.duration <= 0. || !state.buffered.is_finite() {
+        return 0;
+    }
+    if state.buffered <= state.position {
+        return ((state.position / state.duration).clamp(0., 1.) * f64::from(width)) as u16;
+    }
+    ((state.buffered.max(state.position) / state.duration).clamp(0., 1.) * f64::from(width)).ceil()
+        as u16
+}
+
 pub(crate) fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
@@ -286,7 +308,6 @@ pub(super) fn player_surface(
         c.inset = hex(inset);
     }
     let accent = c.accent.clone();
-    let border = hex(palette.border);
     let header_ink = super::skin_palette::tone(palette, "#bbc6d5", true);
     let led_off = super::skin_palette::inactive_led(palette);
     let fg = c.ink.clone();
@@ -594,20 +615,24 @@ pub(super) fn player_surface(
         0.
     };
     let played = (f64::from(seek.width) * fraction) as u16;
+    let buffered = buffered_width(state, seek.width);
+    let buffer_ink = buffer_color();
+    let groove = seek_track_color(palette);
     let thickness = if artwork.is_some() {
-        3
+        6
     } else if state.seek_style == SeekStyle::THIN {
-        2
+        4
     } else if state.seek_style == SeekStyle::BLOCKS {
         header.saturating_sub(4).max(1)
     } else {
-        4
+        6
     }
     .min(header);
     if artwork.is_none() && state.seek_style == SeekStyle::BAR && header >= 6 {
         for dy in [0, 4] {
             let y = seek.y + (header - 6) / 2 + dy;
-            s.fill(R::new(seek.x, y, seek.width, 2), &c.shadow, 0);
+            s.fill(R::new(seek.x, y, seek.width, 2), &groove, 0);
+            s.fill(R::new(seek.x, y, buffered, 2), &buffer_ink, 0);
             s.fill(R::new(seek.x, y, played, 2), &accent, 0);
         }
     } else {
@@ -623,11 +648,17 @@ pub(super) fn player_surface(
                 seek.width,
                 thickness,
             ),
-            if artwork.is_some() {
-                &border
-            } else {
-                &c.shadow
-            },
+            &groove,
+            radius,
+        );
+        s.fill(
+            R::new(
+                seek.x,
+                seek.y + (header - thickness) / 2,
+                buffered,
+                thickness,
+            ),
+            &buffer_ink,
             radius,
         );
         s.fill(
@@ -1087,7 +1118,6 @@ fn compact_surface(
     let fg = hex(palette.fg);
     let accent = hex(palette.accent);
     let muted = hex(palette.muted);
-    let border = hex(palette.border);
     let mut s = Surface::new(w, h, hex(palette.bg));
     if w < 128 || h < 64 {
         let title = if state.loading {
@@ -1279,18 +1309,22 @@ fn compact_surface(
     // Keep the same seek hit region for every presentation. Styles change
     // native stroke weight, never the position or size of the pointer target.
     let thickness = if state.seek_style == SeekStyle::THIN {
-        2
+        4
     } else if state.seek_style == SeekStyle::BLOCKS {
         line.saturating_sub(4).max(1)
     } else {
-        4
+        6
     }
     .min(line);
     let played = (f64::from(seek.width) * fraction) as u16;
+    let buffered = buffered_width(state, seek.width);
+    let buffer_ink = buffer_color();
+    let groove = seek_track_color(palette);
     if state.seek_style == SeekStyle::BAR && line >= 6 {
         for offset in [0, 4] {
             let y = seek.y + (line - 6) / 2 + offset;
-            s.fill(R::new(seek.x, y, seek.width, 2), &border, 1);
+            s.fill(R::new(seek.x, y, seek.width, 2), &groove, 1);
+            s.fill(R::new(seek.x, y, buffered, 2), &buffer_ink, 1);
             s.fill(R::new(seek.x, y, played, 2), &accent, 1);
         }
     } else {
@@ -1300,7 +1334,8 @@ fn compact_surface(
         } else {
             2
         };
-        s.fill(R::new(seek.x, y, seek.width, thickness), &border, radius);
+        s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
+        s.fill(R::new(seek.x, y, buffered, thickness), &buffer_ink, radius);
         s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     }
     s.hits.push(HitRegion {

@@ -33,6 +33,7 @@ pub fn next_epoch() -> u64 {
     for _ in receiver().try_iter() {}
     reset_credit();
     PLAYED.store(0, Ordering::Release);
+    RECEIVED.store(0, Ordering::Release);
     EPOCH.fetch_add(1, Ordering::Relaxed)
 }
 pub fn send(block: Block, stop: &Arc<AtomicBool>) -> bool {
@@ -126,6 +127,8 @@ pub fn set_draining(value: bool) {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Poll {
+    #[serde(default)]
+    pub epoch: u64,
     pub playing: bool,
     pub paused: bool,
     pub draining: bool,
@@ -140,4 +143,19 @@ pub fn played() -> u64 {
 }
 pub fn publish_played(frames: u64) {
     PLAYED.fetch_max(frames, Ordering::AcqRel);
+}
+
+static CACHE_MODE: AtomicBool = AtomicBool::new(false);
+static RECEIVED: AtomicU64 = AtomicU64::new(0);
+pub fn cache_mode() -> bool {
+    CACHE_MODE.load(Ordering::Acquire) && enabled() && route() != 0
+}
+pub fn set_cache_mode(value: bool) {
+    CACHE_MODE.store(value, Ordering::Release);
+}
+pub fn received() -> u64 {
+    RECEIVED.load(Ordering::Acquire)
+}
+pub fn publish_received(frames: u64) {
+    RECEIVED.fetch_max(frames, Ordering::AcqRel);
 }

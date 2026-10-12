@@ -3510,6 +3510,8 @@ impl App {
         let rate = if st.rate > 0 { st.rate } else { 44_100 };
         s.position_frames
             .store((st.position * rate as f64) as u64, Relaxed);
+        s.buffered_frames
+            .store((st.buffered * rate as f64) as u64, Relaxed);
         s.duration_frames
             .store((st.duration * rate as f64) as u64, Relaxed);
         self.player.set_volume(st.volume);
@@ -8045,6 +8047,7 @@ impl App {
             state: st.state(),
             loading: st.is_loading(),
             position: st.position_secs(),
+            buffered: st.buffered_secs(),
             duration: st.duration_secs(),
             volume: self.player.volume(),
             repeat,

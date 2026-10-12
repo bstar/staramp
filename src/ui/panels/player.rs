@@ -20,6 +20,7 @@ pub struct PlayerView<'a> {
     pub state: PlayState,
     pub loading: bool,
     pub position: f64,
+    pub buffered: f64,
     pub duration: f64,
     pub volume: f32,
     pub repeat: crate::playlist::queue::RepeatMode,
@@ -581,12 +582,13 @@ impl<'a> Widget for PlayerView<'a> {
         }
 
         // ---- seek bar ----
-        render_seek(
+        render_seek_buffered(
             &g,
             buf,
             t,
             self.position,
             self.duration,
+            self.buffered,
             self.seek_phase,
             self.seek_style,
         );
@@ -737,12 +739,27 @@ impl Default for SeekStyle {
 /// How much of the bar the highlight covers.
 const SHEEN_WIDTH: f32 = 0.26;
 
+#[cfg(test)]
 fn render_seek(
     g: &Geometry,
     buf: &mut Buffer,
     t: &Theme,
     pos: f64,
     dur: f64,
+    phase: f32,
+    style: SeekStyle,
+) {
+    render_seek_buffered(g, buf, t, pos, dur, pos, phase, style);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_seek_buffered(
+    g: &Geometry,
+    buf: &mut Buffer,
+    t: &Theme,
+    pos: f64,
+    dur: f64,
+    buffered: f64,
     phase: f32,
     style: SeekStyle,
 ) {
@@ -766,7 +783,13 @@ fn render_seek(
     };
     // Position in eighths of a cell, so the boundary can be part of one.
     let eighths = (frac * bar.width as f64 * 8.0).round() as u32;
-    let track = t.seek_track_fg;
+    let buffered_eighths = if dur > 0.0 {
+        ((buffered / dur).clamp(frac, 1.0) * bar.width as f64 * 8.0).ceil() as u32
+    } else {
+        0
+    };
+    let empty_color = t.panel_bg.mix(t.seek_track_fg, 0.25);
+    let buffered_color = crate::theme::color::Rgb::new(155, 165, 179);
     let bg = rgb(t.panel_bg);
 
     if let Some((l, r)) = style.caps {
@@ -784,6 +807,8 @@ fn render_seek(
 
     for i in 0..bar.width {
         let cell = (eighths as i64 - i as i64 * 8).clamp(0, 8) as usize;
+        let ready = (buffered_eighths as i64 - i as i64 * 8).clamp(0, 8) as f64 / 8.0;
+        let track = empty_color.mix(buffered_color, ready);
         let along = i as f32 / bar.width.max(1) as f32;
 
         // The played part runs from the fill colour down into the background,
@@ -1040,6 +1065,7 @@ mod tests {
             state: PlayState::Playing,
             loading: false,
             position: 30.0,
+            buffered: 30.0,
             duration: 300.0,
             volume: 0.8,
             repeat: RepeatMode::Off,
@@ -1134,7 +1160,7 @@ mod tests {
         let bar = g.seek.expect("bar fits");
         // The thin style shades rather than swapping glyphs, so "played" is a
         // question about colour, not about which character is there.
-        let groove = rgb(theme.seek_track_fg);
+        let groove = rgb(theme.panel_bg.mix(theme.seek_track_fg, 0.25));
         (0..bar.width)
             .filter(|i| {
                 let c = &buf[(bar.x + i, bar.y)];
@@ -1563,6 +1589,23 @@ mod tests {
         assert_eq!(SeekStyle::default(), SeekStyle::ANSI);
     }
 
+    #[test]
+    fn seek_buffer_is_distinct_from_played_and_unavailable_audio() {
+        let theme = crate::theme::builtin::load("cosmic").unwrap();
+        for style in SeekStyle::ALL {
+            let area = Rect::new(0, 0, 100, PANEL_ROWS);
+            let g = geometry(area, 25., 100., RepeatMode::Off, Glyphs::default()).unwrap();
+            let mut buf = Buffer::empty(area);
+            render_seek_buffered(&g, &mut buf, &theme, 25., 100., 70., 0., style);
+            let bar = g.seek.unwrap();
+            let color = |fraction: f64| {
+                buf[(bar.x + (f64::from(bar.width) * fraction) as u16, bar.y)].style()
+            };
+            assert_ne!(color(0.1), color(0.5), "played and buffered: {style:?}");
+            assert_ne!(color(0.5), color(0.9), "buffered and empty: {style:?}");
+        }
+    }
+
     fn seek_cells(frac: f64, width: u16, phase: f32) -> String {
         let theme = crate::theme::builtin::load("cosmic").unwrap();
         let area = Rect::new(0, 0, width, PANEL_ROWS);
@@ -1642,7 +1685,8 @@ mod tests {
             let still = seek_played(0.6, style);
             for phase in [0.1f32, 0.35, 0.7, 0.95] {
                 let bar = seek_bar(0.6, 60, phase, style);
-                let groove = rgb(crate::theme::builtin::load("cosmic").unwrap().seek_track_fg);
+                let theme = crate::theme::builtin::load("cosmic").unwrap();
+                let groove = rgb(theme.panel_bg.mix(theme.seek_track_fg, 0.25));
                 let played = bar
                     .iter()
                     .filter(|(sym, fg)| *fg != groove && sym != "-" && sym != " ")
@@ -1877,6 +1921,7 @@ mod tests {
                 state: PlayState::Playing,
                 loading: false,
                 position: 30.0,
+                buffered: 30.0,
                 duration: 300.0,
                 volume: 1.0,
                 repeat: RepeatMode::All,
@@ -2001,6 +2046,7 @@ mod tests {
                 state: PlayState::Playing,
                 loading: false,
                 position: 30.0,
+                buffered: 30.0,
                 duration: 300.0,
                 volume: 0.8,
                 repeat: RepeatMode::Off,

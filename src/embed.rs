@@ -927,6 +927,7 @@ fn render_state(
         state: st.state(),
         loading: st.is_loading(),
         position: st.position_secs(),
+        buffered: st.buffered_secs(),
         duration: st.duration_secs(),
         volume: player.volume(),
         repeat,

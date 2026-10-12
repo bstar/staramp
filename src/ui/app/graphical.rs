@@ -1360,12 +1360,20 @@ impl Rack<'_> {
             12,
             false,
         );
-        for (x, text, action) in [
-            (w - 356, "JUMP", "playlist:jump"),
-            (w - 276, "sorting", "sorting"),
-            (w - 196, "gravity", "gravity"),
+        // Match the gaps between the monospace labels, rather than their
+        // starting positions: jump is three characters shorter than its peers.
+        const HEADER_ADVANCE: u16 = 6;
+        const HEADER_GAP: u16 = 38;
+        let mut right = w.saturating_sub(114); // settings starts here
+        for (text, action) in [
+            ("gravity", "gravity"),
+            ("sorting", "sorting"),
+            ("jump", "playlist:jump"),
         ] {
-            let rect = R::new(x, 7, 68, 24);
+            let width = text.len() as u16 * HEADER_ADVANCE;
+            let x = right.saturating_sub(width + HEADER_GAP);
+            let rect = R::new(x, 7, width + HEADER_GAP / 2, 24);
+            right = x;
             classic::label(&mut s, rect, text, &c.dim, 10, false);
             s.hits.push(HitRegion {
                 rect,

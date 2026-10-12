@@ -812,7 +812,8 @@ SSH acknowledgement gaps, and stale samples after cache epoch replacement.
 
 Album heading dividers now follow the frontend's shaped glyph edge with a
 constant 10px gap, including ellipsized titles and 2x density. The playlist
-header adds JUMP using the same text style as its other links. It reveals the
+header adds lowercase jump using the same text style as its other links, with
+equal gaps between the action labels. It reveals the
 active track, falling back to the selection when no track is active. Reveal
 opens its folded album, clears a hiding filter and releases the manual
 scrollbar position without changing playback or queue order. Manual scrolling

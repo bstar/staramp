@@ -30,50 +30,41 @@ fn button_background(palette: &Palette, kind: &str) -> String {
 
 /// The selected Fine dots treatment: one logical pixel on a fixed 3×3 grid.
 /// Tile one immutable asset instead of emitting thousands of per-dot primitives.
-fn fine_dot_cache(mut surface: Surface, density: u16) -> Surface {
+fn fine_dot_cache(surface: &mut Surface, rect: PixelRect, density: u16) {
     use std::sync::OnceLock;
     static TILES: OnceLock<[(String, String); 2]> = OnceLock::new();
+    if rect.width == 0 || rect.height == 0 {
+        return;
+    }
     let tiles = TILES.get_or_init(|| {
         std::array::from_fn(|index| {
             let scale = index as u32 + 1;
+            let rgba = |hex| {
+                let c = starkit::theme::color::Rgb::parse_hex(hex).unwrap();
+                starkit::image::Rgba([c.r, c.g, c.b, 255])
+            };
+            let base = rgba(native::CACHE_BASE);
+            let dot = rgba(native::CACHE_DOT);
             let pixels = starkit::image::RgbaImage::from_fn(3 * scale, 3 * scale, |x, y| {
-                starkit::image::Rgba(if x < scale && y < scale {
-                    // Muted silver at the example's 48% contrast over the cache base.
-                    [107, 113, 126, 255]
+                if x < scale && y < scale {
+                    dot
                 } else {
-                    [62, 66, 78, 255]
-                })
+                    base
+                }
             });
             starkit::terminal_graphics::assets::encode_skin(&pixels)
                 .expect("fixed 3×3 cache tile is a valid skin asset")
         })
     });
     let (id, png) = &tiles[usize::from(density - 1)];
-    let color = native::buffer_color();
-    let seek = surface
-        .hits
-        .iter()
-        .find(|hit| hit.action == "seek")
-        .map(|hit| hit.rect);
-    if let Some(node) = surface.nodes.iter_mut().find(|node| {
-        matches!(node,
-            Primitive::Fill { rect, color: ink, .. } if *ink == color
-                && rect.width > 0 && rect.height > 0
-                && seek.is_some_and(|seek| rect.x == seek.x && rect.y >= seek.y
-                    && rect.y + rect.height <= seek.y + seek.height)
-        )
-    }) {
-        let rect = node.rect();
-        *node = Primitive::Sprite {
-            rect,
-            asset: id.clone(),
-            source: PixelRect::new(0, 0, 3 * density, 3 * density),
-            insets: Some([0; 4]),
-            tint: None,
-        };
-        surface.assets.insert(id.clone(), Some(png.clone()));
-    }
-    surface
+    surface.nodes.push(Primitive::Sprite {
+        rect,
+        asset: id.clone(),
+        source: PixelRect::new(0, 0, 3 * density, 3 * density),
+        insets: Some([0; 4]),
+        tint: None,
+    });
+    surface.assets.insert(id.clone(), Some(png.clone()));
 }
 
 fn transport_button(action: &str) -> bool {
@@ -659,9 +650,14 @@ impl PlayerSkin {
             .filter(|action| !state.control_enabled(action))
             .collect();
         self.prepare(palette, density, radius == 0)?;
-        Ok(fine_dot_cache(
-            native::player_surface(width, height, graphics, palette, state, radius, Some(self)),
-            density,
+        Ok(native::player_surface(
+            width,
+            height,
+            graphics,
+            palette,
+            state,
+            radius,
+            Some(self),
         ))
     }
     #[allow(clippy::too_many_arguments)]
@@ -701,7 +697,7 @@ impl PlayerSkin {
                     radius: radius.min(3),
                 });
             }
-            return Ok(fine_dot_cache(surface, 1));
+            return Ok(surface);
         }
         self.prepare(palette, density, radius == 0)?;
         let surface = native::player_surface(
@@ -716,7 +712,7 @@ impl PlayerSkin {
             radius / density,
             Some(self),
         );
-        Ok(fine_dot_cache(surface.at_density(density)?, density))
+        surface.at_density(density)
     }
 }
 /// UI density selects original artwork and fresh text sizes. Window width only
@@ -729,6 +725,9 @@ pub(crate) fn density(width: u16, height: u16, graphics: GraphicsConfig) -> u16 
     }
 }
 impl native::PlayerArtwork for PlayerSkin {
+    fn cached_bar(&self, surface: &mut Surface, rect: PixelRect) {
+        fine_dot_cache(surface, rect, self.density);
+    }
     fn readout_advance(&self, size: u16) -> Option<u16> {
         self.glyphs[&(self.density, "readout-glyphs")]
             .readouts
@@ -1143,6 +1142,61 @@ mod tests {
     }
 
     #[test]
+    fn compact_cache_keeps_fine_dots_without_skin_assets() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let mut state = state();
+        state.buffered = state.duration;
+        let surface = skin
+            .surface_at_density(
+                640,
+                180,
+                GraphicsConfig {
+                    cell_width: 8,
+                    cell_height: 16,
+                },
+                &palette(),
+                &state,
+                8,
+                1,
+            )
+            .unwrap();
+        surface.validate().unwrap();
+        assert!(surface.assets.is_empty());
+        let bar = surface
+            .nodes
+            .iter()
+            .find_map(|node| match node {
+                Primitive::Fill { rect, color, .. } if color == native::CACHE_BASE => Some(*rect),
+                _ => None,
+            })
+            .unwrap();
+        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+            .render(
+                &starkit::image::RgbaImage::new(
+                    u32::from(surface.width),
+                    u32::from(surface.height),
+                ),
+                &surface,
+            )
+            .unwrap();
+        for y in 0..bar.height {
+            for x in bar.width / 2..bar.width {
+                let expected = if x % 3 == 0 && y % 3 == 0 {
+                    [107, 113, 126, 255]
+                } else {
+                    [62, 66, 78, 255]
+                };
+                assert_eq!(
+                    image
+                        .get_pixel(u32::from(bar.x + x), u32::from(bar.y + y))
+                        .0,
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
     fn silver_shading_and_metal_buttons_render_at_both_densities() {
         let mut skin = PlayerSkin::new().unwrap();
         let mut renderer =
@@ -1465,11 +1519,7 @@ mod tests {
         assert!(
             matches!(focused.nodes.last(), Some(Primitive::Border { rect: drawn, .. }) if *drawn == rect)
         );
-        assert_eq!(
-            focused.assets.len(),
-            1,
-            "compact fallback only needs the cache tile"
-        );
+        assert!(focused.assets.is_empty());
     }
     #[test]
     fn eq_button_ink_is_centered_in_hover_outlines_at_both_densities() {

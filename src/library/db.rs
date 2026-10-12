@@ -21,6 +21,8 @@ pub struct AlbumDetail {
     pub album: Option<String>,
     pub artist: Option<String>,
     pub year: Option<i64>,
+    /// Original album release, kept separate from the indexed edition date.
+    pub original_year: Option<i64>,
     pub codec: Option<String>,
     pub genre: Option<String>,
     pub mb_release_id: Option<String>,
@@ -334,7 +336,9 @@ impl Db {
             )?
         };
 
+        let original_year = super::release_year::from_context(&file_rel, year);
         Ok(Some(AlbumDetail {
+            original_year,
             album,
             artist,
             year,

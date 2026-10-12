@@ -163,7 +163,7 @@ pub fn lines(
         .and_then(|d| d.artist.as_deref())
         .or(fallback_artist)
         .unwrap_or("");
-    let second = match detail.and_then(|d| d.year) {
+    let second = match detail.and_then(|d| d.original_year) {
         Some(y) if !artist.is_empty() => format!("{artist} \u{b7} {y}"),
         Some(y) => y.to_string(),
         None => artist.to_string(),
@@ -517,6 +517,7 @@ mod tests {
             album: Some("Dragonchaser".into()),
             artist: Some("At Vance".into()),
             year: Some(2001),
+            original_year: Some(2001),
             codec: Some("flac".into()),
             genre: None,
             mb_release_id: None,

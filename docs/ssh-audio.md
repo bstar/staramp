@@ -110,3 +110,16 @@ presentations and the complete end-of-track drain without a sound device. Its
 optional `--ssh-host` / `--ssh-config` arguments exercise a real SSH connection
 to this machine. Physical listening and macOS audio hardware require a separate
 check.
+
+The cache texture also remains dotted in graphical compatibility layouts without
+skin assets. Large legacy viewports bound the drawing work by increasing dot
+spacing; ordinary player sizes use the selected fixed 3×3 grid.
+
+The visualizer follows the local device's played-frame acknowledgements, rather
+than the download cursor. The host retains a temporary mono visualization copy
+on disk for the current cache epoch, read at the audible position. Completing a
+whole-song download must not freeze the spectrum at the last decoded packet.
+Paused/stopped playback and initial buffering clear bars, peaks, and waveform;
+a device clock stationary for 350 ms also clears them. This grace period permits
+ordinary SSH progress feedback gaps without flashing the spectrum off each frame.
+The hardware callback remains lock-free and does no visualization file I/O.

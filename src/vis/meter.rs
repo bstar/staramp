@@ -50,6 +50,13 @@ impl Meters {
         Self::default()
     }
 
+    /// Clear playback presentation immediately when no audio is being heard.
+    pub fn clear(&mut self) {
+        self.bar.fill(0.0);
+        self.peak.fill(0.0);
+        self.hold.fill(0.0);
+    }
+
     pub fn bars(&self) -> &[f32] {
         &self.bar
     }
@@ -118,6 +125,17 @@ pub fn cap_position(level: f32, height: u16) -> (u16, char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pausing_or_buffering_clears_bars_and_held_peaks_immediately() {
+        let mut meters = Meters::new();
+        meters.update(&[0.8, 0.4], 0.016);
+        meters.clear();
+        assert_eq!(meters.bars(), &[0.0, 0.0]);
+        assert_eq!(meters.peaks(), &[0.0, 0.0]);
+        meters.update(&[0.2, 0.1], 0.016);
+        assert_eq!(meters.peaks(), &[0.2, 0.1]);
+    }
 
     #[test]
     fn a_peak_is_caught_exactly_and_held() {

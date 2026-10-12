@@ -299,6 +299,10 @@ impl Output {
         let worker_stop = stop.clone();
         let cb = state.clone();
         let epoch = super::relay::next_epoch();
+        let cached = super::relay::cache_mode();
+        if cached {
+            tap.begin_cache(epoch);
+        }
         let worker = std::thread::Builder::new()
             .name("staramp-relay-output".into())
             .spawn(move || {
@@ -382,7 +386,11 @@ impl Output {
                     ) {
                         break;
                     }
-                    tap.write_f64(&values, channels);
+                    if cached {
+                        tap.write_cached(epoch, &values, channels);
+                    } else {
+                        tap.write_f64(&values, channels);
+                    }
                     cb.frames_out
                         .fetch_add((count / channels) as u64, Ordering::Relaxed);
                     // Precise SSH playback is clocked by the local device and

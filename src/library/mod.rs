@@ -5,6 +5,7 @@ pub mod db;
 pub mod id3;
 pub mod import;
 pub mod infer;
+pub mod release_year;
 pub mod remote;
 pub mod scan;
 pub mod schema;

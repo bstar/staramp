@@ -1080,8 +1080,12 @@ impl Rack<'_> {
                 .sum()
         });
         let year = detail
-            .and_then(|d| d.year)
-            .or_else(|| item.as_ref().and_then(|i| i.year))
+            .map(|d| d.original_year)
+            .unwrap_or_else(|| {
+                item.as_ref().and_then(|i| {
+                    crate::library::release_year::from_context(i.uri.backing_path(), i.year)
+                })
+            })
             .map(|y| y.to_string())
             .unwrap_or_else(|| "—".into());
         let count = if item.is_some() {
@@ -1100,7 +1104,7 @@ impl Rack<'_> {
         s.fill(R::new(16, 220, w - 32, 1), &c.raised, 0);
         let column = (w - 32) / 3;
         for (i, (heading, value)) in [
-            ("RELEASED", year),
+            ("ORIGINAL YEAR", year),
             (
                 if detail.is_some() {
                     "TRACKS"
@@ -5689,7 +5693,21 @@ impl App {
         }
         rack.app
             .set_mirror(crate::mirror::Mirror::connect_at(socket.clone()).unwrap());
-        rack.app.poll_mirror();
+        // The UI retries a failed snapshot on its next tick. At 30k tracks,
+        // one poll may time out under build load; wait for acknowledgement
+        // before comparing orders rather than asserting against the old queue.
+        let deadline = Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            rack.app.poll_mirror();
+            if rack.app.session.revision == owner.queue.lock().unwrap().revision() {
+                break;
+            }
+            anyhow::ensure!(
+                Instant::now() < deadline,
+                "owner queue snapshot did not arrive"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
         let assert_owner = |rack: &Rack<'_>| {
             let q = rack.app.player.queue.lock().unwrap();
             let leader = owner.queue.lock().unwrap();

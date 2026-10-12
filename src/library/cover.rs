@@ -365,6 +365,7 @@ mod tests {
             album: None,
             artist: None,
             year: None,
+            original_year: None,
             codec: None,
             genre: None,
             mb_release_id: None,

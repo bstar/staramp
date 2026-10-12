@@ -1611,6 +1611,7 @@ struct Panels {
 /// Everything the visualizer needs: the two analysers, the audio they read,
 /// and how the result is drawn.
 struct Visuals {
+    playback_clock: crate::audio::tap::PlaybackClock,
     analyzer: Spectrum,
     /// Newest audio, read from the player's tap once a frame.
     tap_buf: Vec<f32>,
@@ -1638,6 +1639,7 @@ impl Visuals {
                 a.set_gain_db(cfg.vis.gain_db);
                 a
             },
+            playback_clock: Default::default(),
             tap_buf: vec![0.0; 4096],
             fluid: {
                 let mut a = Spectrum::with_motion(2048, 64, 44_100.0, Motion::Fluid);
@@ -3944,7 +3946,46 @@ impl App {
         self.last_frame = now;
 
         if self.vis.mode != VisMode::Off {
-            if self.player.tap.read(&mut self.vis.tap_buf) {
+            let cached = crate::audio::relay::cache_mode();
+            let (epoch, position) = if cached {
+                (
+                    crate::audio::relay::current_epoch(),
+                    crate::audio::relay::played(),
+                )
+            } else {
+                (
+                    self.player
+                        .state
+                        .track_revision
+                        .load(std::sync::atomic::Ordering::Relaxed),
+                    (self.player.state.position_secs() * 1_000_000.0) as u64,
+                )
+            };
+            let active = self.vis.playback_clock.active(
+                epoch,
+                position,
+                self.player.state.state() == PlayState::Playing,
+                // Relay starvation describes the download, not the local DAC.
+                // In cache mode its reported played-frame clock is authoritative.
+                !cached && self.session.link.is_none() && self.player.state.is_loading(),
+                now,
+            );
+            let has_samples = if crate::audio::relay::cache_mode() {
+                self.player.tap.read_cached(
+                    crate::audio::relay::current_epoch(),
+                    crate::audio::relay::played(),
+                    &mut self.vis.tap_buf,
+                )
+            } else {
+                self.player.tap.read(&mut self.vis.tap_buf)
+            };
+            if !active {
+                self.vis.tap_buf.fill(0.0);
+                self.vis.wave.fill(0.0);
+                let silence = vec![0.0; self.vis.meters.bars().len()];
+                self.vis.meters.clear();
+                self.player.publish_bands(&silence);
+            } else if has_samples {
                 if self.vis.mode.uses_fluid() {
                     self.feed_fluid(dt);
                     self.vis.meters.update(self.vis.fluid.bands(), dt);

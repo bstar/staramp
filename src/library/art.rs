@@ -244,6 +244,7 @@ const CACHE_ALBUMS: usize = 8;
 /// stepping to the next track costs nothing.
 struct Entry {
     dir_id: i64,
+    original_year: Option<i64>,
     candidates: Vec<cover::Candidate>,
     choice: usize,
     /// False when the archive could not be reached rather than having nothing.
@@ -692,8 +693,14 @@ fn gather(
         started.elapsed().as_millis()
     );
 
+    let original_year = vfs
+        .local_path(&detail.file_rel)
+        .as_deref()
+        .and_then(super::release_year::read_original)
+        .or(detail.original_year);
     Entry {
         dir_id: detail.dir_id,
+        original_year,
         candidates: list,
         choice,
         settled,
@@ -717,9 +724,11 @@ fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: Stri
         }
         _ => None,
     };
+    let mut detail = detail.clone();
+    detail.original_year = entry.original_year;
     Album {
         uri,
-        detail: Some(detail.clone()),
+        detail: Some(detail),
         art,
         desktop_art_url,
         source: image
@@ -896,6 +905,7 @@ mod tests {
             album: Some("Hliðskjálf".into()),
             artist: Some("Björk".into()),
             year: Some(1999),
+            original_year: Some(1999),
             codec: Some("flac".into()),
             genre: genre.map(str::to_string),
             mb_release_id: Some("11111111-1111-1111-1111-111111111111".into()),

@@ -792,8 +792,20 @@ compact graphical skins now tile a stationary 1-pixel dot on a 3×3 logical-pixe
 grid over cached audio, using the comparison's muted 48% contrast. Played audio
 remains solid and the cache label is retained. Original 1x/2x texture assets
 keep the grid crisp and add one sprite instead of per-dot scene primitives;
-frontends without skin negotiation keep their solid compatibility bar.
+frontends without skin negotiation also draw Fine dots through bounded scene primitives.
 Pixel tests check grid pitch, density, uninterrupted stroke height, and cache
 coverage through the final pixel. Strict Clippy, 900 unit tests (5 ignored),
 12 embed tests, first-run checks, and the graphical integration test passed
 on macOS.
+
+Album facts now distinguish the original release year from the tagged edition
+year. Explicit original-release tags take priority, then an album-folder year
+(e.g. `1980 - Blizzard Of Ozz (2007)`). Known remasters with no usable original
+year display an unknown date. CUE tracks use their backing audio file; metadata
+is read on the album worker and cached without rewriting tags or reindexing.
+
+Regression coverage includes real original-release/edition tags on a WAV file,
+folder and box-set date rules, full/compact dotted cache rasterization at 1x/2x,
+and actual spectral analysis of playback positions in a fully downloaded song
+with a silent outro. Clock tests cover initial buffering, pause, stalls, ordinary
+SSH acknowledgement gaps, and stale samples after cache epoch replacement.

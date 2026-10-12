@@ -60,6 +60,25 @@ raw mode it reads the user's keystrokes instead. starkit debug-asserts the
 ordering across the crate boundary; a release build degrades to
 `Graphics::disabled()` rather than corrupting the session.
 
+## Two-machine SSH testing
+
+After publishing player or shared KIT changes, update and build the Linux music
+server as well as the Mac frontend. This is part of the requested testing workflow;
+the user does not need to run remote builds manually. Use:
+
+```sh
+python3 scripts/build-ssh-host.py bstar@192.168.86.57 \
+  --repo /home/bstar/projects/star/staramp-graphical
+```
+
+If direct authentication is unavailable, pass `--control-path` for a currently
+live authenticated SSH master; discover the current socket rather than saving
+its temporary path. The script requires a clean remote `main`, fetches through
+GitHub, verifies its revision matches local HEAD, builds through Nix with the
+published lockfile, and cleans compiler intermediates while retaining the binary.
+Preserve any remote edits before updating; do not reset them. Existing player
+processes need a restart to use a new build. Do not interrupt playback implicitly.
+
 ## Building on Linux
 
 Use the Nix flake for all builds and checks. Do not assume `cargo` or the

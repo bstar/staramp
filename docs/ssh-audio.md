@@ -74,6 +74,21 @@ nix develop -c cargo build --release --locked
 ./target/release/staramp --ssh music-server
 ```
 
+To update and build a remote checkout after pushing changes, run from this
+checkout on the Mac:
+
+```sh
+python3 scripts/build-ssh-host.py bstar@192.168.86.57 \
+  --repo /home/bstar/projects/star/staramp-graphical
+```
+
+The command uses SSH, fast-forwards a clean remote `main`, verifies it matches
+the local commit, builds the locked release through Nix and removes compiler
+intermediates while preserving the executable. It needs Nix, Git and Python 3
+on the server and the Rust build hygiene cleanup script locally (override with
+`--cleanup-script PATH`). `--control-path PATH` reuses an authenticated SSH master.
+Restart the existing player after building to load the new executable.
+
 The native Cargo/Homebrew route, including Intel Macs, is documented in
 [Installing](installing.md). Build and install this version on the music server
 as well, or select its executable with `--remote-executable`.

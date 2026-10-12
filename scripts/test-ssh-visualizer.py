@@ -66,7 +66,10 @@ with tempfile.TemporaryDirectory(prefix='amp-vis-', dir='/tmp') as temporary:
         assert ctl('play-uri tones.wav') == 'ok'
         frames = 0
         epoch = None
-        deadline = time.monotonic() + 30
+        # Every poll/ack launches the CLI. Allow slower macOS process startup
+        # to drain the fixture without confusing test overhead with a cache stall.
+        started = time.monotonic()
+        deadline = started + 120
         while time.monotonic() < deadline:
             poll = json.loads(ctl(f'audio-pcm {token}'))
             packet = poll.get('packet')
@@ -81,7 +84,7 @@ with tempfile.TemporaryDirectory(prefix='amp-vis-', dir='/tmp') as temporary:
                 break
             else:
                 time.sleep(.01)
-        assert frames == rate * 6, f'whole song was not greedily downloaded: {frames}'
+        assert frames == rate * 6, f'whole song was not greedily downloaded: {frames} frames after {time.monotonic() - started:.1f}s'
         time.sleep(.15)
         assert quiet(snapshot()), 'visualizer animated before the device played any audio'
         print('PASS: entire song cached while playback clock is zero; visualizer stays clear')

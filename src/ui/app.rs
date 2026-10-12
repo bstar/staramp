@@ -7004,8 +7004,28 @@ impl App {
             return self.note("nothing is playing".into());
         };
 
+        self.reveal_playlist_track(cursor, &items);
+        self.note("playing track selected in playlist".into());
+    }
+
+    fn focus_selected_track(&mut self) {
+        let items = {
+            let q = self.player.queue.lock().unwrap();
+            q.view()
+                .iter()
+                .filter_map(|&i| q.tracks().get(i).cloned())
+                .collect::<Vec<_>>()
+        };
+        if self.queue.cursor >= items.len() {
+            return self.note("no track selected".into());
+        }
+        self.reveal_playlist_track(self.queue.cursor, &items);
+        self.note("selected track revealed in playlist".into());
+    }
+
+    fn reveal_playlist_track(&mut self, cursor: usize, items: &[QueueItem]) {
         if self.session_grouped() {
-            if let Some(fold) = playlist::fold_for_track(&items, cursor) {
+            if let Some(fold) = playlist::fold_for_track(items, cursor) {
                 if self.queue.folded.remove(&fold) {
                     self.queue.fold_gen = self.queue.fold_gen.wrapping_add(1);
                 }
@@ -7020,7 +7040,6 @@ impl App {
         self.queue.scroll = usize::MAX;
         self.panels.playlist = true;
         self.panels.focus = Focus::Playlist;
-        self.note("playing track selected in playlist".into());
     }
 
     fn player_click(&mut self, r: &Regions, x: u16, y: u16) {

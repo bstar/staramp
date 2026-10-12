@@ -809,3 +809,10 @@ folder and box-set date rules, full/compact dotted cache rasterization at 1x/2x,
 and actual spectral analysis of playback positions in a fully downloaded song
 with a silent outro. Clock tests cover initial buffering, pause, stalls, ordinary
 SSH acknowledgement gaps, and stale samples after cache epoch replacement.
+
+Album heading dividers now follow the frontend's shaped glyph edge with a
+constant 10px gap, including ellipsized titles and 2x density. The playlist
+footer adds NOW to reveal the playing track and GO to reveal the selected
+track. Reveal opens its folded album, clears a hiding filter and releases the
+manual scrollbar position without changing playback or queue order. Manual
+scrolling retains the selection, allowing GO to return to it after browsing.

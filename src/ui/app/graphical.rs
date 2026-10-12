@@ -1409,6 +1409,8 @@ impl Rack<'_> {
             ("ADD", "library"),
             ("REM", "queue-remove"),
             ("SEL", "queue-tag"),
+            ("NOW", "playlist:current"),
+            ("GO", "playlist:selected"),
             ("MISC", "settings:playlist"),
             ("LIST", "playlists"),
         ]
@@ -1417,7 +1419,7 @@ impl Rack<'_> {
         {
             self.button(
                 &mut s,
-                R::new(14 + i as u16 * 63, toolbar_y, 57, 29),
+                R::new(14 + i as u16 * 45, toolbar_y, 41, 29),
                 c,
                 title,
                 action,
@@ -1549,23 +1551,22 @@ impl Rack<'_> {
                 let count_x = r.x + r.width - count_w - 6;
                 let title_x = r.x + 32;
                 let title_w = count_x.saturating_sub(title_x + 24);
-                let title = crate::ui::panels::player::truncate(title, usize::from(title_w / 7));
-                let rule_x = title_x + title.width() as u16 * 7 + 10;
-                if rule_x + 8 < count_x {
-                    s.fill(
-                        R::new(rule_x, r.y + row_h / 2, count_x - rule_x - 8, 1),
-                        &c.raised,
-                        0,
-                    );
-                }
+                let title_node = s.nodes.len() as u16;
                 classic::label(
                     &mut s,
                     R::new(title_x, r.y, title_w, row_h),
-                    title,
+                    title.clone(),
                     if *playing { &c.accent } else { &c.ink },
                     row_font,
                     true,
                 );
+                s.text_rules.push(starkit::native_surface::TextRule {
+                    node: title_node,
+                    end: count_x - 8,
+                    gap: 10,
+                    width: 1,
+                    color: c.raised.clone(),
+                });
                 classic::label(
                     &mut s,
                     R::new(count_x, r.y, count_w, row_h),
@@ -1728,11 +1729,7 @@ impl Rack<'_> {
         let rows = &self.app.queue.rows;
         self.app.queue.scroll =
             (above as usize).min(rows.len().saturating_sub(self.playlist_visible));
-        self.app.queue.cursor = rows.cursor_after_scroll(
-            self.app.queue.cursor,
-            self.app.queue.scroll,
-            self.playlist_visible,
-        );
+        // Browsing must retain the selection so GO can return to it.
         self.playlist_scrolled = Some(self.app.queue.cursor);
     }
 
@@ -1897,6 +1894,14 @@ impl Rack<'_> {
             "gravity" => a.open_gravity(),
             "queue-remove" => a.handle(Action::RemoveTagged),
             "queue-tag" => a.handle(Action::TagRow),
+            "playlist:current" => {
+                a.focus_playing_track();
+                self.playlist_scrolled = None;
+            }
+            "playlist:selected" => {
+                a.focus_selected_track();
+                self.playlist_scrolled = None;
+            }
             "help" => a.handle(Action::Help),
             "theme-next" => {
                 a.handle(Action::NextTheme);
@@ -2067,6 +2072,13 @@ fn append(
         }
         node_indices[index] = Some(target.nodes.len() as u16);
         target.nodes.push(node.clone());
+    }
+    for mut rule in source.text_rules {
+        if let Some(node) = node_indices[usize::from(rule.node)] {
+            rule.node = node;
+            rule.end += x;
+            target.text_rules.push(rule);
+        }
     }
     for hover in source.hover_fills {
         if let Some(node) = node_indices[usize::from(hover.node)] {
@@ -5617,6 +5629,18 @@ impl App {
                     });
                 }
                 let scene = rack.scene(v);
+                if folded {
+                    let surface = rack.surface.as_ref().unwrap();
+                    assert!(!surface.text_rules.is_empty());
+                    surface.validate()?;
+                    for rule in &surface.text_rules {
+                        assert_eq!(rule.gap, 10 * rack.density);
+                        assert!(matches!(
+                            surface.nodes[usize::from(rule.node)],
+                            Primitive::Text { .. }
+                        ));
+                    }
+                }
                 assert_eq!(
                     rack.app.queue.scroll, maximum,
                     "drag remains at the bottom after release"
@@ -5726,6 +5750,52 @@ impl App {
             assert_eq!(q.current().unwrap().uri, playing);
         };
         assert_owner(&rack);
+        crate::ipc::handle(&owner, &crate::view::shared(), "set-group album");
+        rack.app.poll_mirror();
+        rack.scene(v);
+        let playing_cursor = rack.app.player.queue.lock().unwrap().view_cursor();
+        let fold = playlist::fold_for_track(&rack.app.queue.items, playing_cursor).unwrap();
+        rack.app.queue.folded.insert(fold.clone());
+        rack.app.queue.fold_gen += 1;
+        rack.app.edit.words = "no-match-for-reveal-test".into();
+        rack.app.edit.gen += 1;
+        rack.app.queue.cursor = 0;
+        rack.playlist_scrolled = Some(0);
+        rack.scene(v);
+        click(&mut rack, "playlist:current");
+        rack.scene(v);
+        assert_eq!(rack.app.queue.cursor, playing_cursor);
+        assert!(rack.app.edit.words.is_empty());
+        assert!(!rack.app.queue.folded.contains(&fold));
+        let row = rack.app.queue.rows.row_of_track(playing_cursor).unwrap();
+        assert!(
+            (rack.app.queue.scroll..rack.app.queue.scroll + rack.playlist_visible).contains(&row)
+        );
+        assert_owner(&rack);
+        let selected_cursor = (playing_cursor + 30) % rack.app.queue.items.len();
+        rack.app.queue.cursor = selected_cursor;
+        rack.scene(v);
+        rack.scroll_playlist_to(u32::MAX);
+        rack.scene(v);
+        assert_eq!(
+            rack.app.queue.cursor, selected_cursor,
+            "scrolling retains selection"
+        );
+        let selected_row = rack.app.queue.rows.row_of_track(selected_cursor).unwrap();
+        assert!(
+            !(rack.app.queue.scroll..rack.app.queue.scroll + rack.playlist_visible)
+                .contains(&selected_row)
+        );
+        click(&mut rack, "playlist:selected");
+        rack.scene(v);
+        assert_eq!(rack.app.queue.cursor, selected_cursor);
+        let row = rack.app.queue.rows.row_of_track(selected_cursor).unwrap();
+        assert!(
+            (rack.app.queue.scroll..rack.app.queue.scroll + rack.playlist_visible).contains(&row)
+        );
+        assert_owner(&rack);
+        crate::ipc::handle(&owner, &crate::view::shared(), "set-group off");
+        rack.app.poll_mirror();
         rack.app.queue.group_desc = false;
         rack.app.open_filter();
         rack.scene(v);

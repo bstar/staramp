@@ -63,19 +63,7 @@ const EXTENSIONS: &[&str] = &[
     "aifc", "ape", "wv", "mpc", "mp+", "dsf", "dff", "wma", "tta", "tak", "shn", "mka", "caf",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub struct Palette {
-    pub bg: [u8; 3],
-    /// Optional inset surface color; older hosts keep the derived background.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub inset_bg: Option<[u8; 3]>,
-    pub fg: [u8; 3],
-    pub muted: [u8; 3],
-    pub accent: [u8; 3],
-    pub selected: [u8; 3],
-    pub border: [u8; 3],
-    pub error: [u8; 3],
-}
+pub use starkit::media_controls::Palette;
 
 /// Terminal cell pixels, supplied only when the host can draw image overlays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -95,13 +83,7 @@ pub struct TransportImage {
     pub rgba: Vec<u8>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Cell {
-    pub symbol: String,
-    pub fg: [u8; 3],
-    pub bg: [u8; 3],
-    pub modifiers: u16,
-}
+pub use starkit::media_controls::Cell;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

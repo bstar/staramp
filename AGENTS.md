@@ -341,3 +341,13 @@ proof is an alternative experiment. The full production rack now uses the origin
 artwork, bitmap fixed labels, reference palette, and 1x/2x density assets. This is
 implementation progress, not user acceptance. Keep `skin-progress.md` current with
 actual verification. The isolated example is not the production UI.
+
+## Shared media controls
+
+KIT owns render-only transport buttons, volume hit geometry and movie track
+pickers. The legacy `embed --stdio --transport` entry point delegates to KIT;
+keep its JSON framing compatible. AMP retains music artwork, queue/scrobble
+state and playback ownership. Fixed native rack/skin text opts into physical
+pixel sizes so terminal zoom cannot inflate labels inside bitmap controls.
+Graphics explicitly enables KIT media; do not rely on terminal-graphics to
+pull codecs or devices into every consumer.

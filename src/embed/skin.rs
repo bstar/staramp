@@ -726,7 +726,7 @@ impl PlayerSkin {
             radius / density,
             Some(self),
         );
-        surface.at_density(density)
+        surface.with_physical_text().at_density(density)
     }
 }
 /// UI density selects original artwork and fresh text sizes. Window width only

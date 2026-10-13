@@ -7,6 +7,9 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Framework
 
+- KIT owns generic media controls; the legacy render-only protocol delegates to it.
+- Native artwork uses physical text sizing to avoid label inflation at terminal font zoom.
+
 - Shared KIT cell-pane allocation, responsive hiding and focus restoration without changing playback or panel preferences.
 
 ### Fixed

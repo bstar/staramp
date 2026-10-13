@@ -2596,6 +2596,7 @@ impl Controller for Rack<'_> {
                 self.focus_outline_at(&mut surface, rect);
             }
         }
+        surface = surface.with_physical_text();
         if density > 1 {
             surface = surface.at_density(density).expect("bounded rack density");
         }

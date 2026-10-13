@@ -111,7 +111,7 @@ impl Rack<'_> {
         let x = (s.width - width) / 2;
         let y = (s.height - height) / 2;
         s.hits.clear();
-        self.frame(s, R::new(x, y, width, height), c, self.radius, false);
+        self.modal_frame(s, R::new(x, y, width, height), c, false);
         s.hits.push(HitRegion {
             rect: R::new(x, y, width, height),
             action: "resume:body".into(),
@@ -259,7 +259,7 @@ impl Rack<'_> {
             rect: R::new(0, 0, s.width, s.height),
             action: "filter:dismiss".into(),
         });
-        self.frame(s, R::new(x, y, width, height), c, self.radius, false);
+        self.modal_frame(s, R::new(x, y, width, height), c, false);
         s.hits.push(HitRegion {
             rect: R::new(x, y, width, height),
             action: "filter:body".into(),
@@ -489,6 +489,7 @@ impl Rack<'_> {
         }
         .clamp(6, s.height - height - 6);
         let rect = R::new(x, y, width, height);
+        self.modal_focus = Some(rect);
         let radius = self.radius.min(6);
         s.fill(R::new(x + 2, y + 3, width, height), &c.shadow, radius);
         s.fill(rect, &c.panel, radius);
@@ -637,7 +638,7 @@ impl Rack<'_> {
             action: "popup:dismiss".into(),
         });
         let rect = R::new(x, y, width, height);
-        self.frame(s, rect, c, self.radius, true);
+        self.modal_frame(s, rect, c, true);
         s.hits.push(HitRegion {
             rect,
             action: "popup:body".into(),

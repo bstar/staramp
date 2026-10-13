@@ -9,6 +9,22 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Modal focus · October 12
+
+Classic modals now receive the existing theme-colored focus outline immediately
+when opened. The border follows the dialog bounds at 1x and 2x density, including
+native settings/filter/resume/EQ dialogs and the cell-rendered fallback. Nested
+EQ confirmations take focus from their parent dialog. Background panels lose
+their outline while a modal is open, and regain it when the modal closes without
+changing the remembered panel focus.
+
+Formatting, strict Clippy, 901 unit tests, 12 embedding tests, first-run and the
+native rack integration passed. Production filter and EQ profile captures were
+reviewed, including the filter at both densities. The Nix release build passed;
+the host player was restarted with a recovery snapshot and its executable inode
+verified against the new build. Terminal overlays already use the shared focused
+modal frame.
+
 ### SSH audio · October 12
 
 Terminal and Classic now share standalone SSH audio with a single playback

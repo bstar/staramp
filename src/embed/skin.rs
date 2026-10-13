@@ -506,7 +506,7 @@ impl PlayerSkin {
     pub(crate) fn pane_well(&self, s: &mut Surface, rect: PixelRect) {
         self.paint(s, rect, "well-pane");
     }
-    pub(crate) fn focus_outline(&self, s: &mut Surface, accent: &str) {
+    pub(crate) fn focus_outline(&self, s: &mut Surface, rect: PixelRect, accent: &str) {
         let name = if self.rigid {
             "focus-rigid"
         } else {
@@ -515,7 +515,7 @@ impl PlayerSkin {
         let asset = &self.glyphs[&(self.density, name)];
         s.assets.insert(asset.id.clone(), Some(asset.png.clone()));
         s.nodes.push(Primitive::Sprite {
-            rect: PixelRect::new(0, 0, s.width, s.height),
+            rect,
             asset: asset.id.clone(),
             source: PixelRect::new(0, 0, 24 * self.density, 24 * self.density),
             insets: Some([6 * self.density; 4]),

@@ -92,10 +92,10 @@ pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, in
     );
 }
 
-/// A single accent stroke follows the unskinned pane frame's corner geometry.
-pub(crate) fn focus_outline(surface: &mut Surface, accent: &str, radius: u16) {
+/// A single accent stroke follows the unskinned frame's corner geometry.
+pub(crate) fn focus_outline(surface: &mut Surface, rect: R, accent: &str, radius: u16) {
     surface.nodes.push(Primitive::Border {
-        rect: R::new(0, 0, surface.width, surface.height),
+        rect,
         color: accent.into(),
         radius,
     });

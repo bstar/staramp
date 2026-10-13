@@ -187,6 +187,7 @@ pub struct Rack<'a> {
     eq_drag: Option<EqDrag>,
     max_offset: u16,
     overlay: bool,
+    modal_focus: Option<R>,
     context_anchor: Option<[u32; 2]>,
     playlist_bars: Scrollbars<()>,
     playlist_visible: usize,
@@ -287,6 +288,7 @@ impl App {
                 eq_drag: None,
                 max_offset: 0,
                 overlay: false,
+                modal_focus: None,
                 context_anchor: None,
                 playlist_bars: Scrollbars::new(),
                 playlist_visible: 0,
@@ -381,7 +383,7 @@ impl Rack<'_> {
             repeat,
             shuffled,
             bit_perfect: st.bit_perfect.load(Relaxed),
-            focused: a.panels.focus == Focus::Player,
+            focused: a.panels.focus == Focus::Player && !a.overlay_open(),
             bands: a.vis.meters.bars().to_vec(),
             peaks: a.vis.meters.peaks().to_vec(),
             underruns,
@@ -409,12 +411,20 @@ impl Rack<'_> {
         })
     }
     fn focus_outline(&self, s: &mut Surface) {
+        self.focus_outline_at(s, R::new(0, 0, s.width, s.height));
+    }
+    fn focus_outline_at(&self, s: &mut Surface, rect: R) {
         let accent = self.selection_color();
         if self.skins {
-            self.skin.focus_outline(s, &accent);
+            self.skin.focus_outline(s, rect, &accent);
         } else {
-            native::focus_outline(s, &accent, self.radius);
+            native::focus_outline(s, rect, &accent, self.radius);
         }
+    }
+    fn modal_frame(&mut self, s: &mut Surface, rect: R, c: &Colors, inset: bool) {
+        self.frame(s, rect, c, self.radius, inset);
+        // A nested confirmation replaces its parent as the focused modal.
+        self.modal_focus = Some(rect);
     }
     #[allow(clippy::too_many_arguments)]
     fn button(
@@ -552,7 +562,7 @@ impl Rack<'_> {
                 action: format!("focus:{name}"),
             },
         );
-        if self.app.panels.focus == focus {
+        if self.app.panels.focus == focus && !self.app.overlay_open() {
             self.focus_outline(&mut s);
         }
         s
@@ -2174,6 +2184,7 @@ impl Controller for Rack<'_> {
         self.viewport = v;
         self.revision += 1;
         self.overlay = false;
+        self.modal_focus = None;
         if self.app.over.resume.is_none() {
             self.resume_scroll = 0;
             self.resume_fresh = false;
@@ -2278,7 +2289,7 @@ impl Controller for Rack<'_> {
                 action: "focus:player".into(),
             },
         );
-        if self.app.panels.focus == Focus::Player {
+        if self.app.panels.focus == Focus::Player && !self.app.overlay_open() {
             self.focus_outline(&mut player);
         }
         append(&mut surface, player, 0, 0, 0..footer_y, density, "player");
@@ -2517,7 +2528,7 @@ impl Controller for Rack<'_> {
                     ((f64::from(bottom + 1) * ch) as u16)
                         .saturating_sub((f64::from(top) * ch) as u16),
                 );
-                self.frame(&mut surface, r, &c, self.radius, false);
+                self.modal_frame(&mut surface, r, &c, false);
                 for y in top..=bottom {
                     let mut x = left;
                     while x <= right {
@@ -2579,6 +2590,9 @@ impl Controller for Rack<'_> {
         }
         if self.overlay {
             surface.hover_fills.clear();
+            if let Some(rect) = self.modal_focus {
+                self.focus_outline_at(&mut surface, rect);
+            }
         }
         if density > 1 {
             surface = surface.at_density(density).expect("bounded rack density");
@@ -3177,6 +3191,7 @@ impl App {
             eq_drag: None,
             max_offset: 0,
             overlay: false,
+            modal_focus: None,
             context_anchor: None,
             playlist_bars: Scrollbars::new(),
             playlist_visible: 0,

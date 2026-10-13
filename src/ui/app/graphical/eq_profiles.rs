@@ -6,7 +6,8 @@ impl Rack<'_> {
         let Some(input) = &self.app.edit.eq_value else {
             return false;
         };
-        let (heading, hint) = match input.field {
+        let kind = input.field;
+        let (heading, hint) = match kind {
             EqField::SaveAsProfile => (
                 "SAVE EQ PROFILE AS",
                 "Name a saved copy of the current curve.",
@@ -45,7 +46,7 @@ impl Rack<'_> {
         self.overlay = true;
         self.app.bars.begin_frame();
         s.hits.clear();
-        self.frame(s, R::new(x, y, width, height), c, self.radius, false);
+        self.modal_frame(s, R::new(x, y, width, height), c, false);
         s.hits.push(HitRegion {
             rect: R::new(x, y, width, height),
             action: "eq-form:body".into(),
@@ -133,7 +134,7 @@ impl Rack<'_> {
             R::new(x + width - 120, y + height - 42, 100, 29),
             c,
             if matches!(
-                input.field,
+                kind,
                 EqField::SaveAsProfile | EqField::NewProfile | EqField::RenameProfile
             ) {
                 "SAVE"
@@ -173,7 +174,7 @@ impl Rack<'_> {
         self.overlay = true;
         self.app.bars.begin_frame();
         s.hits.clear();
-        self.frame(s, R::new(x, y, width, height), c, self.radius, false);
+        self.modal_frame(s, R::new(x, y, width, height), c, false);
         s.hits.push(HitRegion {
             rect: R::new(0, 0, s.width, s.height),
             action: "eq-library:dismiss".into(),
@@ -403,13 +404,7 @@ impl Rack<'_> {
             let cx = x + 24;
             let cy = y + (height - confirm_height) / 2;
             s.hits.clear();
-            self.frame(
-                s,
-                R::new(cx, cy, confirm_width, confirm_height),
-                c,
-                self.radius,
-                false,
-            );
+            self.modal_frame(s, R::new(cx, cy, confirm_width, confirm_height), c, false);
             s.hits.push(HitRegion {
                 rect: R::new(0, 0, s.width, s.height),
                 action: "eq-library:body".into(),

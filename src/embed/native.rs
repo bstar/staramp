@@ -356,7 +356,10 @@ pub(super) fn player_surface(
     artwork: Option<&dyn PlayerArtwork>,
 ) -> Surface {
     use starkit::native_surface::classic::{self, Colors};
-    let m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
+    // Fixed chassis controls keep their type within the original artwork boxes.
+    // Terminal zoom changes the host allocation, not the 100px toggle faces.
+    let mut m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
+    m.font = m.font.min(16);
     let mut c = if artwork.is_some() {
         super::skin_palette::colors(palette)
     } else {
@@ -376,7 +379,7 @@ pub(super) fn player_surface(
     let led_off = super::skin_palette::inactive_led(palette);
     let fg = c.ink.clone();
     let w = w.min((8_000_000 / u32::from(h.max(1))) as u16);
-    let mut s = Surface::new(w, h, hex(palette.bg));
+    let mut s = Surface::new(w, h, hex(palette.bg)).with_physical_text();
     if w < 240 || h < 150 {
         classic::label(&mut s, R::new(0, 0, w, h), &state.title, &fg, m.font, true);
         return s;
@@ -427,7 +430,7 @@ pub(super) fn player_surface(
         true,
     );
     let clock_w = 174.min(w / 3);
-    let clock_h = 54.min(display_h.saturating_sub(30));
+    let clock_h = 54.min(display_h.saturating_sub(40));
     if let Some(art) = artwork {
         art.clock(&mut s, [28, 58], &clock(state.position), &accent);
     } else {

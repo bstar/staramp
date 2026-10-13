@@ -63,7 +63,7 @@ impl Plan {
     ) -> crate::audio::decode::StreamSpec {
         crate::audio::decode::StreamSpec {
             sample_format: src.sample_format,
-            channel_mask: if self.device.is_none() {
+            channel_mask: if self.device.is_none() && self.channels == src.channels {
                 src.channel_mask
             } else {
                 ffmpeg_next::ChannelLayout::default(i32::from(self.channels)).bits()
@@ -527,6 +527,40 @@ impl Drop for Output {
 #[cfg(test)]
 mod relay_tests {
     use super::*;
+    #[test]
+    fn relay_channel_conversion_replaces_the_source_speaker_mask() {
+        let source = crate::audio::decode::StreamSpec {
+            sample_rate: 44100,
+            channels: 1,
+            channel_mask: ffmpeg_next::ChannelLayout::MONO.bits(),
+            sample_format: starkit::pcm::SampleFormat::I32,
+            bit_depth: Some(16),
+        };
+        let mut plan = Plan {
+            device: None,
+            source: source.pcm(),
+            device_name: "SSH client".into(),
+            sample_rate: 48000,
+            channels: 2,
+            rate_mode: RateMode::Resampled {
+                from: 44100,
+                to: 48000,
+            },
+            remixed_from: Some(1),
+        };
+        let stereo = plan.out_spec(&source);
+        stereo.pcm().validate().unwrap();
+        assert_eq!(
+            stereo.channel_mask,
+            ffmpeg_next::ChannelLayout::STEREO.bits()
+        );
+        plan.channels = 1;
+        plan.sample_rate = 44100;
+        plan.remixed_from = None;
+        plan.rate_mode = RateMode::Native;
+        assert_eq!(plan.out_spec(&source).channel_mask, source.channel_mask);
+    }
+
     #[test]
     fn callback_reports_storage_starvation_recovery_and_eof_independently_of_decoder() {
         let state = OutputState::new(false);

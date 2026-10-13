@@ -8,11 +8,13 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 ### Framework
 
 - KIT owns generic media controls; the legacy render-only protocol delegates to it.
-- Native artwork uses physical text sizing to avoid label inflation at terminal font zoom.
+- Native artwork and its compact chassis fallback use physical text sizing to avoid label inflation at terminal font zoom; short displays reserve space between the clock and status label.
 
 - Shared KIT cell-pane allocation, responsive hiding and focus restoration without changing playback or panel preferences.
 
 ### Fixed
+
+- Legacy SSH embedding replaces the source speaker mask when converting mono to stereo. Contradictory layouts now return an error before FFmpeg plane allocation, preventing a stuck loading state after a player-thread panic.
 
 - **Importing an album from the staging inbox failed on its first step**, and
   left an empty artist folder in the library. The security hardening made the

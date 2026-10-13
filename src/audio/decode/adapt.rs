@@ -76,6 +76,13 @@ impl Adapting {
     /// Wrap `inner` so it produces `out` instead of its own shape.
     pub fn new(inner: Box<dyn Decoder>, out: StreamSpec) -> Result<Self> {
         let in_spec = inner.spec();
+        in_spec
+            .pcm()
+            .validate()
+            .context("invalid resampler source layout")?;
+        out.pcm()
+            .validate()
+            .context("invalid resampler output layout")?;
         if in_spec.sample_rate == 0 || in_spec.channels == 0 {
             return Err(anyhow!(
                 "cannot convert a stream of {} Hz, {} channels",
@@ -422,6 +429,13 @@ mod tests {
             channels,
             bit_depth: None,
         }
+    }
+
+    #[test]
+    fn contradictory_channel_masks_fail_before_allocating_ffmpeg_planes() {
+        let mut invalid = out(48000, 2);
+        invalid.channel_mask = ffmpeg_next::ChannelLayout::MONO.bits();
+        assert!(Adapting::new(Tone::boxed(44100, 1, 44100), invalid).is_err());
     }
 
     #[test]

@@ -23,7 +23,7 @@ use starkit::crossterm::event::{
     MouseEventKind,
 };
 use starkit::mouse::{hit, ClickTracker};
-use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use starkit::ratatui::layout::Rect;
 use starkit::ratatui::style::{Color, Style};
 use starkit::ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthStr;
@@ -104,6 +104,66 @@ struct Regions {
     history: Option<Rect>,
     playlist: Option<Rect>,
     status: Rect,
+    panes: starkit::panes::Layout<Focus>,
+}
+
+/// The cell presentation keeps panel intent separate from viewport hiding.
+fn cell_panes(
+    area: Rect,
+    album: bool,
+    equalizer: bool,
+    history: bool,
+    playlist: bool,
+) -> starkit::panes::Layout<Focus> {
+    use starkit::panes::{Node, Overflow, Size, Visibility};
+    let optional = |id, rows, open, priority| {
+        Node::pane(id)
+            .height(Size::fixed(rows))
+            .priority(priority)
+            .overflow(Overflow::Hide)
+            .visibility(if open {
+                Visibility::Expanded
+            } else {
+                Visibility::Hidden
+            })
+    };
+    Node::column(vec![
+        Node::pane(Focus::Player)
+            .height(Size::bounded(
+                MIN_HEIGHT - 1,
+                crate::ui::panels::player::PANEL_ROWS,
+                crate::ui::panels::player::PANEL_ROWS,
+            ))
+            .priority(100),
+        optional(
+            Focus::Album,
+            crate::ui::panels::album::PANEL_ROWS,
+            album,
+            10,
+        ),
+        optional(
+            Focus::Equalizer,
+            crate::ui::panels::equalizer::PANEL_ROWS,
+            equalizer,
+            20,
+        ),
+        optional(
+            Focus::History,
+            crate::ui::panels::history::PANEL_ROWS,
+            history,
+            30,
+        ),
+        Node::pane(Focus::Playlist)
+            .height(Size::fill(4))
+            .overflow(Overflow::Hide)
+            .visibility(if playlist {
+                Visibility::Expanded
+            } else {
+                Visibility::Hidden
+            }),
+    ])
+    .layout(area)
+    .expect("unique, bounded player pane IDs")
 }
 
 /// The cover chooser's state while it is open.
@@ -775,6 +835,45 @@ mod tests {
     use starkit::ratatui::layout::Rect;
     use std::path::PathBuf;
 
+    #[test]
+    fn responsive_cell_panes_restore_user_choices_and_never_focus_hidden_content() {
+        use super::{cell_panes, Focus};
+        use starkit::panes::{Focus as PaneFocus, Reason};
+        for mask in 0..16 {
+            let open = |bit| mask & (1 << bit) != 0;
+            for height in MIN_HEIGHT..80 {
+                let area = Rect::new(2, 3, 80, height - 1);
+                let layout = cell_panes(area, open(0), open(1), open(2), open(3));
+                assert!(layout.fits);
+                assert!(layout.rect_of(Focus::Player).unwrap().height >= MIN_HEIGHT - 1);
+                for (i, pane) in layout.panes.iter().enumerate() {
+                    if let Some(rect) = pane.area {
+                        assert!(rect.bottom() <= area.bottom());
+                        assert_eq!(layout.hit(rect.x, rect.y), Some(pane.id));
+                        assert!(layout.panes[i + 1..]
+                            .iter()
+                            .all(|p| !p.area.is_some_and(|r| r.intersects(rect))));
+                    }
+                }
+            }
+        }
+        let small = cell_panes(Rect::new(0, 0, 80, MIN_HEIGHT - 1), true, true, true, true);
+        let wide = cell_panes(Rect::new(0, 0, 80, 100), true, true, true, true);
+        assert_eq!(
+            small.pane(Focus::Equalizer).unwrap().state.reason,
+            Reason::InsufficientSpace
+        );
+        let mut focus = PaneFocus::new(Some(Focus::Equalizer));
+        assert_eq!(focus.reconcile(&small), Some(Focus::Player));
+        assert_eq!(focus.reconcile(&wide), Some(Focus::Equalizer));
+        assert!(wide.panes.iter().all(|p| p.area.is_some()));
+        let hidden = cell_panes(Rect::new(0, 0, 80, 100), false, true, true, true);
+        assert_eq!(
+            hidden.pane(Focus::Album).unwrap().state.reason,
+            Reason::User
+        );
+    }
+
     /// The help overlay, cell for cell, against a recorded rendering.
     ///
     /// Recorded rather than reasoned about, because the overlay is the one
@@ -1383,7 +1482,7 @@ mod tests {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Focus {
     Player,
     Album,
@@ -1595,6 +1694,8 @@ struct Panels {
     help: bool,
     picker: bool,
     focus: Focus,
+    responsive_focus: starkit::panes::Focus<Focus>,
+    cell_geometry: Option<starkit::panes::Layout<Focus>>,
     /// How far down the help has been scrolled.
     ///
     /// It needs to scroll at all because the key list is 58 lines against an
@@ -3037,6 +3138,12 @@ impl App {
                 } else {
                     Focus::Player
                 },
+                responsive_focus: starkit::panes::Focus::new(Some(if cfg.ui.show_playlist {
+                    Focus::Playlist
+                } else {
+                    Focus::Player
+                })),
+                cell_geometry: None,
                 help_scroll: 0,
                 last_area: Rect::default(),
                 padding_x: cfg.ui.padding_x,
@@ -6670,18 +6777,20 @@ impl App {
     /// and gives up after a full lap so a window with everything but the
     /// player closed does not spin.
     fn move_focus(&mut self, step: i32) {
-        let n = Self::FOCUS_ORDER.len() as i32;
-        let at = Self::FOCUS_ORDER
-            .iter()
-            .position(|f| *f == self.panels.focus)
-            .unwrap_or(0) as i32;
-        for hop in 1..=n {
-            let next = Self::FOCUS_ORDER[(at + step * hop).rem_euclid(n) as usize];
-            if self.panel_open(next) {
-                self.panels.focus = next;
-                self.note(format!("focus: {}", focus_name(next)));
-                return;
-            }
+        let mut focus = starkit::panes::Focus::new(Some(self.panels.focus));
+        let next = if let Some(geometry) = &self.panels.cell_geometry {
+            focus.step(geometry, step > 0)
+        } else {
+            let order: Vec<_> = Self::FOCUS_ORDER
+                .into_iter()
+                .filter(|&id| self.panel_open(id))
+                .collect();
+            focus.step_in(&order, step > 0)
+        };
+        if let Some(next) = next {
+            self.panels.focus = next;
+            self.panels.responsive_focus.request(next);
+            self.note(format!("focus: {}", focus_name(next)));
         }
     }
 
@@ -7342,86 +7451,23 @@ impl App {
             height: full.height - pad_y * 2,
         };
 
-        // Docked windows: the player is always present, the other two toggle.
-        // The body plus its border.
-        let player_h = crate::ui::panels::player::PANEL_ROWS;
-        let eq_h = if self.panels.eq {
-            crate::ui::panels::equalizer::PANEL_ROWS
-        } else {
-            0
-        };
-        let album_h = if self.panels.album {
-            crate::ui::panels::album::PANEL_ROWS
-        } else {
-            0
-        };
-        let history_h = if self.panels.history {
-            crate::ui::panels::history::PANEL_ROWS
-        } else {
-            0
-        };
-        let status_h = 1u16;
-        let playlist_h = area
-            .height
-            .saturating_sub(player_h + album_h + eq_h + history_h + status_h);
-        // Two of its rows are border and one is the header, so three rows is
-        // a panel with nothing in it.
-        let show_playlist = self.panels.playlist && playlist_h >= 4;
-
-        let mut constraints = vec![Constraint::Length(player_h)];
-        if self.panels.album {
-            constraints.push(Constraint::Length(album_h));
-        }
-        if self.panels.eq {
-            constraints.push(Constraint::Length(eq_h));
-        }
-        if self.panels.history {
-            constraints.push(Constraint::Length(history_h));
-        }
-        if show_playlist {
-            constraints.push(Constraint::Length(playlist_h));
-        }
-        constraints.push(Constraint::Length(status_h));
-
-        let rows = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(area);
-
-        let mut idx = 0;
-        let player = rows[idx];
-        idx += 1;
-        // The album sits directly under the player: it is about what is
-        // playing, and the equalizer is about how.
-        let album = self.panels.album.then(|| {
-            let r = rows[idx];
-            idx += 1;
-            r
-        });
-        let equalizer = self.panels.eq.then(|| {
-            let r = rows[idx];
-            idx += 1;
-            r
-        });
-        let history = self.panels.history.then(|| {
-            let r = rows[idx];
-            idx += 1;
-            r
-        });
-        let playlist = show_playlist.then(|| {
-            let r = rows[idx];
-            idx += 1;
-            r
-        });
-
+        let body = Rect::new(area.x, area.y, area.width, area.height - 1);
+        let panes = cell_panes(
+            body,
+            self.panels.album,
+            self.panels.eq,
+            self.panels.history,
+            self.panels.playlist,
+        );
         Some(Regions {
             area,
-            player,
-            album,
-            equalizer,
-            history,
-            playlist,
-            status: rows[idx],
+            player: panes.rect_of(Focus::Player).unwrap_or_default(),
+            album: panes.rect_of(Focus::Album),
+            equalizer: panes.rect_of(Focus::Equalizer),
+            history: panes.rect_of(Focus::History),
+            playlist: panes.rect_of(Focus::Playlist),
+            status: Rect::new(area.x, area.bottom() - 1, area.width, 1),
+            panes,
         })
     }
 
@@ -7453,7 +7499,17 @@ impl App {
             }
         }
 
-        let Some(r) = self.regions(full) else { return };
+        let Some(r) = self.regions(full) else {
+            self.panels.cell_geometry = None;
+            return;
+        };
+        if self.panels.responsive_focus.active() != Some(self.panels.focus) {
+            self.panels.responsive_focus.request(self.panels.focus);
+        }
+        if let Some(focus) = self.panels.responsive_focus.reconcile(&r.panes) {
+            self.panels.focus = focus;
+        }
+        self.panels.cell_geometry = Some(r.panes.clone());
         let area = r.area;
         self.panels.last_area = area;
 

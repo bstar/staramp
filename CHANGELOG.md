@@ -5,6 +5,10 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Framework
+
+- Shared KIT cell-pane allocation, responsive hiding and focus restoration without changing playback or panel preferences.
+
 ### Fixed
 
 - **Importing an album from the staging inbox failed on its first step**, and

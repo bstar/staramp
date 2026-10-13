@@ -2198,6 +2198,7 @@ impl Controller for Rack<'_> {
         // artwork lookup. Track revision changes alone do not cover these.
         self.app.pump_album();
         self.app.prepare_playlist_rows();
+        self.app.panels.cell_geometry = None;
         self.app.panels.last_area = Rect::new(0, 0, v.columns, v.rows);
         let area = Rect::new(0, 0, v.columns, v.rows);
         let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);

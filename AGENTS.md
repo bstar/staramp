@@ -33,12 +33,12 @@ dependencies here any more and why every import spells them
 `starkit::ratatui::` and so on. There is one copy of each in the build, and a
 widget written in one repository fits a signature declared in the other.
 
-It exists because of STAR/CORD, a terminal Discord client on the same
-foundation. **That is the rule to remember: every public item in starkit has
-two callers, and a change to one of its signatures has to be checked against
-both.** They are `grep -rn "starkit::" ../staramp/src ../starcord/src`. A
-change that is awkward at one and impossible at the other is a new function,
-not a refactor.
+KIT is becoming a public framework with AMP, FOLD, CORD and WIRE as reference
+consumers. Read all four before changing shared signatures. AMP's cell layout
+uses `starkit::panes`; automatic viewport hiding never changes panel preferences,
+services or playback. Shared focus skips hidden cell panes and restores the last
+requested pane when space returns. Native rack presentation clears cell geometry
+before handling its own surface layout and input.
 
 The dependency is a git tag, and a local starkit change is invisible here
 until it is tagged. To try one before it is:

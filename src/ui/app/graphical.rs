@@ -378,6 +378,7 @@ impl Rack<'_> {
             loading: st.is_loading(),
             position: st.position_secs(),
             buffered: st.buffered_secs(),
+            remote_audio: self.audio.active() || crate::audio::relay::enabled(),
             duration: st.duration_secs(),
             volume: a.player.volume(),
             repeat,

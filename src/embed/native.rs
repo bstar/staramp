@@ -11,18 +11,55 @@ use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Sur
 pub(super) const CACHE_BASE: &str = "#3e424e";
 pub(super) const CACHE_DOT: &str = "#6b717e";
 
-/// Compatibility surfaces without skin sprites still show a stationary dot grid.
-/// Bound the primitive count for unusually large legacy viewports.
-fn cached_bar(s: &mut Surface, rect: R) {
+#[derive(Clone, Copy)]
+pub(super) enum SeekTexture {
+    FineDots,
+    Checker,
+}
+
+/// Compatibility surfaces keep the texture bounded without requiring sprites.
+fn cached_bar(s: &mut Surface, rect: R, texture: SeekTexture) {
     s.fill(rect, CACHE_BASE, 0);
-    let mut pitch = 3u16;
-    while u32::from(rect.width.div_ceil(pitch)) * u32::from(rect.height.div_ceil(pitch)) > 1024 {
+    let (mut pitch, budget) = match texture {
+        SeekTexture::FineDots => (3u16, 1024),
+        SeekTexture::Checker => (1u16, 2048),
+    };
+    while u32::from(rect.width.div_ceil(pitch)) * u32::from(rect.height.div_ceil(pitch)) > budget {
         pitch += 1;
     }
     for y in (0..rect.height).step_by(usize::from(pitch)) {
         for x in (0..rect.width).step_by(usize::from(pitch)) {
-            s.fill(R::new(rect.x + x, rect.y + y, 1, 1), CACHE_DOT, 0);
+            let side = match texture {
+                SeekTexture::FineDots => 1,
+                SeekTexture::Checker => {
+                    if !(x / pitch + y / pitch).is_multiple_of(2) {
+                        continue;
+                    }
+                    pitch
+                }
+            };
+            s.fill(
+                R::new(
+                    rect.x + x,
+                    rect.y + y,
+                    side.min(rect.width - x),
+                    side.min(rect.height - y),
+                ),
+                CACHE_DOT,
+                0,
+            );
         }
+    }
+}
+
+fn seek_texture(state: &PlayerRenderState, track: R, buffered: u16) -> (R, SeekTexture) {
+    if state.remote_audio {
+        (
+            R::new(track.x, track.y, buffered, track.height),
+            SeekTexture::FineDots,
+        )
+    } else {
+        (track, SeekTexture::Checker)
     }
 }
 
@@ -287,7 +324,7 @@ pub(super) trait PlayerArtwork {
         color: &str,
         centered: bool,
     ) -> bool;
-    fn cached_bar(&self, s: &mut Surface, rect: R);
+    fn cached_bar(&self, s: &mut Surface, rect: R, texture: SeekTexture);
     fn frame(&self, s: &mut Surface, rect: R, inset: bool);
     fn button(&self, s: &mut Surface, rect: R, action: &str, active: bool);
     fn button_ink(&self, action: &str, active: bool) -> String;
@@ -671,11 +708,12 @@ pub(super) fn player_surface(
     };
     let y = seek.y + (header - thickness) / 2;
     s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
-    let cached = R::new(seek.x, y, buffered, thickness);
+    let (textured, texture) =
+        seek_texture(state, R::new(seek.x, y, seek.width, thickness), buffered);
     if let Some(art) = artwork {
-        art.cached_bar(&mut s, cached);
+        art.cached_bar(&mut s, textured, texture);
     } else {
-        cached_bar(&mut s, cached);
+        cached_bar(&mut s, textured, texture);
     }
     s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     s.hits.push(HitRegion {
@@ -1345,7 +1383,9 @@ fn compact_surface(
         2
     };
     s.fill(R::new(seek.x, y, seek.width, thickness), &groove, radius);
-    cached_bar(&mut s, R::new(seek.x, y, buffered, thickness));
+    let (textured, texture) =
+        seek_texture(state, R::new(seek.x, y, seek.width, thickness), buffered);
+    cached_bar(&mut s, textured, texture);
     s.fill(R::new(seek.x, y, played, thickness), &accent, radius);
     s.hits.push(HitRegion {
         rect: seek,

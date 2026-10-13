@@ -928,6 +928,7 @@ fn render_state(
         loading: st.is_loading(),
         position: st.position_secs(),
         buffered: st.buffered_secs(),
+        remote_audio: crate::audio::relay::enabled(),
         duration: st.duration_secs(),
         volume: player.volume(),
         repeat,

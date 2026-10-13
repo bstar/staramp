@@ -51,6 +51,9 @@ impl Default for RemoteAudio {
     }
 }
 impl RemoteAudio {
+    pub(super) fn active(&self) -> bool {
+        self.active
+    }
     fn route(&self, app: &App) -> String {
         app.audio_request(&format!(
             "audio-route {}{}",

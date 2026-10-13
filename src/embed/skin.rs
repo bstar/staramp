@@ -28,15 +28,24 @@ fn button_background(palette: &Palette, kind: &str) -> String {
     }
 }
 
-/// The selected Fine dots treatment: one logical pixel on a fixed 3×3 grid.
-/// Tile one immutable asset instead of emitting thousands of per-dot primitives.
-fn fine_dot_cache(surface: &mut Surface, rect: PixelRect, density: u16) {
+/// Tile the seek texture at native density with one immutable sprite.
+fn seek_texture(
+    surface: &mut Surface,
+    rect: PixelRect,
+    density: u16,
+    texture: native::SeekTexture,
+) {
     use std::sync::OnceLock;
-    static TILES: OnceLock<[(String, String); 2]> = OnceLock::new();
+    static DOTS: OnceLock<[(String, String); 2]> = OnceLock::new();
+    static CHECKERS: OnceLock<[(String, String); 2]> = OnceLock::new();
+    let (tiles, pitch) = match texture {
+        native::SeekTexture::FineDots => (&DOTS, 3),
+        native::SeekTexture::Checker => (&CHECKERS, 2),
+    };
     if rect.width == 0 || rect.height == 0 {
         return;
     }
-    let tiles = TILES.get_or_init(|| {
+    let tiles = tiles.get_or_init(|| {
         std::array::from_fn(|index| {
             let scale = index as u32 + 1;
             let rgba = |hex| {
@@ -45,22 +54,27 @@ fn fine_dot_cache(surface: &mut Surface, rect: PixelRect, density: u16) {
             };
             let base = rgba(native::CACHE_BASE);
             let dot = rgba(native::CACHE_DOT);
-            let pixels = starkit::image::RgbaImage::from_fn(3 * scale, 3 * scale, |x, y| {
-                if x < scale && y < scale {
-                    dot
-                } else {
-                    base
-                }
-            });
+            let pixels =
+                starkit::image::RgbaImage::from_fn(pitch * scale, pitch * scale, |x, y| {
+                    let marked = match texture {
+                        native::SeekTexture::FineDots => x < scale && y < scale,
+                        native::SeekTexture::Checker => (x / scale + y / scale).is_multiple_of(2),
+                    };
+                    if marked {
+                        dot
+                    } else {
+                        base
+                    }
+                });
             starkit::terminal_graphics::assets::encode_skin(&pixels)
-                .expect("fixed 3×3 cache tile is a valid skin asset")
+                .expect("fixed seek texture is a valid skin asset")
         })
     });
     let (id, png) = &tiles[usize::from(density - 1)];
     surface.nodes.push(Primitive::Sprite {
         rect,
         asset: id.clone(),
-        source: PixelRect::new(0, 0, 3 * density, 3 * density),
+        source: PixelRect::new(0, 0, pitch as u16 * density, pitch as u16 * density),
         insets: Some([0; 4]),
         tint: None,
     });
@@ -725,8 +739,8 @@ pub(crate) fn density(width: u16, height: u16, graphics: GraphicsConfig) -> u16 
     }
 }
 impl native::PlayerArtwork for PlayerSkin {
-    fn cached_bar(&self, surface: &mut Surface, rect: PixelRect) {
-        fine_dot_cache(surface, rect, self.density);
+    fn cached_bar(&self, surface: &mut Surface, rect: PixelRect, texture: native::SeekTexture) {
+        seek_texture(surface, rect, self.density, texture);
     }
     fn readout_advance(&self, size: u16) -> Option<u16> {
         self.glyphs[&(self.density, "readout-glyphs")]
@@ -998,6 +1012,7 @@ mod tests {
             loading: false,
             position: 30.,
             buffered: 30.,
+            remote_audio: true,
             duration: 120.,
             volume: 0.5,
             repeat: RepeatMode::Off,

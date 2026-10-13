@@ -202,6 +202,8 @@ pub struct PlayerRenderState {
     pub loading: bool,
     pub position: f64,
     pub buffered: f64,
+    /// Audio is delivered to a frontend rather than this process's device.
+    pub remote_audio: bool,
     pub duration: f64,
     pub volume: f32,
     pub repeat: RepeatMode,
@@ -505,6 +507,7 @@ mod tests {
             loading: false,
             position: 30.0,
             buffered: 30.0,
+            remote_audio: false,
             duration: 120.0,
             volume: 0.5,
             repeat: RepeatMode::Off,

@@ -9,6 +9,19 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Local seek-bar background · October 12
+
+Local graphical playback now uses a denser checker across the seek-bar
+background, beneath the solid played portion. The skin tiles original 1x/2x
+assets with alternating logical pixels; compact and legacy surfaces use a
+bounded checker. SSH audio keeps Fine dots over its buffered range. Presentation
+route state selects the texture for both playback owners and SSH mirror windows.
+
+Formatting, strict Clippy, 911 unit tests, 12 embedding tests, first-run and the
+graphical integration passed. Local production captures were reviewed at both
+densities; the existing SSH dot-grid and cache-coverage pixel tests still pass.
+The Nix release build passed and the installed command was verified.
+
 ### Modal focus · October 12
 
 Classic modals now receive the existing theme-colored focus outline immediately

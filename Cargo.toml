@@ -39,7 +39,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 # stated version is one nobody can tell has moved. It also makes the `[patch]`
 # above fail loudly rather than silently if the local checkout has drifted to
 # a version this no longer accepts.
-starkit = { git = "https://github.com/bstar/starkit", tag = "v0.7.0", version = "0.7", features = [
+starkit = { git = "https://github.com/bstar/starkit", tag = "v0.8.0", version = "0.8", features = [
     "image",
     "wsz",
     "audio-output",
@@ -226,7 +226,7 @@ opt-level = 2
 
 [features]
 default = ["terminal-graphics"]
-terminal-graphics = ["starkit/terminal-graphics"]
+terminal-graphics = ["starkit/terminal-graphics", "starkit/media"]
 
 [[example]]
 name = "skin-player"

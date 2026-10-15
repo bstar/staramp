@@ -1,0 +1,2 @@
+# The cell snapshot preserves the terminal's complete row widths.
+testdata/help-overlay.txt whitespace=-blank-at-eol

@@ -128,6 +128,49 @@ pub struct FileView<'a> {
     pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
+pub fn list_rect(area: Rect, purpose: Purpose) -> Rect {
+    let body = starkit::chrome::overlay::inner(area);
+    Rect {
+        y: body.y.saturating_add(2),
+        height: body
+            .height
+            .saturating_sub(2 + u16::from(purpose == Purpose::ExportEq)),
+        ..body
+    }
+}
+
+/// Visible toolbar geometry shared by painting and mouse dispatch.
+pub fn controls(area: Rect, purpose: Purpose) -> Vec<(Rect, &'static str)> {
+    let body = starkit::chrome::overlay::inner(area);
+    if body.height < 2 {
+        return vec![];
+    }
+    let labels = if purpose == Purpose::ExportEq {
+        vec![
+            ("‹ Parent", "parent"),
+            ("Open", "open"),
+            ("Save", "save"),
+            ("Close", "close"),
+        ]
+    } else {
+        vec![
+            ("‹ Parent", "parent"),
+            ("Open / Import", "open"),
+            ("Close", "close"),
+        ]
+    };
+    let mut x = body.x;
+    labels
+        .into_iter()
+        .filter_map(|(label, action)| {
+            let width = label.chars().count() as u16;
+            let rect = Rect::new(x, body.y + 1, width, 1);
+            x = x.saturating_add(width + 2);
+            (rect.right() <= body.right()).then_some((rect, action))
+        })
+        .collect()
+}
+
 impl FileView<'_> {
     pub fn render(self, area: Rect, buf: &mut Buffer) {
         let t = self.theme;
@@ -169,9 +212,19 @@ impl FileView<'_> {
         // The directory line, then a blank row, then the list; the export
         // form also keeps one row at the bottom for the file name it will
         // write, now that the hint itself lives on the footer.
-        let extra_bottom = u16::from(self.browser.purpose == Purpose::ExportEq);
-        let list_y = body.y + 2;
-        let height = body.height.saturating_sub(2 + extra_bottom) as usize;
+        let list = list_rect(area, self.browser.purpose);
+        let list_y = list.y;
+        let height = usize::from(list.height);
+        for (rect, action) in controls(area, self.browser.purpose) {
+            let label = match action {
+                "parent" => "‹ Parent",
+                "open" if self.browser.purpose == Purpose::ImportEq => "Open / Import",
+                "open" => "Open",
+                "save" => "Save",
+                _ => "Close",
+            };
+            buf.set_string(rect.x, rect.y, label, Style::default().fg(rgb(t.accent)));
+        }
         let scroll = crate::ui::panels::picker::clamp_scroll(
             self.browser.cursor,
             self.browser.scroll,
@@ -213,11 +266,6 @@ impl FileView<'_> {
             );
         }
 
-        let list = Rect {
-            y: list_y,
-            height: height as u16,
-            ..body
-        };
         self.bars.draw(
             super::Bar::Files,
             super::scrollbar::track(area, list),

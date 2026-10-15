@@ -276,6 +276,12 @@ pub const BINDINGS: &[Binding] = &[
         group: "transport",
     },
     Binding {
+        action: Action::ShuffleNow,
+        keys: "S",
+        label: "reshuffle the queue",
+        group: "transport",
+    },
+    Binding {
         action: Action::CycleRepeat,
         keys: "r",
         label: "repeat off/all/one",

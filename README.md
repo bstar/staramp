@@ -43,7 +43,7 @@ staramp ui "/path/to/an/album"
 staramp ui some-playlist.m3u
 ```
 
-Inside the player, `?` shows every key, `space` plays and pauses, `alt+p` opens the
+Inside the player, `?` or F1 opens the searchable command guide, `space` plays and pauses, `alt+p` opens the
 playlist, `i` the album window, `l` the library browser, and `q` quits. The
 mouse works everywhere the keyboard does.
 The transport has one Play/Pause button: it shows Pause during playback and

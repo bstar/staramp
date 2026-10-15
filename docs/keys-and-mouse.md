@@ -1,8 +1,20 @@
 # Keys and mouse
 
-`?` or `F1` opens the key list inside the player, where it is generated from
-the same table the keys are dispatched from and so cannot drift from what the
-program does. This page is the same list, with the explanations.
+`?` or `F1` opens KIT's command guide. It includes keyboard bindings, mouse
+controls and features reached through settings or menus. Type a feature name,
+shortcut, or phrase to search; words can be in any order and common typos are
+tolerated. Quoted phrases match exactly; `-word` excludes a word.
+Use `category:playback`, `key:alt+s`, or `title:"play or pause"` to narrow a
+search to one field. These filters combine with ordinary search words.
+
+Use ↑/↓ or PageUp/PageDown to browse results. Tab/Shift+Tab changes category,
+Ctrl+F searches all categories, and Ctrl+U clears the query. Click a category
+or result in graphical mode. Wheel over the instructions to read more, or use
+Ctrl+PageUp/PageDown. Esc or F1 closes help. Typing in help never changes the
+player behind it. F1 can also open help while another dialog owns typing.
+
+This page lists the main shortcuts with their explanations. Lowercase and
+uppercase letters are distinct: `l` browses the library, `L` loads all of it.
 
 > [!NOTE]
 > `esc` never quits. Terminals encode `alt`+key as escape followed by the key,
@@ -220,3 +232,8 @@ playlist is an unsaved queue edit, and `ctrl+s` makes it permanent.
 | click outside | close the picker |
 | click `close` on a header | close that panel |
 | click `settings` on a header | what that panel controls |
+| wheel over a list | browse rows without activating them |
+| click a cover chooser row | choose that cover |
+| click a file browser row | select that file or directory |
+| double-click a file browser row | open the directory or import the profile |
+| click Parent / Open / Save / Close in the file browser | perform the labeled action |

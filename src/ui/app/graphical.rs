@@ -1206,6 +1206,13 @@ impl Rack<'_> {
     ) -> Surface {
         use crate::activity::Provider;
         let mut s = self.window(w, LEDGER_HEIGHT, c, "ACTIVITY", font);
+        s.hits.insert(
+            0,
+            HitRegion {
+                rect: R::new(0, 0, w, LEDGER_HEIGHT),
+                action: "activity-body".into(),
+            },
+        );
         let column = (w - 32) / 3;
         for (i, (heading, status, enabled)) in [
             ("LOCAL HISTORY", "Recording", true),
@@ -2214,6 +2221,30 @@ impl Controller for Rack<'_> {
         self.app.panels.last_area = Rect::new(0, 0, v.columns, v.rows);
         let area = Rect::new(0, 0, v.columns, v.rows);
         let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);
+        if self.app.panels.help && !self.cells && self.paths && v.width >= 720 && v.height >= 360 {
+            self.overlay = true;
+            let style = starkit::native_surface::style::Style::new(self.palette());
+            let r = starkit::help::Guide::native_rect(v.width as u16, v.height as u16);
+            let mut scene = style.scene(v);
+            scene.revision = self.revision;
+            scene.components.push(Component::Menu {
+                rect: starkit::native_surface::style::logical_rect(r, v),
+            });
+            style
+                .mount(
+                    &mut scene,
+                    self.app.panels.help_guide.native(&style, r.width, r.height),
+                    r.x,
+                    r.y,
+                )
+                .expect("bounded help guide");
+            self.surface = Some(Surface::new(
+                v.width as u16,
+                v.height as u16,
+                style.workspace.well,
+            ));
+            return scene;
+        }
         if self.cells || !self.paths || v.width < 720 || v.height < 360 {
             self.app.draw(area, &mut buffer);
             self.surface = None;
@@ -2506,6 +2537,7 @@ impl Controller for Rack<'_> {
             action: "help".into(),
         });
         if self.app.overlay_open()
+            && !self.app.panels.help
             && !self.eq_value_popup(&mut surface, &c)
             && !self.eq_library_popup(&mut surface, &c)
             && !self.resume_popup(&mut surface, &c)
@@ -2769,6 +2801,13 @@ impl Controller for Rack<'_> {
         match input {
             Input::Key { code, modifiers } => {
                 if let Some(code) = key(&code) {
+                    if self.app.panels.help {
+                        self.app.dispatch_key(KeyEvent::new(
+                            code,
+                            KeyModifiers::from_bits_truncate(modifiers),
+                        ));
+                        return;
+                    }
                     let modifiers = KeyModifiers::from_bits_truncate(modifiers);
                     if self.resume_key(code, modifiers) {
                         return;
@@ -2836,6 +2875,10 @@ impl Controller for Rack<'_> {
                 }
             }
             Input::Paste { text } => {
+                if self.app.panels.help {
+                    self.app.panels.help_guide.paste(&text);
+                    return;
+                }
                 if let Some(library) = &mut self.app.edit.eq_profiles {
                     library.query.push_str(text.trim());
                     library.cursor = 0;
@@ -2857,6 +2900,28 @@ impl Controller for Rack<'_> {
                 pixel,
                 modifiers,
             } => {
+                if self.app.panels.help && self.surface.is_some() {
+                    let [px, py] = pixel.unwrap_or([
+                        u32::from(x) * self.viewport.width
+                            / u32::from(self.viewport.columns.max(1)),
+                        u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
+                    ]);
+                    let style = starkit::native_surface::style::Style::new(self.palette());
+                    let bounds = starkit::help::Guide::native_rect(
+                        self.viewport.width as u16,
+                        self.viewport.height as u16,
+                    );
+                    if self
+                        .app
+                        .panels
+                        .help_guide
+                        .pointer_native(&style, bounds, &action, px as u16, py as u16, button)
+                        == starkit::help::Outcome::Close
+                    {
+                        self.app.panels.help = false;
+                    }
+                    return;
+                }
                 if action != "move" {
                     tracing::debug!(%action, button, x, y, ?pixel, overlay = self.overlay, "Graphical pointer input");
                 }
@@ -3020,7 +3085,7 @@ impl Controller for Rack<'_> {
                     }
                     if target
                         .as_deref()
-                        .is_some_and(|a| a.starts_with("activity-row:"))
+                        .is_some_and(|a| a.starts_with("activity-row:") || a == "activity-body")
                     {
                         self.app.panels.focus = Focus::History;
                         if action == "scroll_up" {
@@ -3037,6 +3102,11 @@ impl Controller for Rack<'_> {
                                         .saturating_sub(LEDGER_ROWS),
                                 );
                         }
+                        return;
+                    }
+                    if target.as_deref().is_some_and(|a| a.starts_with("cover-")) {
+                        self.app
+                            .cycle_cover(if action == "scroll_up" { -1 } else { 1 });
                         return;
                     }
                 }
@@ -3221,6 +3291,76 @@ impl App {
             resume_fresh: false,
             folded: Default::default(),
         };
+        // Help owns keyboard, paste and pointer input in both presentations.
+        {
+            let playing = rack.app.player.state.playing.load(Relaxed);
+            let revision = rack.app.player.queue.lock().unwrap().revision();
+            rack.input(Input::Key {
+                code: "char:?".into(),
+                modifiers: 0,
+            });
+            assert!(rack.app.panels.help);
+            let viewport = Viewport {
+                width: 1280,
+                height: 800,
+                columns: 128,
+                rows: 40,
+                generation: 0,
+            };
+            let scene = rack.scene(viewport);
+            assert!(scene
+                .components
+                .iter()
+                .any(|c| matches!(c, Component::Menu { .. })));
+            for code in ["char:q", "char:v", "char:s", "delete"] {
+                rack.input(Input::Key {
+                    code: code.into(),
+                    modifiers: 0,
+                });
+            }
+            assert!(!rack.app.quit);
+            assert_eq!(rack.app.player.state.playing.load(Relaxed), playing);
+            assert_eq!(rack.app.player.queue.lock().unwrap().revision(), revision);
+            rack.input(Input::Key {
+                code: "char:u".into(),
+                modifiers: 2,
+            });
+            rack.input(Input::Paste {
+                text: "history".into(),
+            });
+            assert_eq!(rack.app.panels.help_guide.query(), "history");
+            assert!(rack
+                .app
+                .panels
+                .help_guide
+                .highlighted()
+                .unwrap()
+                .title
+                .contains("history"));
+            let r = starkit::help::Guide::native_rect(1280, 800);
+            rack.input(Input::Pointer {
+                action: "down".into(),
+                button: 0,
+                x: 0,
+                y: 0,
+                pixel: Some([u32::from(r.x + r.width - 47), u32::from(r.y + 16)]),
+                modifiers: 0,
+            });
+            assert!(!rack.app.panels.help);
+            rack.presentation(true);
+            rack.input(Input::Key {
+                code: "f:1".into(),
+                modifiers: 0,
+            });
+            rack.scene(viewport);
+            assert!(rack.app.panels.help);
+            rack.input(Input::Key {
+                code: "escape".into(),
+                modifiers: 0,
+            });
+            assert!(!rack.app.panels.help);
+            rack.presentation(false);
+        }
         // A native scene must request artwork even when playback has not
         // changed. Unlike the text view, it does not call App::draw.
         {
@@ -5360,6 +5500,119 @@ impl App {
             starkit::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("settings-long-values-{density}x.png")))?;
             click(&mut rack, "popup:close");
+        }
+        // Exercise the production pointer router for cell-backed dialogs too.
+        // These used to consume and ignore all clicks and wheel events.
+        {
+            use crate::ui::panels::files::{self, Purpose};
+            let directory = tempfile::tempdir()?;
+            std::fs::create_dir(directory.path().join("child"))?;
+            for i in 0..45 {
+                std::fs::write(
+                    directory.path().join(format!("profile-{i:02}.txt")),
+                    "Preamp: 0 dB\n",
+                )?;
+            }
+            for (width, height, cells) in [(800, 600, false), (1600, 1200, false), (800, 600, true)]
+            {
+                rack.cells = cells;
+                let viewport = Viewport {
+                    width,
+                    height,
+                    columns: 100,
+                    rows: 30,
+                    generation: 0,
+                };
+                rack.app.over.files = Some(files::Browser::new(
+                    Purpose::ImportEq,
+                    directory.path().into(),
+                ));
+                rack.scene(viewport);
+                let regions = rack.app.regions(Rect::new(0, 0, 100, 30)).unwrap();
+                let area = Rect {
+                    height: regions.area.height.saturating_sub(regions.status.height),
+                    ..regions.area
+                };
+                let list = files::list_rect(area, Purpose::ImportEq);
+                let pointer = |action: &str, x, y| Input::Pointer {
+                    action: action.into(),
+                    button: 0,
+                    x,
+                    y,
+                    pixel: None,
+                    modifiers: 0,
+                };
+                for _ in 0..14 {
+                    rack.input(pointer("scroll_down", list.x + 2, list.y + 2));
+                    rack.scene(viewport);
+                }
+                let files = rack.app.over.files.as_ref().unwrap();
+                assert!(files.cursor > 30 && files.scroll > 0);
+                let old = files.scroll;
+                rack.input(pointer("scroll_up", list.x + 2, list.y + 2));
+                rack.scene(viewport);
+                assert_eq!(
+                    rack.app.over.files.as_ref().unwrap().scroll,
+                    old,
+                    "reversing the wheel retains the visible page"
+                );
+                rack.input(pointer("down", list.x + 2, list.y + 2));
+                assert_eq!(rack.app.over.files.as_ref().unwrap().cursor, old + 2);
+                rack.app.edit.last_click = ClickTracker::default();
+                rack.app.over.files.as_mut().unwrap().cursor = 0;
+                rack.app.over.files.as_mut().unwrap().scroll = 0;
+                rack.scene(viewport);
+                rack.input(pointer("down", list.x + 2, list.y));
+                rack.input(pointer("down", list.x + 2, list.y));
+                assert_eq!(
+                    rack.app.over.files.as_ref().unwrap().directory,
+                    directory.path().join("child")
+                );
+                let parent = files::controls(area, Purpose::ImportEq)
+                    .into_iter()
+                    .find(|(_, a)| *a == "parent")
+                    .unwrap()
+                    .0;
+                rack.input(pointer("down", parent.x, parent.y));
+                assert_eq!(
+                    rack.app.over.files.as_ref().unwrap().directory,
+                    directory.path()
+                );
+                let close = files::controls(area, Purpose::ImportEq)
+                    .into_iter()
+                    .find(|(_, a)| *a == "close")
+                    .unwrap()
+                    .0;
+                rack.input(pointer("down", close.x, close.y));
+                assert!(rack.app.over.files.is_none());
+                rack.app.over.chooser = Some(Chooser {
+                    uri: "/fixture.flac".into(),
+                    rows: (0..40)
+                        .map(|i| chooser::Row {
+                            label: format!("Cover {i}"),
+                            note: String::new(),
+                            remote: false,
+                        })
+                        .collect(),
+                    local: 40,
+                    cursor: 0,
+                    scroll: 0,
+                });
+                rack.scene(viewport);
+                let area = rack.app.regions(Rect::new(0, 0, 100, 30)).unwrap().area;
+                let list = chooser::list_rect(area, 40);
+                rack.input(pointer("scroll_down", list.x + 1, list.y + 1));
+                assert_eq!(rack.app.over.chooser.as_ref().unwrap().cursor, 3);
+                rack.scene(viewport);
+                let scroll = rack.app.over.chooser.as_ref().unwrap().scroll;
+                rack.input(pointer("down", list.x + 1, list.y + 1));
+                assert!(
+                    rack.app.over.chooser.is_none(),
+                    "cover click activates the displayed row after scrolling"
+                );
+                let _ = scroll;
+            }
+            rack.cells = false;
         }
         // Graphical playlist uses the ASCII section/track model, including
         // disc numbers, undated records and untagged tracks at the bottom.

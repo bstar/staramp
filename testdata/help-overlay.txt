@@ -1,336 +1,340 @@
 == 100x44 scroll 0
                                                                                                     
-                                                                                                    
-                                                                                                    
-          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
-          ║  transport                          playlist                                 ║          
-          ║  space / c     play or pause        wheel                scroll the list     ║          
-          ║  v             stop                 click                select a track      ║          
-          ║  z             previous track       double click         play it             ║          
-          ║  b             next track           right click          track actions       ║          
-          ║  ctrl+up       volume up            click `sorting`      order the playlist  ║          
-          ║  ctrl+down     volume down          click `gravity`      create a related    ║          
-          ║  s             shuffle            list                                       ║          
-          ║  r             repeat off/all/one   player                                   ║          
-          ║  F             crossfade            click the transport  transport           ║          
-          ║  visualizer                         click footer status  toggle its mode     ║          
-          ║  w             next visualizer      click or drag bar    seek                ║          
-          ║  W             previous one         wheel over bar       seek 5s             ║          
-          ║  + / -         bar width            click or drag VOL    set volume          ║          
-          ║  progress bar                       wheel over VOL       volume 5%           ║          
-          ║  left          seek back 5s         click analyzer       next visualization  ║          
-          ║  right         seek forward 5s      right click          play or pause       ║          
-          ║  shift+left    seek back 30s        equalizer                                ║          
-          ║  shift+right   seek forward 30s     click [ON ]          enable or bypass    ║          
-          ║  d             seek bar style       click the chevrons   change preset       ║          
-          ║  o             button style         click a filter       select it           ║          
-          ║  playlist                           wheel over the panel previous / next     ║          
-          ║  up / k        move up            filter                                     ║          
-          ║  shift+up/down ten rows             album                                    ║          
-          ║  down / j      move down            click cover          open full image     ║          
-          ║  pgup          page up              click < / >          previous / next art ║          
-          ║  pgdn          page down            click title / artist open music database ║          
-          ║  home / gg     first track          overlays                                 ║          
-          ║  end / G       last track           click outside        close the picker    ║          
-          ║  enter         play selected        click `close`        close a panel       ║          
-          ║  f             order the playlist   click `settings`     what that panel     ║          
-          ║  /             filter the playlistcontrols                                   ║          
-          ║  L             the whole library                                             ║          
-          ║  alt+up        record up                                                     ║          
-          ║  alt+down      record down                                                   ║          
-          ║  tagging                                                                     ║          
-          ╚══════════════════════════════════════════════════════ more below · esc close ╝          
-                                                                                                    
-                                                                                                    
+  ╔═ STAR/AMP / COMMAND GUIDE ═══════════════════════════════════════════════════════════════════╗  
+  ║Find: Search commands, shortcuts, gestures…                                                   ║  
+  ║‹ All commands ›   111 results   · Tab changes category                                       ║  
+  ║› Play or pause                                                                space / c / x  ║  
+  ║  Stop                                                                                     v  ║  
+  ║  Previous track                                                                           z  ║  
+  ║  Next track                                                                               b  ║  
+  ║  Volume up                                                                          ctrl+up  ║  
+  ║  Volume down                                                                      ctrl+down  ║  
+  ║  Shuffle                                                                                  s  ║  
+  ║  Reshuffle the queue                                                                      S  ║  
+  ║  Repeat off/all/one                                                                       r  ║  
+  ║  Crossfade                                                                                F  ║  
+  ║  Next visualization                                                                       w  ║  
+  ║  Previous visualization                                                                   W  ║  
+  ║  Bar width                                                                            + / -  ║  
+  ║  Seek back 5s                                                                          left  ║  
+  ║  Seek forward 5s                                                                      right  ║  
+  ║  Seek back 30s                                                                   shift+left  ║  
+  ║  Seek forward 30s                                                               shift+right  ║  
+  ║  Seek bar style                                                                           d  ║  
+  ║  Button style                                                                             o  ║  
+  ║  Move up                                                                             up / k  ║  
+  ║  Ten rows                                                                     shift+up/down  ║  
+  ║  Move down                                                                         down / j  ║  
+  ║  Page up                                                                               pgup  ║  
+  ║  Page down                                                                             pgdn  ║  
+  ║  First track                                                                      home / gg  ║  
+  ║  Last track                                                                         end / G  ║  
+  ║  Play selected                                                                        enter  ║  
+  ║  Sort or order the playlist                                                               f  ║  
+  ║  Search or filter the playlist                                                            /  ║  
+  ║                                                                                              ║  
+  ║Play or pause                                                                                 ║  
+  ║Shortcut: space / c / x                                                                       ║  
+  ║                                                                                              ║  
+  ║Press Space, c or x from the player to toggle playback. The single Play/Pause button shows the║  
+  ║action it will perform. In the library, Space adds the selected item instead; focus Player    ║  
+  ║with Alt+1 for playback keys.                                                                 ║  
+  ║                                                                                              ║  
+  ║                                                                                              ║  
+  ╚═════════════════════════════════════════ ↑↓ browse · Tab category · Ctrl+U clear · Esc close ╝  
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffffffffeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffffeeeeecccccccccccccccccccccccfffffffeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffeeeeeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccffffffffffffffffffeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffffffffeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddddeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffffeeeecccccccccccccccccccccccffffeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccfffffffeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccffffffffffeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddddddeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccffffffffffffffffffeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffffeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeedddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffffffeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffffeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffeeeeeeecccccccccccccccccccccccfffffffffeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddddddddddeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeeffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffeeeeeeeeeeedddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffeeeeeeeeeeeecccccccccccccccccccccccfffffffffffffffffffebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeecccccccccccccccccccccccfffffffffffffffffffebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffeeeeeeeeecccccccccccccccccccccccffffffffffffffffeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffeeeeeecccccccccccccccccccccccfffffffffffffeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccffffffffffffffffffecccccccccccccccccccccccfffffffffffffffeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccfffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aabbbcccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
+aabcccccccccccccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabhhhhhhhhhhhhhdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabgggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggddddbaa
+aabgggggggggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
 b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
 c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(255, 255, 255)) bg Some(Rgb(41, 58, 60)) mods BOLD
+g fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
 == 100x44 scroll 7
                                                                                                     
-                                                                                                    
-                                                                                                    
-          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
-          ║  s             shuffle              playlist                                 ║          
-          ║  r             repeat off/all/one   wheel                scroll the list     ║          
-          ║  F             crossfade            click                select a track      ║          
-          ║  visualizer                         double click         play it             ║          
-          ║  w             next visualizer      right click          track actions       ║          
-          ║  W             previous one         click `sorting`      order the playlist  ║          
-          ║  + / -         bar width            click `gravity`      create a related    ║          
-          ║  progress bar                     list                                       ║          
-          ║  left          seek back 5s         player                                   ║          
-          ║  right         seek forward 5s      click the transport  transport           ║          
-          ║  shift+left    seek back 30s        click footer status  toggle its mode     ║          
-          ║  shift+right   seek forward 30s     click or drag bar    seek                ║          
-          ║  d             seek bar style       wheel over bar       seek 5s             ║          
-          ║  o             button style         click or drag VOL    set volume          ║          
-          ║  playlist                           wheel over VOL       volume 5%           ║          
-          ║  up / k        move up              click analyzer       next visualization  ║          
-          ║  shift+up/down ten rows             right click          play or pause       ║          
-          ║  down / j      move down            equalizer                                ║          
-          ║  pgup          page up              click [ON ]          enable or bypass    ║          
-          ║  pgdn          page down            click the chevrons   change preset       ║          
-          ║  home / gg     first track          click a filter       select it           ║          
-          ║  end / G       last track           wheel over the panel previous / next     ║          
-          ║  enter         play selected      filter                                     ║          
-          ║  f             order the playlist   album                                    ║          
-          ║  /             filter the playlist  click cover          open full image     ║          
-          ║  L             the whole library    click < / >          previous / next art ║          
-          ║  alt+up        record up            click title / artist open music database ║          
-          ║  alt+down      record down          overlays                                 ║          
-          ║  tagging                            click outside        close the picker    ║          
-          ║  t             tag this row         click `close`        close a panel       ║          
-          ║  T             clear every tag      click `settings`     what that panel     ║          
-          ║  y             yank tracks        controls                                   ║          
-          ║  p / u         paste tracks here                                             ║          
-          ║  m             move here                                                     ║          
-          ║  del / D       remove them                                                   ║          
-          ║  album                                                                       ║          
-          ╚══════════════════════════════════════════════════════ more below · esc close ╝          
-                                                                                                    
-                                                                                                    
+  ╔═ STAR/AMP / COMMAND GUIDE ═══════════════════════════════════════════════════════════════════╗  
+  ║Find: Search commands, shortcuts, gestures…                                                   ║  
+  ║‹ All commands ›   111 results   · Tab changes category                                       ║  
+  ║  Play or pause                                                                space / c / x  ║  
+  ║  Stop                                                                                     v  ║  
+  ║  Previous track                                                                           z  ║  
+  ║  Next track                                                                               b  ║  
+  ║  Volume up                                                                          ctrl+up  ║  
+  ║  Volume down                                                                      ctrl+down  ║  
+  ║  Shuffle                                                                                  s  ║  
+  ║› Reshuffle the queue                                                                      S  ║  
+  ║  Repeat off/all/one                                                                       r  ║  
+  ║  Crossfade                                                                                F  ║  
+  ║  Next visualization                                                                       w  ║  
+  ║  Previous visualization                                                                   W  ║  
+  ║  Bar width                                                                            + / -  ║  
+  ║  Seek back 5s                                                                          left  ║  
+  ║  Seek forward 5s                                                                      right  ║  
+  ║  Seek back 30s                                                                   shift+left  ║  
+  ║  Seek forward 30s                                                               shift+right  ║  
+  ║  Seek bar style                                                                           d  ║  
+  ║  Button style                                                                             o  ║  
+  ║  Move up                                                                             up / k  ║  
+  ║  Ten rows                                                                     shift+up/down  ║  
+  ║  Move down                                                                         down / j  ║  
+  ║  Page up                                                                               pgup  ║  
+  ║  Page down                                                                             pgdn  ║  
+  ║  First track                                                                      home / gg  ║  
+  ║  Last track                                                                         end / G  ║  
+  ║  Play selected                                                                        enter  ║  
+  ║  Sort or order the playlist                                                               f  ║  
+  ║  Search or filter the playlist                                                            /  ║  
+  ║                                                                                              ║  
+  ║Reshuffle the queue                                                                           ║  
+  ║Shortcut: S                                                                                   ║  
+  ║                                                                                              ║  
+  ║Use this from the main player, outside a text field or modal dialog. Some keys have a         ║  
+  ║different meaning in the focused panel; Alt+1 focuses the player.                             ║  
+  ║                                                                                              ║  
+  ║                                                                                              ║  
+  ║                                                                                              ║  
+  ╚═════════════════════════════════════════ ↑↓ browse · Tab category · Ctrl+U clear · Esc close ╝  
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddddecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffffeeeeeeeeeeeeeeeeeeeeeddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddeeecccccccccccccccccccccccddddeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddddddddeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddeeeeeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeefffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddddefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddddcccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabfffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aabbbcccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
+aabcccccccccccccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabhhhhhhhhhhhhhhhhhhhdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabfffffffffffdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddbaa
+aabfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
 b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
 c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(255, 255, 255)) bg Some(Rgb(41, 58, 60)) mods BOLD
+h fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
 == 70x20 scroll 0
                                                                       
-  ╔═ HELP ═════════════════════════════════════════════════════════╗  
-  ║  transport                    playlist                         ║  
-  ║  space / c     play or pause  wheel                scroll the  ║  
-  ║  v             stop         list                               ║  
-  ║  z             previous       click                select a    ║  
-  ║track                        track                              ║  
-  ║  b             next track     double click         play it     ║  
-  ║  ctrl+up       volume up      right click          track       ║  
-  ║  ctrl+down     volume down  actions                            ║  
-  ║  s             shuffle        click `sorting`      order the   ║  
-  ║  r             repeat       playlist                           ║  
-  ║off/all/one                    click `gravity`      create a    ║  
-  ║  F             crossfade    related list                       ║  
-  ║  visualizer                   player                           ║  
-  ║  w             next           click the transport  transport   ║  
-  ║visualizer                     click footer status  toggle its  ║  
-  ║  W             previous one mode                               ║  
-  ╚════════════════════════════════════════ more below · esc close ╝  
+  ╔═ STAR/AMP / COMMAND GUIDE ═════════════════════════════════════╗  
+  ║Find: Search commands, shortcuts, gestures…                     ║  
+  ║‹ All commands ›   111 results   · Tab changes category         ║  
+  ║› Play or pause                                  space / c / x  ║  
+  ║  Stop                                                       v  ║  
+  ║  Previous track                                             z  ║  
+  ║  Next track                                                 b  ║  
+  ║  Volume up                                            ctrl+up  ║  
+  ║  Volume down                                        ctrl+down  ║  
+  ║                                                                ║  
+  ║Play or pause                                                   ║  
+  ║Shortcut: space / c / x                                         ║  
+  ║                                                                ║  
+  ║Press Space, c or x from the player to toggle playback. The     ║  
+  ║single Play/Pause button shows the action it will perform. In   ║  
+  ║the library, Space adds the selected item instead; focus Player ║  
+  ║                                                                ║  
+  ╚═══════════ ↑↓ browse · Tab category · Ctrl+U clear · Esc close ╝  
                                                                       
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
-aabdddddddddddeeeeeeeeeeeeeeeeeeddddddddddeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabccccccccccccccccfffffffffffffcccccccccccccccccccccccffffffffffeebaa
-aabccccccccccccccccffffeeeeeeeeeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabccccccccccccccccffffffffeeeeecccccccccccccccccccccccffffffffeeeebaa
-aabfffffeeeeeeeeeeeeeeeeeeeeeeeefffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabccccccccccccccccffffffffffeeecccccccccccccccccccccccfffffffeeeeebaa
-aabccccccccccccccccfffffffffeeeecccccccccccccccccccccccfffffeeeeeeebaa
-aabccccccccccccccccfffffffffffeefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabccccccccccccccccfffffffeeeeeecccccccccccccccccccccccfffffffffeeebaa
-aabccccccccccccccccffffffeeeeeeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabfffffffffffeeeeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffeeeebaa
-aabccccccccccccccccfffffffffeeeeffffffffffffeeeeeeeeeeeeeeeeeeeeeeebaa
-aabddddddddddddeeeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabccccccccccccccccffffeeeeeeeeecccccccccccccccccccccccfffffffffeeebaa
-aabffffffffffeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccffffffffffeebaa
-aabccccccccccccccccffffffffffffeffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
-aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbggggggggggggggggggggggggbaa
+aabbbcccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
+aabcccccccccccccccccccccccccccccccccccccccccccdddddddddddddddddddddbaa
+aabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabhhhhhhhhhhhhhdddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabgggggggggggggggggggggggdddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggdddddbaa
+aabgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggdddbaa
+aabgggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggdbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
 b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
 c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(255, 255, 255)) bg Some(Rgb(41, 58, 60)) mods BOLD
+g fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+h fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD
 == 100x44 scroll 999
                                                                                                     
-                                                                                                    
-                                                                                                    
-          ╔═ HELP ═══════════════════════════════════════════════════════════════════════╗          
-          ║  right         next image           playlist                                 ║          
-          ║  windows                            wheel                scroll the list     ║          
-          ║  alt+g         show/hide equalizer  click                select a track      ║          
-          ║  i             album info on/off    double click         play it             ║          
-          ║  alt+i         choose a cover       right click          track actions       ║          
-          ║  alt+r         look the cover up    click `sorting`      order the playlist  ║          
-          ║  alt+p         playlist on/off      click `gravity`      create a related    ║          
-          ║  alt+s         listening activity list                                       ║          
-          ║  alt+e         choose a playlist    player                                   ║          
-          ║  tab           next pane            click the transport  transport           ║          
-          ║  shift+tab     previous pane        click footer status  toggle its mode     ║          
-          ║  alt+1..5      focus a pane         click or drag bar    seek                ║          
-          ║  appearance                         wheel over bar       seek 5s             ║          
-          ║  alt+t         next theme           click or drag VOL    set volume          ║          
-          ║  a             animations on/off    wheel over VOL       volume 5%           ║          
-          ║  equalizer                          click analyzer       next visualization  ║          
-          ║  e             equalizer on/off     right click          play or pause       ║          
-          ║  ]             next preset          equalizer                                ║          
-          ║  up/down, j/k  choose a filter      click [ON ]          enable or bypass    ║          
-          ║  left/right    filter gain, 1 dB    click the chevrons   change preset       ║          
-          ║  shift+left/right filter gain, 10   click a filter       select it           ║          
-          ║dB                                   wheel over the panel previous / next     ║          
-          ║  enter         bypass the filter  filter                                     ║          
-          ║  a             add a filter         album                                    ║          
-          ║  d             remove it            click cover          open full image     ║          
-          ║  [             previous preset      click < / >          previous / next art ║          
-          ║  library                            click title / artist open music database ║          
-          ║  l             browse the library   overlays                                 ║          
-          ║  /             search it            click outside        close the picker    ║          
-          ║  space         add the selection    click `close`        close a panel       ║          
-          ║  a             add the record       click `settings`     what that panel     ║          
-          ║  ctrl+s        save the playlist  controls                                   ║          
-          ║  ← / →         change column                                                 ║          
-          ║  general                                                                     ║          
-          ║  esc           close what is open                                            ║          
-          ║  ? / F1        this help                                                     ║          
-          ╚═════════════════════════════════════════════════════════ the end · esc close ╝          
-                                                                                                    
-                                                                                                    
+  ╔═ STAR/AMP / COMMAND GUIDE ═══════════════════════════════════════════════════════════════════╗  
+  ║Find: Search commands, shortcuts, gestures…                                                   ║  
+  ║‹ All commands ›   111 results   · Tab changes category                                       ║  
+  ║  player: volume 5%                                                           wheel over VOL  ║  
+  ║  player: next visualization                                                  click analyzer  ║  
+  ║  player: play or pause                                                          right click  ║  
+  ║  equalizer: enable or bypass                                                    click [ON ]  ║  
+  ║  equalizer: change preset                                                click the chevrons  ║  
+  ║  equalizer: select it                                                        click a filter  ║  
+  ║  equalizer: previous / next filter                                     wheel over the panel  ║  
+  ║  album: open full image                                                         click cover  ║  
+  ║  album: previous / next art                                                     click < / >  ║  
+  ║  album: open music database                                            click title / artist  ║  
+  ║  overlays: close the picker                                                   click outside  ║  
+  ║  overlays: close a panel                                                      click `close`  ║  
+  ║  overlays: what that panel controls                                        click `settings`  ║  
+  ║  Edit filter frequency, gain and width                                                       ║  
+  ║  Reorder or duplicate EQ stages                                                              ║  
+  ║  Import or export an EQ profile                                                              ║  
+  ║  Show your current track in Discord                                                          ║  
+  ║  Set SSH audio compatibility                                                                 ║  
+  ║  Manage equalizer profiles                                                                   ║  
+  ║  Open panel settings                                                         Click Settings  ║  
+  ║  Configure Last.fm and ListenBrainz                                                          ║  
+  ║  Create a Gravity Queue                                                       Click Gravity  ║  
+  ║  Open track actions                                                       Right-click track  ║  
+  ║  Switch graphical and terminal presentation                                              F9  ║  
+  ║  Refresh missing graphics                                                            Ctrl+L  ║  
+  ║  Collapse or expand a graphical panel                                    Panel fold control  ║  
+  ║  Play a remote library over SSH                                                              ║  
+  ║  Index a music folder                                                                        ║  
+  ║› Read shortcut notation                                                                      ║  
+  ║                                                                                              ║  
+  ║Read shortcut notation                                                                        ║  
+  ║Understand case-sensitive and panel-specific keys.                                            ║  
+  ║                                                                                              ║  
+  ║Lowercase letters are unmodified keys; uppercase letters mean Shift. For example L loads the  ║  
+  ║whole library while l opens its browser. A key in the Equalizer, Album or Library can override║  
+  ║the same key in Player. Focus shortcuts are Alt+1…5. Help consumes all typing until closed.   ║  
+  ║                                                                                              ║  
+  ║                                                                                              ║  
+  ╚═════════════════════════════════════════ ↑↓ browse · Tab category · Ctrl+U clear · Esc close ╝  
                                                                                                     
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaabbbcccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddddcccccccccccccccccccccccddddddddddddddeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddddeddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeeffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccddddeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabffffffffffffeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddeeeeeeeeecccccccccccccccccccccccddddddddddeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabfffffffffffeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddddeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeefffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabcccccccccccccccccccdddddddddddddddecccccccccccccccccccccccdddddddddeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeeddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeefffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccdddddddddddddddddddebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddddeffffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddeeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddddddeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbgggggggggggggggggggggbaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+aabbbcccccccccccccccccccccccccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaa
+aabcccccccccccccccccccccccccccccccccccccccccccdddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabhhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffddbaa
+aabffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbaa
+aabfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffdddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddbaa
+aabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaa
 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 a fg Some(Reset) bg Some(Reset) mods NONE
 b fg Some(Rgb(67, 100, 104)) bg Some(Rgb(27, 27, 27)) mods NONE
 c fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods NONE
-d fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
-e fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
-f fg Some(Rgb(221, 199, 76)) bg Some(Rgb(27, 27, 27)) mods BOLD
-g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+d fg Some(Reset) bg Some(Rgb(27, 27, 27)) mods NONE
+e fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
+f fg Some(Rgb(196, 196, 196)) bg Some(Rgb(27, 27, 27)) mods NONE
+g fg Some(Rgb(255, 255, 255)) bg Some(Rgb(41, 58, 60)) mods BOLD
+h fg Some(Rgb(73, 186, 200)) bg Some(Rgb(27, 27, 27)) mods BOLD

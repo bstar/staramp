@@ -8,6 +8,7 @@
 mod eq_profiles;
 #[cfg(feature = "terminal-graphics")]
 mod graphical;
+mod help;
 #[cfg(feature = "terminal-graphics")]
 mod ssh_audio;
 
@@ -798,24 +799,14 @@ fn codec_label(codec: &str) -> String {
     named.to_string()
 }
 
-/// The help overlay: every binding and every gesture, in two columns.
-///
-/// A free function taking what it draws from rather than a method, so the test
-/// that pins the rendering can render it without standing up a player.
+/// Shared KIT command guide; AMP supplies its shortcut and feature catalogue.
 fn draw_help_overlay(
     t: &Theme,
-    scroll: u16,
+    guide: &starkit::help::Guide,
     area: Rect,
     buf: &mut starkit::ratatui::buffer::Buffer,
 ) {
-    starkit::keymap::HelpView {
-        theme: t,
-        bindings: keymap::BINDINGS,
-        mouse: keymap::MOUSE,
-        scroll,
-        title: "HELP",
-    }
-    .render(area, buf)
+    guide.render_cell(area, buf, t);
 }
 
 #[cfg(test)]
@@ -874,17 +865,10 @@ mod tests {
         );
     }
 
-    /// The help overlay, cell for cell, against a recorded rendering.
-    ///
-    /// Recorded rather than reasoned about, because the overlay is the one
-    /// screen whose whole job is to be read, and it was moved into starkit
-    /// behind this test: the point is not that the layout is right but that it
-    /// did not change when the code drawing it did. Colours are in the dump as
-    /// well as characters, since a heading that stopped being a heading would
-    /// pass a text-only comparison.
-    ///
-    /// Regenerate deliberately:
-    /// `STARAMP_UPDATE_GOLDEN=1 cargo test the_help_overlay_is_drawn_as_recorded`.
+    /// Pin the shared guide's cell fallback at wide, compact and scrolled sizes.
+    /// Regenerate after intentional layout or catalogue changes with
+    /// STARAMP_UPDATE_GOLDEN=1. Disposable checks may set
+    /// STARAMP_HELP_GOLDEN_OUTPUT to the source checkout's snapshot path.
     #[test]
     fn the_help_overlay_is_drawn_as_recorded() {
         use starkit::ratatui::buffer::Buffer;
@@ -899,7 +883,9 @@ mod tests {
         ] {
             let area = Rect::new(0, 0, w, h);
             let mut buf = Buffer::empty(area);
-            super::draw_help_overlay(&theme, scroll, area, &mut buf);
+            let mut guide = super::help::guide();
+            guide.navigate(isize::try_from(scroll).unwrap_or(0));
+            super::draw_help_overlay(&theme, &guide, area, &mut buf);
             out.push_str(&format!("== {w}x{h} scroll {scroll}\n"));
             out.push_str(&dump(&buf));
         }
@@ -907,7 +893,10 @@ mod tests {
         let path =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/help-overlay.txt");
         if std::env::var_os("STARAMP_UPDATE_GOLDEN").is_some_and(|v| !v.is_empty()) {
-            std::fs::write(&path, &out).expect("writing the recorded overlay");
+            let output = std::env::var_os("STARAMP_HELP_GOLDEN_OUTPUT")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(path);
+            std::fs::write(&output, &out).expect("writing the recorded overlay");
             return;
         }
         let want = std::fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -1696,12 +1685,7 @@ struct Panels {
     focus: Focus,
     responsive_focus: starkit::panes::Focus<Focus>,
     cell_geometry: Option<starkit::panes::Layout<Focus>>,
-    /// How far down the help has been scrolled.
-    ///
-    /// It needs to scroll at all because the key list is 58 lines against an
-    /// inner height of at most 36: everything past `windows` had never been on
-    /// screen, which is a poor way to document a keyboard.
-    help_scroll: u16,
+    help_guide: starkit::help::Guide,
     /// The area the last frame was drawn into, so a page key can move by a
     /// screenful rather than by a hardcoded ten.
     last_area: Rect,
@@ -3144,7 +3128,7 @@ impl App {
                     Focus::Player
                 })),
                 cell_geometry: None,
-                help_scroll: 0,
+                help_guide: help::guide(),
                 last_area: Rect::default(),
                 padding_x: cfg.ui.padding_x,
                 padding_y: cfg.ui.padding_y,
@@ -4196,6 +4180,20 @@ impl App {
     }
 
     fn dispatch_key(&mut self, k: KeyEvent) {
+        if self.panels.help {
+            if self.panels.help_guide.handle(k) == starkit::help::Outcome::Close {
+                self.panels.help = false;
+            }
+            return;
+        }
+        if k.code == KeyCode::F(1) {
+            self.panels.help = true;
+            self.panels.help_guide = help::guide();
+            self.edit.g_prefix = false;
+            self.edit.drag = None;
+            self.bars.release();
+            return;
+        }
         if let Some(e) = self.fx.running.as_mut() {
             e.finish();
         }
@@ -4298,6 +4296,9 @@ impl App {
                     // A font zoom arrives as a resize, and it changes the
                     // cell size the button images were built for.
                     Event::Resize(..) => self.graphics.remeasure(),
+                    Event::Paste(text) if self.panels.help => {
+                        self.panels.help_guide.paste(&text);
+                    }
                     Event::Paste(text) if self.filter_paste(&text) => {}
                     Event::Paste(text) if self.import_artist_paste(&text) => {}
                     Event::Paste(text) if self.auth_paste(&text) => {}
@@ -5656,38 +5657,11 @@ impl App {
             }
         }
 
-        // The help is modal to the keyboard, which it never was: every key
-        // used to act on the player behind it, and now one of them removes
-        // rows you cannot see while you are reading about them.
         if self.panels.help {
-            match action {
-                Help | CloseOverlay => {
-                    self.panels.help = false;
-                    self.panels.help_scroll = 0;
-                    return;
-                }
-                CursorUp => {
-                    self.panels.help_scroll = self.panels.help_scroll.saturating_sub(1);
-                    return;
-                }
-                CursorDown => {
-                    self.panels.help_scroll += 1;
-                    return;
-                }
-                PageUp | Home => {
-                    self.panels.help_scroll = 0;
-                    return;
-                }
-                PageDown | End => {
-                    self.panels.help_scroll += 10;
-                    return;
-                }
-                Quit => {
-                    self.quit = true;
-                    return;
-                }
-                _ => return,
+            if matches!(action, Help | CloseOverlay) {
+                self.panels.help = false;
             }
+            return;
         }
 
         // After the overlays, because the target picker and the confirmations
@@ -5752,7 +5726,13 @@ impl App {
             SavePlaylist => self.save_playlist(),
 
             CloseOverlay => self.panels.help = false,
-            Help => self.panels.help = !self.panels.help,
+            Help => {
+                self.panels.help = true;
+                self.panels.help_guide = help::guide();
+                self.edit.g_prefix = false;
+                self.edit.drag = None;
+                self.bars.release();
+            }
             PlayPause => {
                 if self.player.state.is_loading() {
                     return;
@@ -6382,6 +6362,24 @@ impl App {
     /// functions, so a click lands on the thing the user can see rather than on
     /// a rect reconstructed by eye.
     fn handle_mouse(&mut self, m: MouseEvent, full: Rect) {
+        if self.panels.help {
+            let area = self.regions(full).map_or(full, |r| r.area);
+            let outcome = self.panels.help_guide.pointer_cell(
+                area,
+                m.column,
+                m.row,
+                matches!(m.kind, MouseEventKind::Down(MouseButton::Left)),
+                match m.kind {
+                    MouseEventKind::ScrollUp => Some(false),
+                    MouseEventKind::ScrollDown => Some(true),
+                    _ => None,
+                },
+            );
+            if outcome == starkit::help::Outcome::Close {
+                self.panels.help = false;
+            }
+            return;
+        }
         if matches!(m.kind, MouseEventKind::Down(_))
             && !self.overlay_open()
             && self.over.files.is_none()
@@ -6457,10 +6455,14 @@ impl App {
             return self.playlist_add_mouse(m, r.area);
         }
         if self.over.chooser.is_some() {
-            return;
+            return self.chooser_mouse(m, r.area);
         }
         if self.over.files.is_some() {
-            return;
+            let browse = Rect {
+                height: r.area.height.saturating_sub(r.status.height),
+                ..r.area
+            };
+            return self.files_mouse(m, browse);
         }
         if self.panels.picker {
             return self.picker_mouse(m, r.area);
@@ -7259,6 +7261,83 @@ impl App {
         }
     }
 
+    fn chooser_mouse(&mut self, m: MouseEvent, area: Rect) {
+        let Some(state) = &self.over.chooser else {
+            return;
+        };
+        let (rows, scroll) = (state.rows.len(), state.scroll);
+        match m.kind {
+            MouseEventKind::ScrollUp => self.move_chooser(-3),
+            MouseEventKind::ScrollDown => self.move_chooser(3),
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some(index) = chooser::hit(area, rows, scroll, m.column, m.row) {
+                    self.over.chooser.as_mut().unwrap().cursor = index;
+                    self.take_chosen_cover();
+                } else if !hit(chooser::rect(area, rows), m.column, m.row) {
+                    self.over.chooser = None;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn files_mouse(&mut self, m: MouseEvent, area: Rect) {
+        use crate::ui::panels::files;
+        let Some(browser) = &mut self.over.files else {
+            return;
+        };
+        if !hit(area, m.column, m.row) {
+            return;
+        }
+        let code = match m.kind {
+            MouseEventKind::ScrollUp => {
+                browser.move_by(-3);
+                return;
+            }
+            MouseEventKind::ScrollDown => {
+                browser.move_by(3);
+                return;
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if let Some((_, action)) = files::controls(area, browser.purpose)
+                    .into_iter()
+                    .find(|(r, _)| hit(*r, m.column, m.row))
+                {
+                    match action {
+                        "parent" => KeyCode::Left,
+                        "save" => KeyCode::Char('s'),
+                        "close" => KeyCode::Esc,
+                        _ => KeyCode::Enter,
+                    }
+                } else {
+                    let list = files::list_rect(area, browser.purpose);
+                    if !hit(list, m.column, m.row) {
+                        return;
+                    }
+                    let scroll = starkit::list::clamp_scroll(
+                        browser.cursor,
+                        browser.scroll,
+                        usize::from(list.height),
+                    );
+                    let index = scroll + usize::from(m.row - list.y);
+                    if index >= browser.entries.len() {
+                        return;
+                    }
+                    if browser.cursor != index {
+                        browser.confirm = None;
+                    }
+                    browser.cursor = index;
+                    if !self.register_click(m.column, m.row) {
+                        return;
+                    }
+                    KeyCode::Enter
+                }
+            }
+            _ => return,
+        };
+        self.file_browser_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
     fn playlist_add_mouse(&mut self, m: MouseEvent, area: Rect) {
         let Some(state) = &self.over.playlist_add else {
             return;
@@ -7533,11 +7612,16 @@ impl App {
             self.draw_overlays(area, buf);
             return;
         }
-        if let Some(files) = &self.over.files {
+        if let Some(files) = &mut self.over.files {
             let browse = Rect {
                 height: area.height.saturating_sub(r.status.height),
                 ..area
             };
+            files.scroll = starkit::list::clamp_scroll(
+                files.cursor,
+                files.scroll,
+                usize::from(crate::ui::panels::files::list_rect(browse, files.purpose).height),
+            );
             crate::ui::panels::files::FileView {
                 theme: &self.look.theme,
                 browser: files,
@@ -7870,6 +7954,11 @@ impl App {
 
     /// Everything that draws over the top, whichever view is underneath.
     fn draw_overlays(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+        if self.panels.help {
+            self.bars.begin_frame();
+            self.draw_help(area, buf);
+            return;
+        }
         // Overlays are modal: while one is up, the bars of whatever is
         // underneath -- the playlist, a library column -- must not still
         // answer a press or drag. Read again here, narrower, so only the
@@ -10192,6 +10281,6 @@ impl App {
     }
 
     fn draw_help(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
-        draw_help_overlay(&self.look.theme, self.panels.help_scroll, area, buf)
+        draw_help_overlay(&self.look.theme, &self.panels.help_guide, area, buf)
     }
 }

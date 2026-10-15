@@ -40,8 +40,9 @@ services or playback. Shared focus skips hidden cell panes and restores the last
 requested pane when space returns. Native rack presentation clears cell geometry
 before handling its own surface layout and input.
 
-The dependency is a git tag, and a local starkit change is invisible here
-until it is tagged. To try one before it is:
+Releases pin a KIT git tag; development main may pin an immutable candidate
+revision. Local changes remain invisible until the pin moves. To try one
+before publishing it:
 
 ```toml
 # .cargo/config.toml -- untracked, and in .gitignore
@@ -49,8 +50,8 @@ until it is tagged. To try one before it is:
 starkit = { path = "../starkit" }
 ```
 
-Delete it once the tag exists and this repository has moved to it. Moving to
-a new tag is its own commit, "Take starkit 0.Y", carrying nothing but the
+Delete it once the published revision exists and this repository has moved to
+it. Moving to a new KIT pin is its own commit, "Take starkit 0.Y", carrying nothing but the
 `Cargo.toml` bump and the `Cargo.lock` change, so that what came with the new
 version is one diff to read rather than a line buried in a feature.
 
@@ -351,3 +352,16 @@ state and playback ownership. Fixed native rack/skin text opts into physical
 pixel sizes so terminal zoom cannot inflate labels inside bitmap controls.
 Graphics explicitly enables KIT media; do not rely on terminal-graphics to
 pull codecs or devices into every consumer.
+
+## KIT 0.9 candidate compatibility
+
+Development main pins an immutable KIT 0.9 candidate revision with a git-sourced
+lockfile, so ordinary builds need no sibling checkout. This is an unreleased
+testing candidate; use immutable version tags when making a framework release.
+Keep dependency updates in their own commit, with the manifest and lock together.
+
+`scripts/check-kit.sh` checks every target and feature against the sibling KIT
+checkout in a disposable tracked copy. `STAR_KIT_CHECKOUT` selects another
+candidate. No candidate path or path-patched lock is committed. Live canvases
+and embedded input are opt-in; ordinary application keys, media, SSH and
+presentation retain their current contracts.

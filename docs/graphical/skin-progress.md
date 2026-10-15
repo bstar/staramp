@@ -9,6 +9,54 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Framework display recovery · October 15
+
+KIT now retains each rendered frame's matching layout, restores the framebuffer
+on focus return, and refreshes quiet image regions from cached encoded tiles.
+Ctrl+L restores every graphics layer without recreating the rasterizer. This
+prevents mixed frame/layout composition and adds bounded recovery from terminal
+placement loss without changing playback, panel or queue state.
+
+The old local AMP executable stayed blank after the private Kitty display was
+erased. The updated release restored idle artwork automatically in under three seconds;
+focus and Ctrl+L restoration completed in under a second. Help modal restoration
+and cleanup passed. AMP's 906 unit tests, embedding, first-run, native rack
+rendering and strict Clippy passed. The shared live-canvas proof also restored
+quiet controls while two producers kept animating, then passed refresh, resize
+and reattachment. This remains an untagged local KIT candidate.
+
+### Unified Play/Pause · October 14
+
+The graphical rack, terminal player and embedded player now have four transport
+buttons: Previous, Play/Pause, Stop and Next. The middle button shows Pause while
+playing and Play when paused or stopped; its hit target and keyboard focus stay
+stable. Loading disables the toggle. Explicit playback protocol commands retain
+their separate Play and Pause meanings. KIT's compact audio controls also use a
+single state-dependent button.
+
+Linux verification passed: 906 unit tests, 12 embedding tests, first-run and
+native rack rendering, including pointer pause/resume and repeated keyboard
+activation through both states. Formatting and strict Clippy passed for AMP
+and KIT; KIT's all/minimal feature suites and the other three consumer candidate
+checks passed. Production captures were visually reviewed; the Nix release
+build and installed command verification passed. This remains a local untagged
+KIT candidate.
+
+### Collapsed module references · October 14
+
+Collapsed rack modules now use KIT's node filtering to remap text decorations,
+centered labels and hover references. Replacing the expanded frame also adjusts
+the retained header's references. Composing modules preserves centered labels
+and checks decoration indices before looking them up. Grouped playlist body
+decorations are covered by a regression at both native densities.
+
+Linux verification passed: 906 unit tests, embedding/first-run/native rendering
+checks, strict Clippy and the Nix release build. A real frontend completed 12
+playlist collapse/expand actions at 1x/2x, resizing and fallback round trips,
+local hover, a 1500-report motion burst and orderly terminal restoration. The
+installed command points at the tested local release; KIT remains an untagged
+candidate and the portable release dependency lock is unchanged.
+
 ### Local seek-bar background · October 12
 
 Local graphical playback now uses a denser checker across the seek-bar

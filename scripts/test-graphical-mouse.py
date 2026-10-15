@@ -25,6 +25,7 @@ parser.add_argument('binary')
 parser.add_argument('--resize', action='store_true', help='also exercise resize redraws and density changes')
 parser.add_argument('--local-hover', action='store_true', help='check queue hover without controller input')
 parser.add_argument('--motion-burst', action='store_true', help='check rapid hover input before closing')
+parser.add_argument('--fold-playlist', action='store_true', help='collapse and expand the playlist repeatedly at both densities')
 args = parser.parse_args()
 binary = str(Path(args.binary).resolve())
 with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
@@ -35,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
     env.update(TERM='xterm-kitty', HOME=str(root), STARAMP_DIR=str(root / 'data'),
                STARAMP_CONFIG_DIR=str(root / 'config'), XDG_RUNTIME_DIR=str(root / 'runtime'),
                STAR_GRAPHICS_SYSTEM_FONTS='0', DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent/staramp-test-bus')
-    if args.local_hover:
+    if args.local_hover or args.fold_playlist:
         env['STARAMP_LOG'] = 'staramp=debug,starkit=debug'
     for key in ['TMUX', 'STY', 'SSH_CONNECTION', 'SSH_TTY', 'KITTY_WINDOW_ID', 'KITTY_LISTEN_ON']:
         env.pop(key, None)
@@ -150,7 +151,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             print(json.dumps({'resize_redraws': 9, 'rapid_drag_settled': True, 'coalesced_round_trip': True,
                               'grow_shrink': True, 'density_changes': True,
                               'native_fallback_round_trip': True}))
-        if args.local_hover:
+        if args.local_hover or args.fold_playlist:
             def ctl(*request):
                 result = subprocess.run([binary, 'ctl', *request], env=env, stdin=subprocess.DEVNULL,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
@@ -164,6 +165,35 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             # exercising the newly populated private queue underneath.
             os.write(master, b'\x1b')
             pump(1)
+        if args.fold_playlist:
+            # AMP reserves a first press in an unfocused module for focus.
+            # Focus a body row before counting header actions.
+            os.write(master,b'\x1b[<0;600;330M\x1b[<0;600;330m')
+            pump(.4)
+            view=json.loads(ctl('view'))
+            log = next(root.rglob('staramp.log'))
+            folds = lambda: len(re.findall(r'action="?fold:playlist"?',log.read_text()))
+            before = folds()
+            for density in [1, 2]:
+                geometry[:] = 40, 100, 1000 * density, 800 * density
+                fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *geometry))
+                os.kill(child.pid, signal.SIGWINCH)
+                pump(1)
+                for _ in range(6):
+                    x, y = 40 * density + 1, 254 * density + 1
+                    os.write(master, f'\x1b[<0;{x};{y}M\x1b[<0;{x};{y}m'.encode())
+                    pump(.3)
+                    assert child.poll() is None, diagnostic()
+            if folds() != before + 12:
+                Path('/tmp/staramp-collapse-frontend-last.log').write_text(log.read_text())
+            assert folds() == before + 12, ('Playlist header stopped responding after collapse', before, folds(), [line for line in log.read_text().splitlines() if 'control activated' in line][-15:])
+            assert json.loads(ctl('view'))['show_playlist'], 'Folding closed the playlist'
+            geometry[:] = 40, 100, 1000, 800
+            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', *geometry))
+            os.kill(child.pid, signal.SIGWINCH)
+            pump(1)
+            print(json.dumps({'playlist_collapse_expand':12,'density_1_and_2':True,'surface_metadata_valid':True}))
+        if args.local_hover:
             os.write(master, b'\x1b[<35;600;330M')
             pump(.4)
             log = next(root.rglob('staramp.log'))

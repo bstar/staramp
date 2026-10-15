@@ -282,6 +282,7 @@ struct ReadoutGlyph {
     advance: u16,
 }
 pub(crate) struct PlayerSkin {
+    chrome: starkit::native_surface::style::Style,
     source: AssetCache,
     manifest: Manifest,
     prepared: BTreeMap<String, Prepared>,
@@ -387,6 +388,7 @@ impl PlayerSkin {
             );
         }
         Ok(Self {
+            chrome: starkit::native_surface::style::Style::default(),
             source,
             manifest: serde_json::from_str(include_str!(
                 "../../assets/skins/classic/manifest.json"
@@ -407,6 +409,7 @@ impl PlayerSkin {
         {
             return Ok(());
         }
+        self.chrome = starkit::native_surface::style::Style::new(*palette);
         let mut roles = BTreeMap::new();
         for (role, original) in &self.manifest.roles {
             let value = role_color(role, original, palette);
@@ -880,17 +883,8 @@ impl native::PlayerArtwork for PlayerSkin {
                 tint: None,
             });
         } else {
-            self.paint(
-                s,
-                rect,
-                if inset {
-                    "well"
-                } else if self.rigid {
-                    "panel-rigid"
-                } else {
-                    "panel"
-                },
-            );
+            self.chrome
+                .frame_at_density(s, rect, inset, self.rigid, self.density);
         }
         if inset {
             display_relief(s, rect, &self.palette.expect("prepared skin palette"));
@@ -961,35 +955,18 @@ impl native::PlayerArtwork for PlayerSkin {
             self.paint(s, rect, kind);
             return;
         }
-        if kind == "button-disabled" {
-            return;
-        }
         let p = self.palette.expect("prepared skin palette");
-        let rect = button_rect(rect);
-        if matches!(kind, "button-hover" | "button-pressed") {
-            s.fill(rect, &button_background(&p, kind), 0);
-            s.nodes.push(Primitive::Border {
-                rect,
-                color: if p == REFERENCE_PALETTE {
-                    if kind == "button-pressed" {
-                        "#11131a"
-                    } else {
-                        "#555c6b"
-                    }
-                    .into()
-                } else {
-                    native::hex(p.border)
-                },
-                radius: 0,
-            });
-        }
-        if active || self.focused.as_deref() == Some(action) {
-            s.nodes.push(Primitive::Border {
-                rect,
-                color: native::hex(p.accent),
-                radius: 0,
-            });
-        }
+        starkit::native_surface::style::minimal_button(
+            s,
+            rect,
+            &p,
+            action,
+            active,
+            self.hovered.as_deref() == Some(action),
+            self.pressed.as_deref() == Some(action),
+            self.focused.as_deref() == Some(action),
+            kind == "button-disabled",
+        );
     }
 }
 
@@ -1491,7 +1468,7 @@ mod tests {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(icons.len(), 5);
+            assert_eq!(icons.len(), 4);
             for (i, (rect, source)) in icons.iter().enumerate() {
                 assert_eq!(
                     *rect,
@@ -1504,7 +1481,12 @@ mod tests {
                 );
                 assert_eq!(
                     *source,
-                    PixelRect::new(i as u16 * 29 * density, 0, 29 * density, 29 * density)
+                    PixelRect::new(
+                        [0, 2, 3, 4][i] * 29 * density,
+                        0,
+                        29 * density,
+                        29 * density
+                    )
                 );
             }
         }
@@ -1827,7 +1809,6 @@ mod tests {
         for action in [
             "previous",
             "play",
-            "pause",
             "stop",
             "next",
             "shuffle",
@@ -1853,13 +1834,8 @@ mod tests {
         assert_eq!(first.hits, advanced.hits);
         state.state = PlayState::Paused;
         let paused = skin.surface(1352, 230, g, &palette(), &state, 8).unwrap();
-        let enabled = first
-            .hits
-            .iter()
-            .filter(|h| h.action != "pause")
-            .cloned()
-            .collect::<Vec<_>>();
-        assert_eq!(enabled, paused.hits);
+        assert_eq!(first.hits, paused.hits);
+        assert!(!paused.hits.iter().any(|h| h.action == "pause"));
         assert_eq!(skin.button_kind("pause", true), "button-disabled");
         assert_ne!(first.nodes, paused.nodes);
         // The host and standalone do not get independent implementations.
@@ -1913,7 +1889,7 @@ mod tests {
                 false,
                 PlayState::Playing,
                 120.,
-                vec!["previous", "play", "next", "seek"],
+                vec!["previous", "next", "seek"],
             ),
         ] {
             let mut state = state();
@@ -1944,7 +1920,7 @@ mod tests {
                 }
                 assert!(surface.hits.iter().any(|h| h.action == "volume"));
                 if playback == PlayState::Playing {
-                    for action in ["pause", "stop"] {
+                    for action in ["play", "stop"] {
                         assert!(surface.hits.iter().any(|h| h.action == action));
                     }
                 }

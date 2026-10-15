@@ -102,31 +102,11 @@ pub(crate) fn panel_header(
     width: u16,
     colors: &starkit::native_surface::classic::Colors,
 ) {
-    let rect = R::new(7, 7, width.saturating_sub(14), 24);
-    surface.fill(rect, &colors.title, 2);
-    heading_depth(surface, rect, &colors.title, &colors.ink);
+    starkit::native_surface::style::panel_header(surface, width, colors);
 }
 /// A restrained raised edge, independent of the heading's text metrics.
 pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, ink: &str) {
-    use starkit::theme::color::Rgb;
-    let bg = Rgb::parse_hex(background).unwrap();
-    let light = bg.mix(Rgb::parse_hex(ink).unwrap(), 0.06).to_hex();
-    let dark = bg.mix(Rgb::new(0, 0, 0), 0.18).to_hex();
-    surface.fill(
-        R::new(rect.x + 2, rect.y, rect.width.saturating_sub(4), 1),
-        &light,
-        0,
-    );
-    surface.fill(
-        R::new(
-            rect.x + 2,
-            rect.y + rect.height - 1,
-            rect.width.saturating_sub(4),
-            1,
-        ),
-        &dark,
-        0,
-    );
+    starkit::native_surface::style::heading_depth(surface, rect, background, ink);
 }
 
 /// A single accent stroke follows the unskinned frame's corner geometry.
@@ -146,24 +126,7 @@ pub(crate) fn close_button(
     action: &str,
     hovered: bool,
 ) {
-    if hovered {
-        surface.fill(rect, &colors.raised, 3);
-    }
-    let size = rect.width.min(rect.height).min(28).saturating_sub(2);
-    surface.nodes.push(Primitive::Icon {
-        rect: R::new(
-            rect.x + (rect.width - size) / 2,
-            rect.y + (rect.height - size) / 2,
-            size,
-            size,
-        ),
-        name: "close".into(),
-        color: if hovered { &colors.accent } else { &colors.ink }.clone(),
-    });
-    surface.hits.push(HitRegion {
-        rect,
-        action: action.into(),
-    });
+    starkit::native_surface::style::close_button(surface, rect, colors, action, hovered);
 }
 
 fn clock(seconds: f64) -> String {
@@ -723,25 +686,22 @@ pub(super) fn player_surface(
         rect: seek,
         action: "seek".into(),
     });
-    for (i, name) in ["previous", "play", "pause", "stop", "next"]
-        .iter()
-        .enumerate()
-    {
+    for (i, name) in ["previous", "play", "stop", "next"].iter().enumerate() {
         let rect = R::new(pad + i as u16 * (button + 6), controls_y, button, button);
-        let active = !state.loading
-            && ((*name == "play" && state.state == PlayState::Playing)
-                || (*name == "pause" && state.state == PlayState::Paused));
+        let active = !state.loading && *name == "play" && state.state == PlayState::Playing;
+        let icon_name = if *name == "play" && active {
+            "pause"
+        } else {
+            name
+        };
         player_button(artwork, &mut s, rect, &c, "", name, m.font, active);
         if let Some(art) = artwork {
-            art.transport_icon(&mut s, rect, name, active);
+            art.transport_icon(&mut s, rect, icon_name, active);
         } else {
             let icon = button.saturating_sub(8);
             s.nodes.push(Primitive::Icon {
                 rect: R::new(rect.x + 4, rect.y + 4, icon, icon),
-                name: match *name {
-                    "previous" | "next" => format!("media-{name}"),
-                    _ => format!("media-{name}"),
-                },
+                name: format!("media-{icon_name}"),
                 color: artwork
                     .map(|art| art.button_ink(name, active))
                     .unwrap_or_else(|| {
@@ -760,7 +720,7 @@ pub(super) fn player_surface(
             action: (*name).into(),
         });
     }
-    let toggle_x = pad + 5 * (button + 6) + if artwork.is_some() { 46 } else { 24 };
+    let toggle_x = pad + 4 * (button + 6) + if artwork.is_some() { 46 } else { 24 };
     if w > if artwork.is_some() { 719 } else { 800 } {
         for (i, (text, action, active)) in [
             ("SHUFFLE", "shuffle", state.shuffled),
@@ -865,7 +825,7 @@ pub fn hit_test(surface: &Surface, x: u16, y: u16, duration: f64) -> Option<HitT
     let fraction = f64::from(x.saturating_sub(hit.rect.x)) / f64::from(hit.rect.width.max(1));
     Some(match hit.action.as_str() {
         "previous" => HitTarget::Previous,
-        "play" => HitTarget::Play,
+        "play" => HitTarget::PlayPause,
         "pause" => HitTarget::Pause,
         "stop" => HitTarget::Stop,
         "next" => HitTarget::Next,
@@ -1131,6 +1091,13 @@ fn compact_surface(
         state.volume,
         false,
     );
+    // Keep keyboard focus and pointer identity stable as the shared control
+    // changes its icon and explicit action between Play and Pause.
+    for hit in &mut s.hits {
+        if hit.action == "pause" {
+            hit.action = "play".into();
+        }
+    }
     s.hits.retain(|hit| state.control_enabled(&hit.action));
     s
 }

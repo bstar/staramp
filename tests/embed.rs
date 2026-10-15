@@ -163,7 +163,7 @@ fn graphics_config_adds_bounded_rgba_controls_without_changing_cells() {
     let frame = child.until("frame");
     assert_eq!(frame["cells"].as_array().unwrap().len(), 64 * 5);
     let images = frame["images"].as_array().unwrap();
-    assert_eq!(images.len(), 5);
+    assert_eq!(images.len(), 4);
     let mut total_bytes = 0usize;
     for image in images {
         let x = image["x"].as_u64().unwrap();

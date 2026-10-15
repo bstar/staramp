@@ -3303,6 +3303,17 @@ impl App {
         self.command(&Command::Pause, "pause");
     }
 
+    fn play_pause(&mut self) {
+        if self.player.state.is_loading() {
+            return;
+        }
+        if self.player.state.state() == PlayState::Playing {
+            self.pause();
+        } else {
+            self.play();
+        }
+    }
+
     /// The instance that owned the session has gone. Try to become it.
     ///
     /// Every surviving window notices at the same moment and races to bind the
@@ -7170,10 +7181,7 @@ impl App {
             return self.handle(Action::Prev);
         }
         if hit(c.play, x, y) {
-            return self.play();
-        }
-        if hit(c.pause, x, y) {
-            return self.pause();
+            return self.play_pause();
         }
         if hit(c.stop, x, y) {
             return self.handle(Action::Stop);
@@ -8218,8 +8226,15 @@ impl App {
             let c = &g.controls;
             let buttons = [
                 (Button::Prev, c.prev, false),
-                (Button::Play, c.play, state == PlayState::Playing),
-                (Button::Pause, c.pause, state == PlayState::Paused),
+                (
+                    if state == PlayState::Playing {
+                        Button::Pause
+                    } else {
+                        Button::Play
+                    },
+                    c.play,
+                    state == PlayState::Playing,
+                ),
                 (Button::Stop, c.stop, state == PlayState::Stopped),
                 (Button::Next, c.next, false),
             ];

@@ -835,7 +835,7 @@ fn current_index(player: &Player) -> Result<usize> {
 fn pointer(player: &Player, target: HitTarget) -> Result<()> {
     match target {
         HitTarget::Previous => control(player, "previous", None),
-        HitTarget::Play => control(player, "play", None),
+        HitTarget::PlayPause => control(player, "toggle", None),
         HitTarget::Pause => control(player, "pause", None),
         HitTarget::Stop => control(player, "stop", None),
         HitTarget::Next => control(player, "next", None),

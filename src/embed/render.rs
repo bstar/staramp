@@ -37,7 +37,7 @@ struct ImageKey {
 }
 
 /// Rasters change on resize, palette or active transport state, not each
-/// analyzer frame. Keep the same five pixel buffers until one of those moves.
+/// analyzer frame. Keep the same four pixel buffers until one of those moves.
 #[derive(Default)]
 pub struct TransportImageCache {
     key: Option<ImageKey>,
@@ -106,14 +106,13 @@ fn transport_images(
     let buttons = [
         (Button::Prev, c.prev, false),
         (
-            Button::Play,
+            if player.state == PlayState::Playing {
+                Button::Pause
+            } else {
+                Button::Play
+            },
             c.play,
             !player.loading && player.state == PlayState::Playing,
-        ),
-        (
-            Button::Pause,
-            c.pause,
-            !player.loading && player.state == PlayState::Paused,
         ),
         (
             Button::Stop,
@@ -123,7 +122,7 @@ fn transport_images(
         (Button::Next, c.next, false),
     ];
     let body = body_rows(height);
-    let mut images = Vec::with_capacity(5);
+    let mut images = Vec::with_capacity(4);
     let mut total_bytes = 0usize;
     for (button, rect, lit) in buttons {
         if rect.width == 0 || rect.height == 0 || rect.x == 0 {
@@ -244,7 +243,8 @@ impl PlayerRenderState {
 
     pub fn control_enabled(&self, action: &str) -> bool {
         match action {
-            "previous" | "play" | "next" => self.has_items,
+            "previous" | "next" => self.has_items,
+            "play" => !self.loading && (self.has_items || self.state == PlayState::Playing),
             "pause" => !self.loading && self.state == PlayState::Playing,
             "stop" => self.loading || self.state != PlayState::Stopped,
             "seek" => {
@@ -258,7 +258,7 @@ impl PlayerRenderState {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitTarget {
     Previous,
-    Play,
+    PlayPause,
     Pause,
     Stop,
     Next,
@@ -448,8 +448,7 @@ pub fn hit_test(
     }
     for (rect, target) in [
         (c.prev, HitTarget::Previous),
-        (c.play, HitTarget::Play),
-        (c.pause, HitTarget::Pause),
+        (c.play, HitTarget::PlayPause),
         (c.stop, HitTarget::Stop),
         (c.next, HitTarget::Next),
     ] {
@@ -723,11 +722,10 @@ mod tests {
         };
         let mut cache = TransportImageCache::default();
         let images = cache.images(64, 10, &palette(), &player, graphics);
-        assert_eq!(images.len(), 5);
+        assert_eq!(images.len(), 4);
         for (image, target) in images.iter().zip([
             HitTarget::Previous,
-            HitTarget::Play,
-            HitTarget::Pause,
+            HitTarget::PlayPause,
             HitTarget::Stop,
             HitTarget::Next,
         ]) {
@@ -770,7 +768,7 @@ mod tests {
                 cell_height: 16,
             },
         );
-        assert_eq!(images.len(), 5);
+        assert_eq!(images.len(), 4);
         assert!(images.iter().all(|image| image.y == 4 && image.height == 1));
         assert_eq!(
             hit_test(64, 5, images[0].x + 1, images[0].y, &player),
@@ -790,7 +788,7 @@ mod tests {
         player.state = PlayState::Paused;
         let paused_images = cache.images(64, 10, &palette(), &player, graphics);
         assert_ne!(playing_images[1].rgba, paused_images[1].rgba);
-        assert_ne!(playing_images[2].rgba, paused_images[2].rgba);
+        assert_eq!(playing_images[2].rgba, paused_images[2].rgba);
 
         let oversized = cache.images(
             64,

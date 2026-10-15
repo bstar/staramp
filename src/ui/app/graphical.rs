@@ -528,13 +528,19 @@ impl Rack<'_> {
         if folded {
             s.height = 38;
             s.hover_fills.clear();
-            s.nodes.retain(|node| node.rect().y < 32);
             // The frame spans the original height; replace it with a compact header frame.
-            s.nodes.retain(|node| node.rect().height <= 32);
+            s.retain_nodes(|node| node.rect().y < 32 && node.rect().height <= 32);
             s.hits.retain(|hit| hit.rect.y < 32);
             let header = std::mem::take(&mut s.nodes);
             let width = s.width;
             self.frame(&mut s, R::new(0, 0, width, 38), c, self.radius, false);
+            let offset = s.nodes.len() as u16;
+            for rule in &mut s.text_rules {
+                rule.node += offset;
+            }
+            for node in &mut s.centered_text {
+                *node += offset;
+            }
             s.nodes.extend(header);
         }
         let glyph = if folded { "▸" } else { "▾" };
@@ -1888,7 +1894,7 @@ impl Rack<'_> {
         match name {
             "previous" => a.handle(Action::Prev),
             "next" => a.handle(Action::Next),
-            "play" => a.play(),
+            "play" => a.play_pause(),
             "pause" => a.pause(),
             "stop" => a.handle(Action::Stop),
             "visualizer" => a.handle(Action::ToggleVisualizer),
@@ -2095,18 +2101,23 @@ fn append(
         target.nodes.push(node.clone());
     }
     for mut rule in source.text_rules {
-        if let Some(node) = node_indices[usize::from(rule.node)] {
-            rule.node = node;
+        if let Some(Some(node)) = node_indices.get(usize::from(rule.node)) {
+            rule.node = *node;
             rule.end += x;
             target.text_rules.push(rule);
         }
     }
     for hover in source.hover_fills {
-        if let Some(node) = node_indices[usize::from(hover.node)] {
+        if let Some(Some(node)) = node_indices.get(usize::from(hover.node)) {
             target.hover_fills.push(HoverFill {
-                node,
+                node: *node,
                 color: hover.color,
             });
+        }
+    }
+    for node in source.centered_text {
+        if let Some(Some(node)) = node_indices.get(usize::from(node)) {
+            target.centered_text.push(*node);
         }
     }
     for hit in source.hits {
@@ -3774,7 +3785,25 @@ impl App {
             rack.scene(v);
             assert_eq!(playlist_geometry(&rack).1, expanded_height + EQ_HEIGHT - 38);
             rack.folded.remove("eq");
+            // Grouped rows carry text decorations referencing body nodes.
+            // Folding must discard them before append remaps header nodes.
+            let c = crate::embed::skin::colors(&rack.palette());
+            let mut decorated = rack.playlist(900, 500, &c, 12);
+            let node = decorated.nodes.len() as u16;
+            decorated.text_centered(R::new(20, 80, 160, 24), "Album section", &c.ink, 12, true);
+            decorated
+                .text_rules
+                .push(starkit::native_surface::TextRule {
+                    node,
+                    end: 870,
+                    gap: 8,
+                    width: 1,
+                    color: c.dim.clone(),
+                });
             rack.folded.insert("playlist".into());
+            let folded = rack.fold_module(decorated, "playlist", &c);
+            assert!(folded.text_rules.is_empty());
+            folded.at_density(rack.density)?.validate()?;
             rack.scene(v);
             assert_eq!(playlist_geometry(&rack).1, 38);
             rack.folded.remove("playlist");
@@ -4902,20 +4931,26 @@ impl App {
         }
         rack.app.panels.focus = Focus::Playlist;
         rack.scene(v);
-        click(&mut rack, "pause");
+        click(&mut rack, "play");
         wait_state(&rack, PlayState::Paused);
         assert_eq!(rack.app.panels.focus, Focus::Player);
         rack.app.panels.focus = Focus::Equalizer;
         rack.scene(v);
-        // One click must resume from another pane; repeated Play presses
-        // before the worker responds must never become queued toggles.
-        for _ in 0..5 {
-            click(&mut rack, "play");
-        }
+        // The same button resumes from another pane, then remains keyboard
+        // focused through both playback states.
+        click(&mut rack, "play");
         wait_state(&rack, PlayState::Playing);
         assert_eq!(rack.app.panels.focus, Focus::Player);
         std::thread::sleep(Duration::from_millis(30));
         assert_eq!(rack.app.player.state.state(), PlayState::Playing);
+        for expected in [PlayState::Paused, PlayState::Playing] {
+            rack.scene(v);
+            rack.skin.focused = Some("play".into());
+            assert!(rack.player_control_key(KeyCode::Enter, KeyModifiers::NONE));
+            wait_state(&rack, expected);
+            rack.scene(v);
+            assert_eq!(rack.skin.focused.as_deref(), Some("play"));
+        }
         rack.app.panels.focus = Focus::Album;
         rack.scene(v);
         click(&mut rack, "stop");

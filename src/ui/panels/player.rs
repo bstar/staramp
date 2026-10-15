@@ -223,8 +223,8 @@ pub struct Geometry {
 pub struct Controls {
     pub row: Rect,
     pub prev: Rect,
+    /// Stable target for the state-dependent Play/Pause button.
     pub play: Rect,
-    pub pause: Rect,
     pub stop: Rect,
     pub next: Rect,
     /// The slider cells only, without the `VOL` label or the percentage.
@@ -368,14 +368,12 @@ fn controls(row: Rect, _repeat: RepeatMode, glyphs: Glyphs) -> Controls {
     let h = glyphs.button_height();
     let prev = take(&mut x, w, h);
     let play = take(&mut x, w, h);
-    let pause = take(&mut x, w, h);
     let stop = take(&mut x, w, h);
     let next = take(&mut x, w, h);
     Controls {
         row,
         prev,
         play,
-        pause,
         stop,
         next,
         volume,
@@ -935,21 +933,13 @@ fn render_controls(
     };
 
     let playing = state == PlayState::Playing;
-    let paused = state == PlayState::Paused;
     let stopped = state == PlayState::Stopped;
     put(c.prev, glyphs.prev, idle, false, buf);
     put(
         c.play,
-        glyphs.play,
+        if playing { glyphs.pause } else { glyphs.play },
         if playing { active } else { idle },
         playing,
-        buf,
-    );
-    put(
-        c.pause,
-        glyphs.pause,
-        if paused { active } else { idle },
-        paused,
         buf,
     );
     put(
@@ -1958,8 +1948,7 @@ mod tests {
             let g2 = Glyphs::default();
             for (rect, face) in [
                 (c.prev, g2.prev),
-                (c.play, g2.play),
-                (c.pause, g2.pause),
+                (c.play, g2.pause),
                 (c.stop, g2.stop),
                 (c.next, g2.next),
             ] {

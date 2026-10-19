@@ -128,6 +128,10 @@ show a readable clock, title, metadata, seek and transport with volume. The
 host paints its own panel border and title. Artwork, library, playlist and
 listening history are outside this embed interface.
 
+Full and compact players use one Play/Pause button in a fixed slot. It shows
+Pause during playback and Play when paused or stopped. Clicking the same
+button pauses, resumes, or starts playback; there is no separate Pause button.
+
 The service accepts at most 240 columns by 20 rows, 2,048 queue paths, and
 1 MiB per input line. Responses are limited to 2 MiB. A host should validate
 frame dimensions and `generation` before drawing.
@@ -144,6 +148,20 @@ A helper advertising `native_surface_v1` accepts `native_surface: true` alongsid
 clock, spectrum, transport, seek and volume layout. STAR/FOLD only places it.
 Pointer coordinates remain terminal cells: STAR/AMP maps each cell's center to
 its own surface hit regions. This does not claim pixel-precise terminal input.
+
+`native_pixels_v1` adds exact native canvas sizing and pointer input. A host
+that checks this capability may supply `pixel_size: [width, height]` in Configure
+alongside `native_surface` and `graphics`. The returned surface has exactly that
+physical size, independently of the cell canvas. Limits are 8,192 pixels wide,
+2,048 high, and 8,000,000 pixels total. Place the surface without resampling its
+original bitmap assets. Odd dimensions at 2x density extend the canvas by at
+most one pixel while retaining the original artwork.
+
+Pointer requests may include `pixel: [x, y]`, in surface-local physical pixels.
+The ordinary `x` and `y` cell coordinates remain required for compatibility.
+Without `pixel`, AMP maps the cell centre into the configured native canvas.
+Coordinates outside the current surface are ignored. Configure invalidates the
+cached hit surface; the next emitted surface establishes the new geometry.
 
 `visible: false` suspends frame publication while playback/status continue.
 Resizing, theme and focus updates reuse Configure and its generation guard.

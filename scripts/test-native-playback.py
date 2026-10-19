@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import subprocess
 import tempfile
 import threading
@@ -55,36 +56,55 @@ def main():
                 raise AssertionError('Playback response timed out')
 
             def clock(frame):
-                nodes = [node for node in frame.get('surface', {}).get('nodes', []) if node.get('kind') == 'text']
-                return max(nodes, key=lambda node: node['size']).get('text') if nodes else None
+                # The main seven-segment clock is geometry, while the seek
+                # row always supplies an elapsed timestamp as shaped text.
+                return next((node['text'] for node in frame.get('surface', {}).get('nodes', [])
+                             if node.get('kind') == 'text'
+                             and re.fullmatch(r'\d+:\d{2}', node.get('text', ''))), None)
 
             def click(frame, action):
                 rect = next(hit['rect'] for hit in frame['surface']['hits'] if hit['action'] == action)
-                cells = [(x,y) for x in range(100) for y in range(10)
+                cells = [(x,y) for x in range(frame['width']) for y in range(frame['height'])
                          if rect['x'] <= x*10+5 < rect['x']+rect['width']
                          and rect['y'] <= y*20+10 < rect['y']+rect['height']]
                 assert cells, f'Unreachable native {action} button'
                 x,y = cells[len(cells)//2]
                 send({'type':'pointer','x':x,'y':y,'button':'left'})
 
+            def toggle(frame, expected_icon):
+                hits = [hit for hit in frame['surface']['hits']
+                        if hit['action'] in ('play', 'pause')]
+                assert len(hits) == 1, 'Play/Pause must share one button'
+                assert has_icon(frame, expected_icon), f'Missing {expected_icon} icon'
+                click(frame, hits[0]['action'])
+                return hits[0]['rect']
+
+            def has_icon(frame, name):
+                return any(node.get('kind') == 'icon' and node.get('name') == name
+                           for node in frame.get('surface', {}).get('nodes', []))
+
             try:
                 until(lambda m: m['type'] == 'hello')
                 theme = dict(bg=[10,12,14],fg=[220,220,220],muted=[120,120,120],accent=[80,170,230],
                              selected=[40,60,80],border=[100,100,100],error=[240,80,80])
-                send(dict(type='configure',generation=1,width=100,height=10,focused=True,theme=theme,
-                          native_surface=True,graphics=dict(cell_width=10,cell_height=20)))
-                send(dict(type='play',generation=1,paths=[str(media)],index=0))
-                until(lambda m: m['type'] == 'status' and m['playing'])
-                frame = until(lambda m: m['type'] == 'frame' and clock(m) == '0:01')
-                click(frame, 'pause')
-                until(lambda m: m['type'] == 'status' and m['paused'])
-                send(dict(type='control',action='seek',value=5))
-                click(frame, 'play')
-                until(lambda m: m['type'] == 'status' and m['playing'] and not m['paused'])
-                frame = until(lambda m: m['type'] == 'frame' and clock(m) == '0:06')
-                click(frame, 'stop')
-                until(lambda m: m['type'] == 'status' and not m['playing'])
-                print('Native playback clock, pointer pause/play/stop and seeking passed')
+                for generation, rows in enumerate((10, 8), start=1):
+                    send(dict(type='configure',generation=generation,width=100,height=rows,
+                              focused=True,theme=theme,native_surface=True,
+                              graphics=dict(cell_width=10,cell_height=20)))
+                    send(dict(type='play',generation=generation,paths=[str(media)],index=0))
+                    until(lambda m: m['type'] == 'status' and m['playing'] and not m['paused'])
+                    frame = until(lambda m: m['type'] == 'frame' and m['generation'] == generation
+                                  and clock(m) == '0:01' and has_icon(m, 'media-pause'))
+                    slot = toggle(frame, 'media-pause')
+                    until(lambda m: m['type'] == 'status' and m['paused'])
+                    frame = until(lambda m: m['type'] == 'frame' and has_icon(m, 'media-play'))
+                    assert toggle(frame, 'media-play') == slot, 'Toggle moved when paused'
+                    until(lambda m: m['type'] == 'status' and m['playing'] and not m['paused'])
+                    send(dict(type='control',action='seek',value=5))
+                    frame = until(lambda m: m['type'] == 'frame' and clock(m) == '0:06')
+                    click(frame, 'stop')
+                    until(lambda m: m['type'] == 'status' and not m['playing'])
+                print('Full and compact playback: one Play/Pause toggle, clock, stop and seeking passed')
             finally:
                 if child.poll() is None:
                     send(dict(type='shutdown'))

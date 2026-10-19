@@ -303,7 +303,7 @@ enum PlaylistAddStep {
     ImportArtist(Vec<PathBuf>),
     ImportArtistName {
         candidates: Vec<PathBuf>,
-        value: String,
+        value: starkit::input::TextInput,
     },
     ImportConflict(PathBuf),
     ImportReject,
@@ -343,8 +343,13 @@ struct ImportMode {
 }
 
 struct ImportJob {
-    result: std::sync::mpsc::Receiver<FinishedImport>,
+    result: std::sync::mpsc::Receiver<ImportResult>,
     thread: std::thread::JoinHandle<()>,
+}
+
+struct ImportResult {
+    finished: FinishedImport,
+    refreshed: Option<Result<Vec<crate::library::import::Album>, String>>,
 }
 
 enum FinishedImport {
@@ -2403,7 +2408,6 @@ impl App {
     /// -- and Esc leaves the filter as it was. Raw keys, like the name box:
     /// while words are being typed every letter is a letter.
     fn import_artist_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
         let is_typing =
             self.over.playlist_add.as_ref().is_some_and(|state| {
                 matches!(state.step, PlaylistAddStep::ImportArtistName { .. })
@@ -2422,41 +2426,28 @@ impl App {
             self.over.playlist_add = Some(state);
             return false;
         };
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        match key.code {
-            KeyCode::Char('u') if ctrl => value.clear(),
-            KeyCode::Char(c) if !ctrl && c != '/' && c != '\\' && c != '\0' => value.push(c),
-            KeyCode::Backspace => {
-                value.pop();
-            }
-            KeyCode::Esc => {
+        use starkit::input::Edit;
+        match value.handle(key) {
+            Edit::Cancel => {
                 state.step = PlaylistAddStep::ImportArtist(candidates);
                 state.cursor = Self::playlist_add_len(&state).saturating_sub(1);
                 self.over.playlist_add = Some(state);
                 return true;
             }
-            KeyCode::Enter => {
+            Edit::Submit => {
                 let Some(mode) = &self.import else {
                     return true;
                 };
-                match crate::library::import::artist_destination(&mode.library, &value) {
+                match crate::library::import::artist_destination(&mode.library, value.text()) {
                     Ok(path) => {
                         state.step = PlaylistAddStep::ImportArtist(candidates);
-                        return {
-                            self.continue_import_to_artist(state, path);
-                            true
-                        };
+                        self.continue_import_to_artist(state, path);
+                        return true;
                     }
-                    Err(error) => {
-                        self.note(format!("invalid artist directory: {error}"));
-                    }
+                    Err(error) => self.note(format!("invalid artist directory: {error}")),
                 }
             }
-            _ => {
-                state.step = PlaylistAddStep::ImportArtistName { candidates, value };
-                self.over.playlist_add = Some(state);
-                return false;
-            }
+            Edit::Consumed | Edit::Ignored => {}
         }
         state.step = PlaylistAddStep::ImportArtistName { candidates, value };
         self.over.playlist_add = Some(state);
@@ -2470,7 +2461,7 @@ impl App {
         let PlaylistAddStep::ImportArtistName { value, .. } = &mut state.step else {
             return false;
         };
-        value.push_str(pasted.trim_end_matches(['\r', '\n']));
+        value.paste(pasted.trim_end_matches(['\r', '\n']));
         true
     }
 
@@ -4695,7 +4686,7 @@ impl App {
                     )
                     + 1 // manually typed directory
             }
-            PlaylistAddStep::ImportArtistName { .. } => 1,
+            PlaylistAddStep::ImportArtistName { .. } => 3,
             PlaylistAddStep::ImportConflict(_) => 3,
             PlaylistAddStep::ImportReject => 2,
             PlaylistAddStep::TimelineSource => crate::library::timeline::DateSource::ALL.len(),
@@ -4772,7 +4763,7 @@ impl App {
                 if state.cursor == type_at {
                     state.step = PlaylistAddStep::ImportArtistName {
                         candidates: candidates.clone(),
-                        value: album.artist.clone(),
+                        value: starkit::input::TextInput::single().with_text(&album.artist),
                     };
                     state.cursor = 0;
                     state.scroll = 0;
@@ -4789,7 +4780,18 @@ impl App {
                 self.continue_import_to_artist(state, artist_dir);
             }
             PlaylistAddStep::ImportArtistName { .. } => {
+                let cursor = state.cursor;
                 self.over.playlist_add = Some(state);
+                if cursor == 1 || cursor == 2 {
+                    self.import_artist_type(KeyEvent::new(
+                        if cursor == 1 {
+                            KeyCode::Enter
+                        } else {
+                            KeyCode::Esc
+                        },
+                        starkit::crossterm::event::KeyModifiers::NONE,
+                    ));
+                }
             }
             PlaylistAddStep::ImportConflict(ref artist_dir) => match state.cursor {
                 0 => {}
@@ -5115,7 +5117,20 @@ impl App {
                             .map_err(|error| format!("{error:#}")),
                     ),
                 };
-                let _ = tx.send(finished);
+                // The staging scan can take seconds on a large inbox. Keep
+                // it on this worker, never inside the render/input loop.
+                let refreshed = matches!(
+                    finished,
+                    FinishedImport::Imported(Ok(_)) | FinishedImport::Rejected(Ok(_))
+                )
+                .then(|| {
+                    crate::library::import::discover(&staging, &library)
+                        .map_err(|error| format!("{error:#}"))
+                });
+                let _ = tx.send(ImportResult {
+                    finished,
+                    refreshed,
+                });
             });
         match thread {
             Ok(thread) => mode.running = Some(ImportJob { result, thread }),
@@ -5133,9 +5148,38 @@ impl App {
             .as_mut()
             .and_then(|mode| mode.running.as_mut())
             .and_then(|job| job.result.try_recv().ok());
-        let Some(finished) = finished else { return };
+        let Some(ImportResult {
+            finished,
+            refreshed,
+        }) = finished
+        else {
+            return;
+        };
         if let Some(job) = self.import.as_mut().and_then(|mode| mode.running.take()) {
             let _ = job.thread.join();
+        }
+        let mut refresh_error = None;
+        if let Some(refreshed) = refreshed {
+            let albums = match refreshed {
+                Ok(albums) => albums,
+                Err(error) => {
+                    refresh_error = Some(error);
+                    // A successful move stays successful if the subsequent
+                    // index refresh fails. Remove its rows from this review.
+                    let mode = self.import.as_ref().unwrap();
+                    mode.albums
+                        .iter()
+                        .filter(|album| {
+                            !album
+                                .tracks
+                                .iter()
+                                .any(|t| mode.active_uris.contains(&t.uri.to_string()))
+                        })
+                        .cloned()
+                        .collect()
+                }
+            };
+            self.refresh_import_mode(albums);
         }
         if let Some(mode) = &mut self.import {
             mode.operation = None;
@@ -5143,7 +5187,6 @@ impl App {
         }
         match finished {
             FinishedImport::Imported(Ok(done)) => {
-                self.refresh_import_mode();
                 self.note(format!(
                     "imported {} tracks to {}",
                     done.tracks,
@@ -5154,12 +5197,16 @@ impl App {
                 self.note(format!("album import failed: {error}"));
             }
             FinishedImport::Rejected(Ok(path)) => {
-                self.refresh_import_mode();
                 self.note(format!("moved album to {}", path.display()));
             }
             FinishedImport::Rejected(Err(error)) => {
                 self.note(format!("could not quarantine album: {error}"));
             }
+        }
+        if let Some(error) = refresh_error {
+            self.note(format!(
+                "album moved; staging index refresh failed: {error}"
+            ));
         }
     }
 
@@ -5191,37 +5238,97 @@ impl App {
         self.note("REJECTING · moving album to quarantine…".into());
     }
 
-    fn refresh_import_mode(&mut self) {
-        let Some(mode) = &self.import else { return };
-        let staging = mode.staging.clone();
-        let library = mode.library.clone();
-        match crate::library::import::discover(&staging, &library) {
-            Ok(albums) => {
-                let tracks: Vec<QueueItem> = albums
-                    .iter()
-                    .flat_map(|album| {
-                        album.tracks.iter().cloned().map(|mut track| {
-                            track.timeline_date = album.date_seconds;
-                            track.timeline_year = album
-                                .date_seconds
-                                .map(crate::library::timeline::year_for_timestamp);
-                            track
-                        })
-                    })
-                    .collect();
-                let track_count = tracks.len();
-                if let Some(mode) = &mut self.import {
-                    mode.albums = albums;
-                }
-                let mut queue = self.player.queue.lock().unwrap();
-                queue.set_tracks(tracks);
-                queue.set_shuffle(false);
-                queue.set_grouping(Some(false));
-                drop(queue);
-                self.queue.cursor = self.queue.cursor.min(track_count.saturating_sub(1));
-                self.queue.scroll = 0;
+    fn refresh_import_mode(&mut self, albums: Vec<crate::library::import::Album>) {
+        if self.import.is_none() {
+            return;
+        }
+        self.prepare_playlist_rows();
+        let previous_cursor = self.queue.cursor;
+        let anchor_was_section = matches!(
+            self.queue.rows.rows().get(self.queue.scroll),
+            Some(playlist::Row::Section { .. })
+        );
+        let tagged: std::collections::HashSet<_> = {
+            let q = self.player.queue.lock().unwrap();
+            self.queue
+                .tagged
+                .iter()
+                .filter_map(|&i| q.tracks().get(i))
+                .map(|t| t.uri.clone())
+                .collect()
+        };
+        let selected = self
+            .queue
+            .items
+            .get(self.queue.cursor)
+            .map(|t| t.uri.clone());
+        let anchor_track = self
+            .queue
+            .rows
+            .track_for_section(self.queue.scroll)
+            .or_else(|| self.queue.rows.track_at_or_after(self.queue.scroll));
+        let anchor = anchor_track
+            .and_then(|i| self.queue.items.get(i))
+            .map(|t| t.uri.clone());
+        let tracks: Vec<_> = albums
+            .iter()
+            .flat_map(|album| {
+                album.tracks.iter().cloned().map(|mut track| {
+                    track.timeline_date = album.date_seconds;
+                    track.timeline_year = album
+                        .date_seconds
+                        .map(crate::library::timeline::year_for_timestamp);
+                    track
+                })
+            })
+            .collect();
+        let retained: std::collections::HashSet<_> = tracks.iter().map(|t| t.uri.clone()).collect();
+        let mut queue = self.player.queue.lock().unwrap();
+        let removed: Vec<_> = queue
+            .view()
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| !retained.contains(&queue.tracks()[**i].uri))
+            .map(|(row, _)| row)
+            .collect();
+        let removed_before = removed.iter().filter(|&&i| i < self.queue.cursor).count();
+        // Incremental edits preserve the playback cursor and queued-next tracks.
+        queue.remove(&removed, false);
+        let present: std::collections::HashSet<_> =
+            queue.tracks().iter().map(|t| t.uri.clone()).collect();
+        for (at, track) in tracks.into_iter().enumerate() {
+            if !present.contains(&track.uri) {
+                queue.insert_at(at, vec![track]);
             }
-            Err(error) => self.note(format!("could not refresh staging albums: {error:#}")),
+        }
+        self.queue.tagged = queue
+            .tracks()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| tagged.contains(&t.uri))
+            .map(|(i, _)| i)
+            .collect();
+        drop(queue);
+        self.import.as_mut().unwrap().albums = albums;
+        self.prepare_playlist_rows();
+        self.queue.cursor = selected
+            .and_then(|uri| self.queue.items.iter().position(|t| t.uri == uri))
+            .unwrap_or_else(|| {
+                previous_cursor
+                    .saturating_sub(removed_before)
+                    .min(self.queue.items.len().saturating_sub(1))
+            });
+        if let Some(track) =
+            anchor.and_then(|uri| self.queue.items.iter().position(|t| t.uri == uri))
+        {
+            self.queue.scroll = if anchor_was_section {
+                self.queue.rows.anchor_row(track)
+            } else {
+                self.queue
+                    .rows
+                    .row_of_track(track)
+                    .unwrap_or_else(|| self.queue.rows.anchor_row(track))
+            };
         }
     }
 
@@ -7778,10 +7885,15 @@ impl App {
             PlaylistAddStep::ImportArtistName { value, .. } => (
                 "TYPE ARTIST",
                 track,
-                vec![settings::Row::setting(
-                    "directory",
-                    format!("{value}\u{2582}"),
-                )],
+                vec![
+                    settings::Row::setting("directory", {
+                        let text = value.text();
+                        let at = value.cursor();
+                        format!("{}▏{}", &text[..at], &text[at..])
+                    }),
+                    settings::Row::action("use this directory"),
+                    settings::Row::action("back to artist choices"),
+                ],
             ),
             PlaylistAddStep::ImportConflict(_) => (
                 "ALBUM EXISTS",
@@ -8199,26 +8311,13 @@ impl App {
         }
     }
 
-    fn draw_player(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
-        // Taken first: it needs `&mut self`, and everything below borrows the
-        // player immutably for the rest of the function.
-        let dropouts = self.dropouts_now();
+    fn playback_tech(&self) -> String {
         let st = &self.player.state;
-        let item = self.player.current_item();
-        let (title, subtitle) = match &item {
-            Some(i) => (
-                track_line(i.artist.as_deref(), i.title.as_deref(), i.album.as_deref())
-                    .unwrap_or_else(|| i.uri.to_string()),
-                String::new(),
-            ),
-            None => ("nothing playing".into(), String::new()),
-        };
-
         use std::sync::atomic::Ordering::Relaxed;
         let rate = st.sample_rate.load(Relaxed);
         let depth = st.bit_depth.load(Relaxed);
         let ch = st.channels.load(Relaxed);
-        let tech = if rate > 0 {
+        if rate > 0 {
             let mut parts: Vec<String> = Vec::with_capacity(5);
             let codec = st.codec.load_full();
             if !codec.is_empty() {
@@ -8238,7 +8337,26 @@ impl App {
             parts.join(" · ")
         } else {
             String::new()
+        }
+    }
+
+    fn draw_player(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+        use std::sync::atomic::Ordering::Relaxed;
+        // Taken first: it needs `&mut self`, and everything below borrows the
+        // player immutably for the rest of the function.
+        let dropouts = self.dropouts_now();
+        let st = &self.player.state;
+        let item = self.player.current_item();
+        let (title, subtitle) = match &item {
+            Some(i) => (
+                track_line(i.artist.as_deref(), i.title.as_deref(), i.album.as_deref())
+                    .unwrap_or_else(|| i.uri.to_string()),
+                String::new(),
+            ),
+            None => ("nothing playing".into(), String::new()),
         };
+
+        let tech = self.playback_tech();
 
         let repeat = {
             let q = self.player.queue.lock().unwrap();

@@ -381,6 +381,139 @@ impl Rack<'_> {
         true
     }
 
+    fn import_artist_popup(&mut self, s: &mut Surface, c: &Colors) -> bool {
+        if !self
+            .app
+            .over
+            .playlist_add
+            .as_ref()
+            .is_some_and(|state| matches!(state.step, PlaylistAddStep::ImportArtistName { .. }))
+        {
+            return false;
+        }
+        self.overlay = true;
+        self.app.bars.begin_frame();
+        let width = 620.min(s.width - 32);
+        let height = 238;
+        let x = (s.width - width) / 2;
+        let y = (s.height - height) / 2;
+        s.hits.clear();
+        s.hits.push(HitRegion {
+            rect: R::new(0, 0, s.width, s.height),
+            action: "popup:dismiss".into(),
+        });
+        self.modal_frame(s, R::new(x, y, width, height), c, false);
+        s.hits.push(HitRegion {
+            rect: R::new(x, y, width, height),
+            action: "popup:body".into(),
+        });
+        classic::label(
+            s,
+            R::new(x + 20, y + 12, width - 80, 28),
+            "ARTIST DIRECTORY",
+            &c.accent,
+            FONT,
+            true,
+        );
+        native::close_button(
+            s,
+            R::new(x + width - 44, y + 11, 30, 28),
+            c,
+            "popup:close",
+            self.skin.hovered.as_deref() == Some("popup:close"),
+        );
+        classic::label(
+            s,
+            R::new(x + 20, y + 50, width - 40, 24),
+            "Choose the artist folder in your permanent library.",
+            &c.dim,
+            FONT,
+            false,
+        );
+        let field = R::new(x + 20, y + 86, width - 40, 36);
+        s.fill(field, &c.inset, 2);
+        s.nodes.push(Primitive::Border {
+            rect: field,
+            color: c.accent.clone(),
+            radius: 2,
+        });
+        let area = Rect::new(0, 0, (field.width - 20) / ADVANCE as u16, 1);
+        let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);
+        let PlaylistAddStep::ImportArtistName { value: input, .. } =
+            &mut self.app.over.playlist_add.as_mut().unwrap().step
+        else {
+            unreachable!()
+        };
+        let caret = input.render(area, &mut buffer, Style::default());
+        if input.is_empty() {
+            classic::label(
+                s,
+                R::new(field.x + 10, field.y + 8, field.width - 20, 20),
+                "Artist directory name…",
+                &c.dim,
+                FONT,
+                false,
+            );
+        } else {
+            for column in 0..area.width {
+                let symbol = buffer[(column, 0)].symbol();
+                if symbol.trim().is_empty() {
+                    continue;
+                }
+                classic::label(
+                    s,
+                    R::new(
+                        field.x + 10 + column * ADVANCE as u16,
+                        field.y + 8,
+                        symbol.width().max(1) as u16 * ADVANCE as u16,
+                        20,
+                    ),
+                    symbol,
+                    &c.ink,
+                    FONT,
+                    false,
+                );
+            }
+        }
+        let start_column = input.text()[..input.cursor()]
+            .width()
+            .saturating_sub(caret.map_or(0, |(col, _)| usize::from(col)));
+        s.hits.push(HitRegion {
+            rect: field,
+            action: format!("popup:field:{start_column}"),
+        });
+        if let Some((column, _)) = caret {
+            s.fill(
+                R::new(field.x + 10 + column * ADVANCE as u16, field.y + 9, 1, 18),
+                &c.accent,
+                0,
+            );
+        }
+        classic::label(
+            s,
+            R::new(x + 20, y + 160, width - 40, 20),
+            "Enter use · Esc back · Ctrl+U clear",
+            &c.dim,
+            11,
+            false,
+        );
+        for (left, text, action, button_width) in [
+            (20, "Back", "popup:row:2", 86),
+            (width - 122, "Use", "popup:row:1", 102),
+        ] {
+            self.button(
+                s,
+                R::new(x + left, y + 190, button_width, 30),
+                c,
+                text,
+                action,
+                FONT,
+                false,
+            );
+        }
+        true
+    }
+
     pub(super) fn filter_pointer(
         &mut self,
         action: &str,
@@ -555,7 +688,7 @@ impl Rack<'_> {
         {
             return false;
         }
-        if self.track_context_popup(s, c) {
+        if self.import_artist_popup(s, c) || self.track_context_popup(s, c) {
             return true;
         }
         let (heading, title, rows, cursor, mut scroll) =
@@ -754,18 +887,15 @@ impl Rack<'_> {
         let hit = s.hit(px as u16, py as u16).map(|h| h.action.clone());
         if action == "move" {
             self.skin.hovered = hit.clone();
-            if let Some(state) = &mut self.app.over.playlist_add {
-                if matches!(
-                    state.step,
-                    PlaylistAddStep::Menu | PlaylistAddStep::ImportAlbum
-                ) {
-                    if let Some(index) = hit
-                        .as_deref()
-                        .and_then(|h| h.strip_prefix("popup:row:"))
-                        .and_then(|n| n.parse().ok())
-                    {
-                        state.cursor = index;
-                    }
+            if let Some(index) = hit
+                .as_deref()
+                .and_then(|h| h.strip_prefix("popup:row:"))
+                .and_then(|n| n.parse().ok())
+            {
+                if let Some(state) = &mut self.app.over.playlist_add {
+                    state.cursor = index;
+                } else if let Some(state) = &mut self.app.over.settings {
+                    state.cursor = index;
                 }
             }
         } else if action == "scroll_up" || action == "scroll_down" {
@@ -776,7 +906,36 @@ impl Rack<'_> {
                 self.app.move_settings(delta);
             }
         } else if action == "down" && button == 0 {
-            if let Some(index) = hit
+            if let Some(start) = hit
+                .as_deref()
+                .and_then(|h| h.strip_prefix("popup:field:"))
+                .and_then(|n| n.parse::<usize>().ok())
+            {
+                let region = s.hit(px as u16, py as u16).unwrap().rect;
+                let density = self.density.max(1);
+                let column = start
+                    + usize::from(
+                        (px as u16).saturating_sub(region.x + 10 * density)
+                            / (ADVANCE as u16 * density),
+                    );
+                if let Some(PlaylistAddState {
+                    step: PlaylistAddStep::ImportArtistName { value, .. },
+                    ..
+                }) = &mut self.app.over.playlist_add
+                {
+                    let mut width = 0;
+                    let mut byte = value.text().len();
+                    for (at, ch) in value.text().char_indices() {
+                        let advance = ch.width().unwrap_or(0);
+                        if width + advance > column {
+                            byte = at;
+                            break;
+                        }
+                        width += advance;
+                    }
+                    value.set_cursor(byte);
+                }
+            } else if let Some(index) = hit
                 .as_deref()
                 .and_then(|h| h.strip_prefix("popup:row:"))
                 .and_then(|n| n.parse().ok())

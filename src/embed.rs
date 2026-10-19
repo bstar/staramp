@@ -50,6 +50,7 @@ const CAPABILITIES: &[&str] = &[
     "transport_images",
     "player_styles",
     "native_surface_v1",
+    "native_pixels_v1",
     #[cfg(feature = "terminal-graphics")]
     "native_skin_v1",
     "audio_relay_v1",
@@ -97,6 +98,8 @@ enum Request {
         #[serde(default)]
         graphics: Option<GraphicsConfig>,
         #[serde(default)]
+        pixel_size: Option<[u16; 2]>,
+        #[serde(default)]
         profile: Option<String>,
         #[serde(default)]
         native_surface: bool,
@@ -119,6 +122,8 @@ enum Request {
         x: u16,
         y: u16,
         button: String,
+        #[serde(default)]
+        pixel: Option<[u16; 2]>,
     },
     Shutdown,
 }
@@ -176,6 +181,7 @@ struct View {
     focused: bool,
     palette: Palette,
     graphics: Option<GraphicsConfig>,
+    pixel_size: Option<[u16; 2]>,
     native_surface: bool,
     native_skins: bool,
     last_surface: std::cell::RefCell<Option<starkit::native_surface::Surface>>,
@@ -475,8 +481,10 @@ pub fn run_stdio() -> Result<()> {
                 #[cfg(feature = "terminal-graphics")]
                 if v.native_skins {
                     match player_skin.surface(
-                        v.width.saturating_mul(g.cell_width),
-                        v.height.saturating_mul(g.cell_height),
+                        v.pixel_size
+                            .map_or(v.width.saturating_mul(g.cell_width), |s| s[0]),
+                        v.pixel_size
+                            .map_or(v.height.saturating_mul(g.cell_height), |s| s[1]),
                         g,
                         &v.palette,
                         &state,
@@ -485,6 +493,16 @@ pub fn run_stdio() -> Result<()> {
                         Ok(surface) => return surface,
                         Err(error) => tracing::error!(%error,"Cannot compose embedded player skin"),
                     }
+                }
+                if let Some([width, height]) = v.pixel_size {
+                    return native::classic_surface(
+                        width,
+                        height,
+                        g,
+                        &v.palette,
+                        &state,
+                        if cfg.ui.corners == "rigid" { 0 } else { 8 },
+                    );
                 }
                 native::surface_with_radius(
                     v.width,
@@ -533,6 +551,26 @@ pub fn run_stdio() -> Result<()> {
     Ok(())
 }
 
+fn validate_pixel_size(
+    size: Option<[u16; 2]>,
+    native: bool,
+    graphics: Option<GraphicsConfig>,
+) -> Result<()> {
+    if let Some([w, h]) = size {
+        if !native
+            || graphics.is_none()
+            || w == 0
+            || h == 0
+            || w > 8192
+            || h > 2048
+            || u64::from(w) * u64::from(h) > 8_000_000
+        {
+            bail!("invalid native pixel size");
+        }
+    }
+    Ok(())
+}
+
 fn handle_request(
     request: Request,
     player: &Player,
@@ -548,6 +586,7 @@ fn handle_request(
             focused,
             theme,
             graphics,
+            pixel_size,
             profile,
             native_surface,
             native_skins,
@@ -556,6 +595,7 @@ fn handle_request(
             if width == 0 || height == 0 || width > MAX_WIDTH || height > MAX_HEIGHT {
                 bail!("invalid panel size {width}x{height}");
             }
+            validate_pixel_size(pixel_size, native_surface, graphics)?;
             if let Some(graphics) = graphics {
                 let pixel_width = u64::from(width) * u64::from(graphics.cell_width);
                 let pixel_height = u64::from(height) * u64::from(graphics.cell_height);
@@ -584,6 +624,7 @@ fn handle_request(
                 focused,
                 palette: theme,
                 graphics,
+                pixel_size,
                 native_surface,
                 native_skins: native_skins
                     && native_surface
@@ -637,7 +678,12 @@ fn handle_request(
                 write_response(output, &Response::Stopped)?;
             }
         }
-        Request::Pointer { x, y, button } => {
+        Request::Pointer {
+            x,
+            y,
+            button,
+            pixel,
+        } => {
             match button.as_str() {
                 "scroll_up" | "scroll_down" | "left" | "right" | "drag" => {}
                 _ => return Ok(()),
@@ -670,12 +716,25 @@ fn handle_request(
                     fallback = native::surface(v.width, v.height, g, &v.palette, &state);
                     &fallback
                 };
-                native::hit_test(
-                    surface,
-                    x.saturating_mul(g.cell_width) + g.cell_width / 2,
-                    y.saturating_mul(g.cell_height) + g.cell_height / 2,
-                    state.duration,
-                )
+                let [px, py] = pixel.unwrap_or_else(|| {
+                    if v.pixel_size.is_some() {
+                        [
+                            ((u32::from(x) * 2 + 1) * u32::from(surface.width)
+                                / (u32::from(v.width) * 2)) as u16,
+                            ((u32::from(y) * 2 + 1) * u32::from(surface.height)
+                                / (u32::from(v.height) * 2)) as u16,
+                        ]
+                    } else {
+                        [
+                            x.saturating_mul(g.cell_width) + g.cell_width / 2,
+                            y.saturating_mul(g.cell_height) + g.cell_height / 2,
+                        ]
+                    }
+                });
+                if px >= surface.width || py >= surface.height {
+                    return Ok(());
+                }
+                native::hit_test(surface, px, py, state.duration)
             } else {
                 render::hit_test(v.width, v.height, x, y, &state)
             };
@@ -1002,6 +1061,43 @@ fn read_line_bounded(reader: &mut impl BufRead, max: usize) -> io::Result<Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exact_native_geometry_requires_a_bounded_negotiated_surface() {
+        let graphics = Some(GraphicsConfig {
+            cell_width: 8,
+            cell_height: 16,
+        });
+        for size in [[937, 213], [8192, 1], [1, 2048]] {
+            assert!(validate_pixel_size(Some(size), true, graphics).is_ok());
+            assert!(validate_pixel_size(Some(size), false, graphics).is_err());
+            assert!(validate_pixel_size(Some(size), true, None).is_err());
+        }
+        for size in [[0, 100], [100, 0], [8193, 1], [1, 2049], [8192, 2048]] {
+            assert!(validate_pixel_size(Some(size), true, graphics).is_err());
+        }
+        assert!(validate_pixel_size(None, false, None).is_ok());
+        for (json, has_pixel) in [
+            (r#"{"type":"pointer","x":1,"y":2,"button":"left"}"#, false),
+            (
+                r#"{"type":"pointer","x":1,"y":2,"button":"left","pixel":[127,53]}"#,
+                true,
+            ),
+        ] {
+            assert!(
+                matches!(serde_json::from_str::<Request>(json).unwrap(), Request::Pointer { pixel, .. } if pixel.is_some() == has_pixel)
+            );
+        }
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn arbitrary_native_canvas_sizes_have_explicit_resource_limits(w: u16, h: u16) {
+            let graphics = Some(GraphicsConfig { cell_width: 8, cell_height: 16 });
+            let expected = w > 0 && h > 0 && w <= 8192 && h <= 2048 && u64::from(w) * u64::from(h) <= 8_000_000;
+            proptest::prop_assert_eq!(validate_pixel_size(Some([w,h]), true, graphics).is_ok(), expected);
+        }
+    }
 
     #[test]
     fn rejects_relative_and_unsupported_paths() {

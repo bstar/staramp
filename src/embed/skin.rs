@@ -729,7 +729,12 @@ impl PlayerSkin {
             radius / density,
             Some(self),
         );
-        surface.with_physical_text().at_density(density)
+        let mut surface = surface.with_physical_text().at_density(density)?;
+        // Odd host allocations can leave one physical pixel at 2x density.
+        // Extend the canvas rather than resampling fixed lettering or sprites.
+        surface.width = width;
+        surface.height = height;
+        Ok(surface)
     }
 }
 /// UI density selects original artwork and fresh text sizes. Window width only
@@ -1846,6 +1851,56 @@ mod tests {
         assert_eq!(paused, embedded);
     }
     #[test]
+    fn full_and_compact_embed_keep_one_play_pause_toggle_at_the_same_position() {
+        use super::super::render::HitTarget;
+        let g = GraphicsConfig {
+            cell_width: 10,
+            cell_height: 20,
+        };
+        let mut skin = PlayerSkin::new().unwrap();
+        for presentation in ["skin", "classic", "compact"] {
+            let mut previous = None;
+            for playback in [PlayState::Playing, PlayState::Paused, PlayState::Stopped] {
+                let mut state = state();
+                state.state = playback;
+                let surface = match presentation {
+                    "skin" => skin.surface(1000, 230, g, &palette(), &state, 8).unwrap(),
+                    "classic" => native::surface(100, 10, g, &palette(), &state),
+                    _ => native::surface(100, 8, g, &palette(), &state),
+                };
+                let toggles: Vec<_> = surface
+                    .hits
+                    .iter()
+                    .filter(|h| matches!(h.action.as_str(), "play" | "pause"))
+                    .collect();
+                assert_eq!(toggles.len(), 1, "{presentation}: {playback:?}");
+                let rect = toggles[0].rect;
+                if let Some(previous) = previous {
+                    assert_eq!(rect, previous);
+                }
+                previous = Some(rect);
+                assert_eq!(
+                    native::hit_test(
+                        &surface,
+                        rect.x + rect.width / 2,
+                        rect.y + rect.height / 2,
+                        state.duration
+                    ),
+                    Some(HitTarget::PlayPause)
+                );
+                if presentation != "skin" {
+                    let expected = if playback == PlayState::Playing {
+                        "media-pause"
+                    } else {
+                        "media-play"
+                    };
+                    assert!(surface.nodes.iter().any(|n| matches!(n,
+                        Primitive::Icon { name, .. } if name == expected)));
+                }
+            }
+        }
+    }
+    #[test]
     fn empty_idle_clears_stale_decoder_and_meter_data_but_keeps_active_playback() {
         let mut idle = state();
         idle.has_items = false;
@@ -1936,6 +1991,31 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn odd_native_allocations_preserve_canvas_and_original_sprite_pixels() {
+        let mut skin = PlayerSkin::new().unwrap();
+        let g = GraphicsConfig {
+            cell_width: 16,
+            cell_height: 32,
+        };
+        for (w, h) in [(1441, 461), (2703, 463), (937, 213)] {
+            let s = skin.surface(w, h, g, &palette(), &state(), 8).unwrap();
+            assert_eq!([s.width, s.height], [w, h]);
+            s.validate().unwrap();
+            for node in &s.nodes {
+                if let Primitive::Sprite {
+                    rect,
+                    source,
+                    insets: None,
+                    ..
+                } = node
+                {
+                    assert_eq!([rect.width, rect.height], [source.width, source.height]);
+                }
+            }
+        }
+    }
+
     #[test]
     fn density_theme_corners_and_pointer_states_use_original_assets() {
         let mut skin = PlayerSkin::new().unwrap();

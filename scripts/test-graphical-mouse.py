@@ -19,6 +19,7 @@ import tempfile
 import termios
 import threading
 import time
+import wave
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('binary')
@@ -26,6 +27,7 @@ parser.add_argument('--resize', action='store_true', help='also exercise resize 
 parser.add_argument('--local-hover', action='store_true', help='check queue hover without controller input')
 parser.add_argument('--motion-burst', action='store_true', help='check rapid hover input before closing')
 parser.add_argument('--fold-playlist', action='store_true', help='collapse and expand the playlist repeatedly at both densities')
+parser.add_argument('--imports', action='store_true', help='launch the graphical import reviewer with a disposable album')
 args = parser.parse_args()
 binary = str(Path(args.binary).resolve())
 with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
@@ -44,12 +46,25 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
     # start concurrently; this check targets terminal input and shutdown.
     subprocess.run([binary, 'scrobble', 'status'], env=env, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
+    launch = [binary, 'graphical']
+    if args.imports:
+        library = root / 'library'
+        library.mkdir()
+        staging = root / 'inbox with spaces'
+        album = staging / 'Fixture Artist' / 'Fixture Album'
+        album.mkdir(parents=True)
+        track = album / '01 - Fixture.wav'
+        with wave.open(str(track), 'wb') as audio:
+            audio.setparams((1, 2, 44100, 0, 'NONE', 'not compressed'))
+            audio.writeframes(b'\0\0' * 4410)
+        (root / 'config/config.toml').write_text(f'library_root = "{library}"\n')
+        launch = [binary, 'import', '--graphical', str(staging)]
 
     def session():
         os.setsid()
         fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
-    child = subprocess.Popen([binary, 'graphical'], stdin=slave, stdout=slave, stderr=slave,
+    child = subprocess.Popen(launch, stdin=slave, stdout=slave, stderr=slave,
                              env=env, preexec_fn=session)
     os.close(slave)
     output, pending = bytearray(), bytearray()
@@ -244,6 +259,13 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
         pump(.1)
         assert b'\x1b[?1016l' in output, 'Pixel mouse mode was not restored'
         assert b'panicked at' not in output, bytes(output[-2000:])
+        if args.imports:
+            assert (root / 'data/imports.sqlite').is_file(), 'Import reviewer did not index staging'
+            assert not (root / 'data/index.sqlite').exists(), 'Import preview created a permanent index'
+            assert track.is_file(), 'Preview removed the staged album'
+            assert not list(library.iterdir()), 'Preview moved music into the library without confirmation'
+            print(json.dumps({'graphical_import_launch': True, 'separate_staging_index': True,
+                              'preview_preserved_music': True}))
         print(json.dumps({'real_frontend_pty': True, 'zero_coordinates_survived': True,
                           'main_close_exits_frontend': True, 'pixel_mode_restored': True}))
     finally:

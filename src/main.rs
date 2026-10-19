@@ -183,6 +183,9 @@ enum Command {
         /// Rejected albums are moved here. Defaults to `[imports] quarantine_root`.
         #[arg(long)]
         quarantine: Option<PathBuf>,
+        /// Open the import reviewer in the native Classic graphical rack.
+        #[arg(long)]
+        graphical: bool,
     },
     /// Search the index.
     Search {
@@ -318,6 +321,14 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "terminal-graphics")]
     if cli.graphical_server.is_none() {
+        if let Some(Command::Import {
+            staging,
+            quarantine,
+            graphical: true,
+        }) = &cli.command
+        {
+            return launch_graphical_import(&cli, staging.clone(), quarantine.clone());
+        }
         let graphical = matches!(cli.command, Some(Command::Graphical { .. }));
         let player_launch = matches!(
             cli.command,
@@ -363,6 +374,14 @@ fn main() -> Result<()> {
 
     #[cfg(feature = "terminal-graphics")]
     if let Some(name) = cli.graphical_server {
+        if let Some(Command::Import {
+            staging,
+            quarantine,
+            ..
+        }) = cli.command
+        {
+            return cmd_import_mode(staging, quarantine, Some(&name));
+        }
         return cmd_tui_mode(cli.directory, Some("off".into()), Some(&name));
     }
     match cli.command {
@@ -384,7 +403,14 @@ fn main() -> Result<()> {
         Some(Command::Import {
             staging,
             quarantine,
-        }) => cmd_import(staging, quarantine),
+            graphical,
+        }) => {
+            anyhow::ensure!(
+                !graphical,
+                "graphical imports require a build with terminal-graphics enabled"
+            );
+            cmd_import(staging, quarantine)
+        }
         Some(Command::Search { query, limit }) => cmd_search(query, limit),
         Some(Command::Stats) => cmd_stats(),
         Some(Command::ShuffleProbe { count }) => cmd_shuffle_probe(count),
@@ -902,6 +928,14 @@ fn cmd_scan(root: Option<PathBuf>, force: bool) -> Result<()> {
 }
 
 fn cmd_import(staging: Option<PathBuf>, quarantine: Option<PathBuf>) -> Result<()> {
+    cmd_import_mode(staging, quarantine, None)
+}
+
+fn cmd_import_mode(
+    staging: Option<PathBuf>,
+    quarantine: Option<PathBuf>,
+    native_session: Option<&str>,
+) -> Result<()> {
     let cfg = config::Config::load()?;
     let library = cfg.require_library_root()?;
     let staging = staging.or(cfg.imports.staging_root.clone()).context(
@@ -944,12 +978,21 @@ fn cmd_import(staging: Option<PathBuf>, quarantine: Option<PathBuf>) -> Result<(
         })
         .collect();
 
-    let graphics = ui::graphics::probe_if_tty(ui::graphics::Mode::parse(&cfg.ui.graphics));
+    let graphics =
+        ui::graphics::probe_if_tty(ui::graphics::Mode::parse(if native_session.is_some() {
+            "off"
+        } else {
+            &cfg.ui.graphics
+        }));
     let buttons = ui::graphics::Buttons::parse(&cfg.ui.buttons);
     let mut app = ui::app::App::new(staging.clone(), items, &cfg)?;
     app.set_graphics(graphics);
     app.set_buttons_mode(buttons);
     app.set_import_mode(staging, library, quarantine, albums);
+    #[cfg(feature = "terminal-graphics")]
+    if let Some(name) = native_session {
+        return app.run_graphical(name);
+    }
     app.run()
 }
 
@@ -1960,13 +2003,24 @@ fn cmd_tui_mode(
 
 #[cfg(feature = "terminal-graphics")]
 fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()> {
+    launch_session_with(cli, target, cells, &cli.session, cli.attach)
+}
+
+#[cfg(feature = "terminal-graphics")]
+fn launch_session_with(
+    cli: &Cli,
+    target: Option<PathBuf>,
+    cells: bool,
+    name: &str,
+    attach_only: bool,
+) -> Result<()> {
     use starkit::terminal_graphics::{
         client::{self, Launch},
         terminal_bridge,
     };
     if cli.ssh.is_none() {
         if let Some(terminal) = terminal_bridge::probe()? {
-            let socket = ensure_graphical(&cli.session, target.as_deref(), cli.attach)?;
+            let socket = ensure_graphical(name, target.as_deref(), attach_only)?;
             return terminal.relay_with_presentation(&socket, None, Some(cells));
         }
         anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/KIT Kitty integration.");
@@ -1981,9 +2035,9 @@ fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()>
             },
             host: cli.ssh.clone(),
             ssh_config: cli.ssh_config.clone(),
-            session: cli.session.clone(),
+            session: name.into(),
             directory: target.map(|p| p.to_string_lossy().into_owned()),
-            attach_only: cli.attach,
+            attach_only,
             play: None,
         },
         |_| None,
@@ -1994,6 +2048,79 @@ fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()>
             path: paths::config_dir()?.join("presentation"),
         },
     )
+}
+
+#[cfg(feature = "terminal-graphics")]
+fn launch_graphical_import(
+    cli: &Cli,
+    staging: Option<PathBuf>,
+    quarantine: Option<PathBuf>,
+) -> Result<()> {
+    anyhow::ensure!(
+        cli.ssh.is_none() && std::env::var_os("SSH_CONNECTION").is_none(),
+        "graphical import reviews local albums; launch it on the machine holding the staging directory"
+    );
+    anyhow::ensure!(
+        io::stdin().is_terminal() && io::stdout().is_terminal(),
+        "an interactive terminal is required for graphical import review"
+    );
+    paths::init_private_dirs();
+    let cfg = config::Config::load()?;
+    let staging = staging.or(cfg.imports.staging_root.clone()).context(
+        "no staging root configured — pass it to `staramp import` or set [imports] staging_root",
+    )?;
+    let quarantine = quarantine
+        .or(cfg.imports.quarantine_root.clone())
+        .unwrap_or_else(|| default_import_quarantine(&staging));
+    anyhow::ensure!(
+        mirror::Mirror::connect().is_none(),
+        "STAR/AMP is already running — close it before opening import mode"
+    );
+    // Start the import-aware backend before attaching the ordinary renderer.
+    // Its own graphical socket keeps import rendering separate while retaining
+    // the ordinary playback-owner lease and the shared KIT launch protocol.
+    let name = format!("{}-imports", cli.session);
+    let socket = starkit::terminal_graphics::session::socket_path(
+        &paths::runtime_dir()?.join("graphical"),
+        &name,
+    )?;
+    anyhow::ensure!(
+        std::os::unix::net::UnixStream::connect(&socket).is_err(),
+        "an import review session is already running — close it before opening another"
+    );
+    let log = paths::log_dir()?.join("import-session.log");
+    starkit::fs::write_private(&log, b"")?;
+    let mut child = std::process::Command::new(std::env::current_exe()?)
+        .args(["--graphical-server", &name, "import"])
+        .arg(staging)
+        .arg("--quarantine")
+        .arg(quarantine)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::fs::OpenOptions::new().append(true).open(&log)?)
+        .spawn()?;
+    let started = Instant::now();
+    loop {
+        if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
+            break;
+        }
+        if let Some(status) = child.try_wait()? {
+            let detail = std::fs::read_to_string(&log).unwrap_or_default();
+            anyhow::bail!("Import review exited ({status}): {}", detail.trim());
+        }
+        if started.elapsed() >= std::time::Duration::from_secs(60) {
+            let _ = child.kill();
+            let _ = child.wait();
+            anyhow::bail!("Import review did not become ready; see {}", log.display());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    let result = launch_session_with(cli, None, false, &name, true);
+    if result.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    result
 }
 
 #[cfg(feature = "terminal-graphics")]
@@ -2406,6 +2533,66 @@ fn cmd_shuffle_probe(n: usize) -> Result<()> {
 #[cfg(test)]
 mod launch_tests {
     use super::*;
+
+    #[test]
+    fn graphical_import_keeps_its_staging_and_quarantine_arguments() {
+        let cli = Cli::try_parse_from([
+            "staramp",
+            "import",
+            "--graphical",
+            "inbox with spaces",
+            "--quarantine",
+            "rejected albums",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Import {
+                staging,
+                quarantine,
+                graphical,
+            }) => {
+                assert!(graphical);
+                assert_eq!(staging, Some(PathBuf::from("inbox with spaces")));
+                assert_eq!(quarantine, Some(PathBuf::from("rejected albums")));
+            }
+            _ => panic!("expected import review"),
+        }
+    }
+
+    #[test]
+    fn import_without_graphical_preserves_terminal_review() {
+        let cli = Cli::try_parse_from(["staramp", "import", "inbox"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Import {
+                graphical: false,
+                ..
+            })
+        ));
+    }
+
+    #[cfg(feature = "terminal-graphics")]
+    #[test]
+    fn graphical_backend_accepts_import_mode_instead_of_a_library_directory() {
+        let cli = Cli::try_parse_from([
+            "staramp",
+            "--graphical-server",
+            "player-imports",
+            "import",
+            "staging",
+            "--quarantine",
+            "rejected",
+        ])
+        .unwrap();
+        assert_eq!(cli.graphical_server.as_deref(), Some("player-imports"));
+        assert!(matches!(
+            cli.command,
+            Some(Command::Import {
+                graphical: false,
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn ui_accepts_a_graphics_override_before_a_file() {

@@ -899,3 +899,28 @@ retains the selection.
 Starting a selected track preserves the playlist viewport. Row selection and
 double-click playback retain the clicked row and pane focus after manual
 scrolling; regression checks exercise the complete pointer path at 1x/2x.
+
+`staramp import --graphical INBOX` now starts an import-aware Classic rack in
+its own session. It uses the existing staging index and transactional album
+import/reject logic, and refuses to contend with an already running playback
+owner. Right-clicking an open or folded album heading opens its album actions.
+Production-rack reference checks exercise those menus, artist selection,
+duplicate decisions and reject confirmation at 1x/2x. A private real frontend
+PTY check covers the public command, separate staging index, unchanged fixture
+music, window close and terminal restoration. These checks do not import or
+reject the user's real music.
+
+
+Graphical import review now has visible Import/Reject toolbar actions,
+first-press right-click context menus across pane focus, hover selection in
+artist/conflict/reject dialogs, and a native artist-directory field with
+mouse caret placement and Use/Back controls. The field uses KIT's existing
+text editor for Unicode, paste and cursor/delete keys. Staging rescans run on
+the album worker; incremental queue edits retain playback, selection, scroll
+anchors, tags and folds after completed operations. Classic artwork is a
+cached sprite in the rack surface, so opening a modal preserves the same
+artwork beneath it. The graphical player and album facts now share the
+terminal player's format string, including known kbps for lossy formats.
+Production-rack regressions cover these pointer paths at 1x/2x, stable cover
+assets through modal open/close, review state after removal, and visible
+MP3/AAC/Vorbis/Opus bitrates. All fixtures use private data.

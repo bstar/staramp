@@ -21,6 +21,21 @@ staramp import ~/Downloads/ALBUMS
 staramp import ~/Downloads/ALBUMS --quarantine /somewhere/else
 ```
 
+To review the same inbox in the native Classic graphical rack, run this in
+Kitty (or a terminal with the STAR/KIT graphics integration):
+
+```sh
+staramp import --graphical ~/Downloads/ALBUMS
+```
+
+Close the existing STAR/AMP player first: import review owns playback and must
+not silently join the permanent-library queue. The graphical reviewer uses a
+separate import session and the same staging index, duplicate decisions, and
+verified import transactions as the terminal reviewer. Right-click an album
+heading or one of its tracks to import or reject the whole album, including
+when its heading is folded. The graphical flag currently reviews local staging
+directories; it does not start an SSH import session.
+
 When no quarantine is configured, the first form uses the sibling directory
 `~/Downloads/ALBUMS-rejected`.
 
@@ -34,7 +49,17 @@ The command opens the normal player on a separately indexed, album-grouped
 view of the inbox, oldest first. Navigate, filter, fold, and play it as you
 would anything else.
 
-Right-click an album heading for the two decisions:
+In graphical mode, select an album and use the visible **IMPORT** or **REJECT**
+buttons at the bottom of the playlist. Right-clicking an album heading or track
+also opens its album actions, even when another pane has focus. Album headings
+remain usable when folded.
+
+The artist-directory form supports arrow keys, Home/End, Delete/Backspace,
+pasting and clicking to place the caret. Its **Use** and **Back** buttons let
+you complete the choice with the mouse. Destination and confirmation rows
+highlight on hover and support the mouse wheel.
+
+The two decisions are:
 
 | Action | Does |
 | --- | --- |
@@ -63,4 +88,6 @@ A failed copy or scan leaves the source intact and nothing half-installed at
 the destination. Tags are never changed to obtain a directory layout.
 
 The inbox's own index is `imports.sqlite`, which is rebuildable and never
-confused with the permanent one.
+confused with the permanent one. After an import or rejection, its refresh runs
+in the background. The review retains the selected remaining track, viewport,
+folded albums and playback position instead of rebuilding the queue from the top.

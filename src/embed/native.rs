@@ -715,10 +715,8 @@ pub(super) fn player_surface(
                     }),
             });
         }
-        s.hits.push(HitRegion {
-            rect,
-            action: (*name).into(),
-        });
+        // player_button owns this target, including the shared Play/Pause
+        // slot. Changing its icon must not add a second transport target.
     }
     let toggle_x = pad + 4 * (button + 6) + if artwork.is_some() { 46 } else { 24 };
     if w > if artwork.is_some() { 719 } else { 800 } {

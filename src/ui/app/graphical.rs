@@ -261,7 +261,11 @@ impl App {
             self.panels.album = true;
             self.panels.history = true;
             self.panels.playlist = true;
-            self.panels.focus = Focus::Player;
+            self.panels.focus = if self.import.is_some() {
+                Focus::Playlist
+            } else {
+                Focus::Player
+            };
             self.vis.mode = VisMode::Leds;
             self.saving.pending.insert(
                 ("ui".into(), "graphical_rack_initialized".into()),
@@ -363,17 +367,7 @@ impl Rack<'_> {
                 .as_ref()
                 .and_then(|i| i.album.clone())
                 .unwrap_or_default(),
-            tech: if st.sample_rate.load(Relaxed) == 0 {
-                String::new()
-            } else {
-                format!(
-                    "{} · {:.1} kHz · {} bit · {} channels",
-                    st.codec.load_full(),
-                    st.sample_rate.load(Relaxed) as f64 / 1000.,
-                    st.bit_depth.load(Relaxed),
-                    st.channels.load(Relaxed)
-                )
-            },
+            tech: a.playback_tech(),
             state: st.state(),
             loading: st.is_loading(),
             position: st.position_secs(),
@@ -1032,16 +1026,15 @@ impl Rack<'_> {
                 false,
             );
         }
-        use std::sync::atomic::Ordering::Relaxed;
-        let rate = self.app.player.state.sample_rate.load(Relaxed);
-        let depth = self.app.player.state.bit_depth.load(Relaxed);
-        let format = if rate > 0 {
-            format!(
-                "{} · {:.1} kHz · {}-bit",
-                self.app.player.state.codec.load_full(),
-                rate as f64 / 1000.,
-                depth
-            )
+        let format = if self
+            .app
+            .player
+            .state
+            .sample_rate
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+        {
+            self.app.playback_tech()
         } else {
             detail.and_then(|d| d.codec.clone()).unwrap_or_default()
         };
@@ -1438,16 +1431,24 @@ impl Rack<'_> {
             );
         }
         let toolbar_y = s.height - 35;
-        for (i, (title, action)) in [
-            ("ADD", "library"),
-            ("REM", "queue-remove"),
-            ("SEL", "queue-tag"),
-            ("MISC", "settings:playlist"),
-            ("LIST", "playlists"),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        let tools = if self.app.import.is_some() {
+            [
+                ("IMPORT", "import:selected"),
+                ("REJECT", "import:reject"),
+                ("SEL", "queue-tag"),
+                ("MISC", "settings:playlist"),
+                ("LIST", "playlists"),
+            ]
+        } else {
+            [
+                ("ADD", "library"),
+                ("REM", "queue-remove"),
+                ("SEL", "queue-tag"),
+                ("MISC", "settings:playlist"),
+                ("LIST", "playlists"),
+            ]
+        };
+        for (i, (title, action)) in tools.into_iter().enumerate() {
             self.button(
                 &mut s,
                 R::new(14 + i as u16 * 63, toolbar_y, 57, 29),
@@ -1935,6 +1936,15 @@ impl Rack<'_> {
                 }
                 self.playlist_scrolled = None;
             }
+            "import:selected" | "import:reject" => {
+                if let Some(source) = a.queue.items.get(a.queue.cursor).cloned() {
+                    a.open_import_album_menu(source, a.queue.cursor);
+                    if let Some(state) = &mut a.over.playlist_add {
+                        state.cursor = usize::from(name == "import:reject");
+                        a.take_playlist_add();
+                    }
+                }
+            }
             "help" => a.handle(Action::Help),
             "theme-next" => {
                 a.handle(Action::NextTheme);
@@ -2011,7 +2021,14 @@ impl Rack<'_> {
                                 a.handle(Action::Activate);
                             }
                         }
-                        Some(playlist::Row::Section { fold, .. }) => a.toggle_fold(&fold),
+                        Some(playlist::Row::Section { fold, .. }) => {
+                            if a.import.is_some() {
+                                if let Some(track) = a.queue.rows.track_for_section(i) {
+                                    a.set_cursor(track);
+                                }
+                            }
+                            a.toggle_fold(&fold);
+                        }
                         None => {}
                     }
                 }
@@ -2536,6 +2553,64 @@ impl Controller for Rack<'_> {
             rect: R::new(0, footer_y, 72, font + 12),
             action: "help".into(),
         });
+        // Paint artwork into the same surface as the rack, before dialogs.
+        // A separate image layer had to disappear whenever a modal opened,
+        // making every import step visibly repaint the album pane.
+        if self.skins
+            && self.app.panels.album
+            && !self.folded.contains("album")
+            && album_y + i32::from(ALBUM_COVER_Y) >= i32::from(top)
+            && album_y + i32::from(ALBUM_COVER_Y + ALBUM_COVER) < i32::from(h - font - 12)
+        {
+            if let Some(album) = self
+                .app
+                .current_uri()
+                .and_then(|u| self.app.art.as_ref()?.album_for(&u))
+            {
+                if let Some(image) = &album.image {
+                    let serial = self.app.art.as_ref().map_or(0, |a| a.serial());
+                    let physical = ALBUM_COVER * density;
+                    let key = CoverKey {
+                        serial,
+                        canvas: [u32::from(physical); 2],
+                        bounds: R::new(0, 0, physical, physical),
+                        border: 2 * density,
+                        background: c.panel.clone(),
+                        silver_gradient: palette == crate::embed::skin::SILVER_PALETTE,
+                        outline: native::hex(palette.border),
+                    };
+                    if self.cover_cache.as_ref().is_none_or(|old| old.key != key) {
+                        self.cover_cache = starkit::terminal_graphics::assets::encode_skin(
+                            &cover_raster(image, &key),
+                        )
+                        .ok()
+                        .map(|(id, png)| CoverCache { key, id, png });
+                    }
+                    if let Some(cached) = &self.cover_cache {
+                        let rect = R::new(
+                            16,
+                            (album_y + i32::from(ALBUM_COVER_Y)) as u16,
+                            ALBUM_COVER,
+                            ALBUM_COVER,
+                        );
+                        surface
+                            .assets
+                            .insert(cached.id.clone(), Some(cached.png.clone()));
+                        surface.nodes.push(Primitive::Sprite {
+                            rect,
+                            asset: cached.id.clone(),
+                            source: R::new(0, 0, physical, physical),
+                            insets: None,
+                            tint: None,
+                        });
+                        surface.hits.push(HitRegion {
+                            rect,
+                            action: "cover-open".into(),
+                        });
+                    }
+                }
+            }
+        }
         if self.app.overlay_open()
             && !self.app.panels.help
             && !self.eq_value_popup(&mut surface, &c)
@@ -2688,7 +2763,8 @@ impl Controller for Rack<'_> {
             },
             surface: surface.clone(),
         });
-        if !self.overlay
+        if !self.skins
+            && !self.overlay
             && self.app.panels.album
             && !self.folded.contains("album")
             && album_y + i32::from(ALBUM_COVER_Y) >= i32::from(top)
@@ -3009,7 +3085,7 @@ impl Controller for Rack<'_> {
                             // Row selection and transport buttons act on the
                             // first left press. Keep focus-only presses for
                             // sliders and graphs.
-                            let immediate = button == 0
+                            let immediate = (button == 0 || button == 1)
                                 && self
                                     .surface
                                     .as_ref()
@@ -3020,7 +3096,13 @@ impl Controller for Rack<'_> {
                                             .is_some_and(|row| row.parse::<usize>().is_ok())
                                             || matches!(
                                                 hit.action.as_str(),
-                                                "previous" | "play" | "pause" | "stop" | "next"
+                                                "previous"
+                                                    | "play"
+                                                    | "pause"
+                                                    | "stop"
+                                                    | "next"
+                                                    | "import:selected"
+                                                    | "import:reject"
                                             )
                                     });
                             if !immediate {
@@ -3150,6 +3232,9 @@ impl Controller for Rack<'_> {
                         .and_then(|row| row.parse::<usize>().ok())
                         .and_then(|row| match self.app.queue.rows.rows().get(row) {
                             Some(playlist::Row::Track(index)) => Some(*index),
+                            Some(playlist::Row::Section { .. }) if self.app.import.is_some() => {
+                                self.app.queue.rows.track_for_section(row)
+                            }
                             _ => None,
                         })
                     {
@@ -3423,11 +3508,12 @@ impl App {
             assert!(scene
                 .components
                 .iter()
-                .any(|c| matches!(c, Component::Image { .. })));
+                .any(|c| matches!(c, Component::Surface { surface, .. } if surface.nodes.iter().any(|n| matches!(n, Primitive::Sprite { asset, .. } if asset == &rack.cover_cache.as_ref().unwrap().id)))));
             // Check the production raster, including fractional terminal grids:
             // fitted artwork has a 2px logical outline and no dark empty well.
             let previous_theme = rack.app.look.theme.clone();
             let mut previous_id = String::new();
+            let mut previous_png = String::new();
             for theme in ["winamp-classic", "kanagawa", "winamp-silver"] {
                 rack.app.look.theme = crate::theme::builtin::load(theme).unwrap();
                 rack.reference_colors = false;
@@ -3444,11 +3530,16 @@ impl App {
                         generation: 0,
                     });
                     let cached = rack.cover_cache.as_ref().unwrap();
-                    assert_ne!(
-                        cached.id, previous_id,
-                        "changed artwork raster needs a new transport ID"
-                    );
+                    if cached.png == previous_png {
+                        assert_eq!(
+                            cached.id, previous_id,
+                            "unchanged artwork reuses its cached asset"
+                        );
+                    } else {
+                        assert_ne!(cached.id, previous_id, "changed artwork needs a new asset");
+                    }
                     previous_id = cached.id.clone();
+                    previous_png = cached.png.clone();
                     let slot = rack
                         .surface
                         .as_ref()
@@ -3545,6 +3636,36 @@ impl App {
                     .to_image()
                     .save(output.join(format!("album-artwork-{theme}-{width}.png")))?;
                 }
+            }
+            for density in [1, 2] {
+                let v = Viewport {
+                    width: 1400 * density,
+                    height: 1800 * density,
+                    columns: 140,
+                    rows: 90,
+                    generation: 0,
+                };
+                let before = rack.scene(v);
+                let id = rack.cover_cache.as_ref().unwrap().id.clone();
+                let image_node = |scene: &Scene| {
+                    scene.components.iter().find_map(|c| {
+                    if let Component::Surface { surface, .. } = c {
+                        surface.nodes.iter().find(|n| matches!(n, Primitive::Sprite { asset, .. } if asset == &id)).cloned()
+                    } else { None }
+                })
+                };
+                rack.app.open_settings(Focus::Playlist);
+                let during = rack.scene(v);
+                assert!(rack.overlay);
+                assert_eq!(
+                    image_node(&before),
+                    image_node(&during),
+                    "modal must retain the exact cover sprite"
+                );
+                assert_eq!(rack.cover_cache.as_ref().unwrap().id, id);
+                rack.app.over.settings = None;
+                rack.scene(v);
+                assert_eq!(rack.cover_cache.as_ref().unwrap().id, id);
             }
             rack.app.look.theme = previous_theme;
             rack.reference_colors = true;
@@ -4402,6 +4523,25 @@ impl App {
         // Use the producer's actual button numbers (left = 0), through the
         // complete pointer route. Calling action() directly missed the wire
         // mismatch, and a header-wide fold hit used to swallow these links.
+        fn hover(rack: &mut Rack<'_>, name: &str) {
+            let r = rack
+                .surface
+                .as_ref()
+                .unwrap()
+                .hits
+                .iter()
+                .find(|hit| hit.action == name)
+                .unwrap()
+                .rect;
+            rack.input(Input::Pointer {
+                action: "move".into(),
+                button: 0,
+                x: 0,
+                y: 0,
+                pixel: Some([u32::from(r.x + r.width / 2), u32::from(r.y + r.height / 2)]),
+                modifiers: 0,
+            });
+        }
         fn click(rack: &mut Rack<'_>, name: &str) {
             click_button(rack, name, 0);
         }
@@ -4426,7 +4566,7 @@ impl App {
                 .hits
                 .iter()
                 .find(|hit| hit.action == name)
-                .unwrap()
+                .unwrap_or_else(|| panic!("missing graphical hit {name}: {:?}", surface.hits))
                 .rect;
             let (x, y) = (rect.x + rect.width / 2, rect.y + rect.height / 2);
             assert_eq!(surface.hit(x, y).unwrap().action, name);
@@ -5353,15 +5493,12 @@ impl App {
             _ => panic!("expected track"),
         };
         rack.app.panels.focus = Focus::Player;
-        let cursor = rack.app.queue.cursor;
         press_button(&mut rack, "playlist:2", 1);
         assert_eq!(rack.app.panels.focus, Focus::Playlist);
-        assert_eq!(rack.app.queue.cursor, cursor);
         assert!(
-            rack.app.over.playlist_add.is_none(),
-            "first right-click only selects"
+            rack.app.over.playlist_add.is_some(),
+            "first right-click opens the menu"
         );
-        click_button(&mut rack, "playlist:2", 1);
         let context_scene = rack.scene(viewport);
         assert_eq!(
             rack.app.over.playlist_add.as_ref().unwrap().source.uri,
@@ -6322,6 +6459,267 @@ impl App {
                 );
             }
         }
+        // Import review uses the real rack context menus for both open and
+        // folded album headings. Stop at the existing confirmation dialogs;
+        // rendering must never perform an album filesystem transaction.
+        rack.app.quit = false;
+        let mut staged = QueueItem::new(crate::playlist::uri::TrackUri::parse(
+            "Review Album/01.flac",
+        ));
+        staged.artist = Some("Review Artist".into());
+        staged.album = Some("Review Album".into());
+        staged.title = Some("Review track".into());
+        let staging = output.join("staging");
+        let library = output.join("library");
+        std::fs::create_dir_all(&library)?;
+        rack.app
+            .player
+            .queue
+            .lock()
+            .unwrap()
+            .set_tracks(vec![staged.clone()]);
+        rack.app.set_import_mode(
+            staging,
+            library.clone(),
+            output.join("rejected"),
+            vec![crate::library::import::Album {
+                artist: "Review Artist".into(),
+                title: "Review Album".into(),
+                source_rel: "Review Album".into(),
+                date_seconds: None,
+                tracks: vec![staged],
+                artist_candidates: vec![library.join("Review Artist")],
+                existing: vec![library.join("Review Artist/Existing Album")],
+            }],
+        );
+        rack.app.panels.picker = false;
+        rack.app.panels.eq = false;
+        rack.app.panels.album = false;
+        rack.app.panels.history = false;
+        rack.app.over = Overlays::default();
+        rack.offset = 0;
+        rack.folded.clear();
+        rack.playlist_scrolled = None;
+        rack.app.over.resume = None;
+        rack.app.queue.folded.clear();
+        for density in [1, 2] {
+            rack.skins = true;
+            let viewport = Viewport {
+                width: 1200 * density,
+                height: 900 * density,
+                columns: 120,
+                rows: 45,
+                generation: 0,
+            };
+            for folded in [false, true] {
+                rack.app.over.playlist_add = None;
+                rack.app.queue.folded.clear();
+                rack.app.queue.fold_gen = rack.app.queue.fold_gen.wrapping_add(1);
+                rack.scene(viewport);
+                if folded {
+                    let playlist::Row::Section { fold, .. } = &rack.app.queue.rows.rows()[0] else {
+                        panic!("missing import album heading");
+                    };
+                    rack.app.toggle_fold(&fold.clone());
+                }
+                rack.scene(viewport);
+                assert!(matches!(
+                    &rack.app.queue.rows.rows()[0],
+                    playlist::Row::Section { folded: actual, .. } if *actual == folded
+                ));
+                rack.app.panels.focus = Focus::Player;
+                press_button(&mut rack, "playlist:0", 1);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportAlbum
+                ));
+                let scene = rack.scene(viewport);
+                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    .save(output.join(format!("import-review-{density}x-{folded}.png")))?;
+                click(&mut rack, "popup:row:0");
+                rack.scene(viewport);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportArtist(_)
+                ));
+                hover(&mut rack, "popup:row:1");
+                assert_eq!(rack.app.over.playlist_add.as_ref().unwrap().cursor, 1);
+                click(&mut rack, "popup:row:1");
+                rack.scene(viewport);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportArtistName { .. }
+                ));
+                // Click inside the field and edit at the caret, including Unicode.
+                let field = rack
+                    .surface
+                    .as_ref()
+                    .unwrap()
+                    .hits
+                    .iter()
+                    .find(|h| h.action.starts_with("popup:field:"))
+                    .unwrap()
+                    .rect;
+                rack.input(Input::Pointer {
+                    action: "down".into(),
+                    button: 0,
+                    x: 0,
+                    y: 0,
+                    pixel: Some([
+                        u32::from(field.x + 10 * density as u16),
+                        u32::from(field.y + 10),
+                    ]),
+                    modifiers: 0,
+                });
+                rack.input(Input::Paste { text: "Ü".into() });
+                if let PlaylistAddStep::ImportArtistName { value, .. } =
+                    &rack.app.over.playlist_add.as_ref().unwrap().step
+                {
+                    assert_eq!(value.text(), "ÜReview Artist");
+                } else {
+                    panic!("artist input closed");
+                }
+                rack.scene(viewport);
+                click(&mut rack, "popup:row:2");
+                rack.scene(viewport);
+                click(&mut rack, "popup:row:0");
+                rack.scene(viewport);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportConflict(_)
+                ));
+                hover(&mut rack, "popup:row:2");
+                assert_eq!(rack.app.over.playlist_add.as_ref().unwrap().cursor, 2);
+                click(&mut rack, "popup:row:0"); // cancel duplicate decision
+                rack.scene(viewport);
+                press_button(&mut rack, "import:selected", 0);
+                rack.scene(viewport);
+                click(&mut rack, "popup:row:1"); // type directory
+                rack.scene(viewport);
+                click(&mut rack, "popup:row:1"); // Use button
+                rack.scene(viewport);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportConflict(_)
+                ));
+                rack.app.over.playlist_add = None;
+                rack.scene(viewport);
+                click_button(&mut rack, "playlist:0", 1);
+                rack.scene(viewport);
+                click(&mut rack, "popup:row:1");
+                rack.scene(viewport);
+                assert!(matches!(
+                    rack.app.over.playlist_add.as_ref().unwrap().step,
+                    PlaylistAddStep::ImportReject
+                ));
+                hover(&mut rack, "popup:row:1");
+                assert_eq!(rack.app.over.playlist_add.as_ref().unwrap().cursor, 1);
+                click(&mut rack, "popup:row:0"); // cancel, never move fixture music
+                assert!(rack.app.import.as_ref().unwrap().pending.is_none());
+            }
+        }
+        rack.app.over.playlist_add = None;
+        let viewport = Viewport {
+            width: 1200,
+            height: 900,
+            columns: 120,
+            rows: 45,
+            generation: 0,
+        };
+        rack.scene(viewport);
+        rack.app.panels.focus = Focus::Player;
+        press_button(&mut rack, "import:selected", 0);
+        assert!(matches!(
+            rack.app.over.playlist_add.as_ref().unwrap().step,
+            PlaylistAddStep::ImportArtist(_)
+        ));
+        rack.app.over.playlist_add = None;
+        rack.scene(viewport);
+        rack.app.panels.focus = Focus::Player;
+        press_button(&mut rack, "import:reject", 0);
+        assert!(matches!(
+            rack.app.over.playlist_add.as_ref().unwrap().step,
+            PlaylistAddStep::ImportReject
+        ));
+        rack.app.over.playlist_add = None;
+        // Preserve selection, scroll anchor, folds, tags and the playback cursor
+        // when a completed import removes a preceding album from the inbox.
+        let albums: Vec<_> = (0..30)
+            .map(|n| {
+                let mut album = rack.app.import.as_ref().unwrap().albums[0].clone();
+                album.title = format!("Record {n:02}");
+                album.source_rel = album.title.clone().into();
+                album.tracks[0].uri =
+                    crate::playlist::uri::TrackUri::parse(&format!("Record {n:02}/01.flac"));
+                album.tracks[0].album = Some(album.title.clone());
+                album
+            })
+            .collect();
+        {
+            let mut q = rack.app.player.queue.lock().unwrap();
+            q.set_tracks(albums.iter().flat_map(|a| a.tracks.clone()).collect());
+            q.set_grouping(Some(false));
+            q.set_view_cursor(25);
+        }
+        rack.app.import.as_mut().unwrap().albums = albums.clone();
+        rack.app.prepare_playlist_rows();
+        rack.app.queue.cursor = 20;
+        rack.app.queue.scroll = rack.app.queue.rows.row_of_track(15).unwrap();
+        rack.app.queue.tagged = [18].into_iter().collect();
+        let fold = playlist::fold_for_track(&rack.app.queue.items, 10).unwrap();
+        rack.app.toggle_fold(&fold);
+        rack.app.prepare_playlist_rows();
+        rack.app.queue.scroll = rack.app.queue.rows.row_of_track(15).unwrap();
+        let selection = rack.app.queue.items[20].uri.clone();
+        let anchor = rack.app.queue.items[15].uri.clone();
+        let playing = rack
+            .app
+            .player
+            .queue
+            .lock()
+            .unwrap()
+            .current()
+            .unwrap()
+            .uri
+            .clone();
+        rack.app.refresh_import_mode(albums[1..].to_vec());
+        assert_eq!(rack.app.queue.items[rack.app.queue.cursor].uri, selection);
+        assert_eq!(
+            rack.app.queue.rows.row_of_track(
+                rack.app
+                    .queue
+                    .items
+                    .iter()
+                    .position(|t| t.uri == anchor)
+                    .unwrap()
+            ),
+            Some(rack.app.queue.scroll)
+        );
+        assert!(rack.app.queue.folded.contains(&fold));
+        let q = rack.app.player.queue.lock().unwrap();
+        assert_eq!(q.current().unwrap().uri, playing);
+        assert_eq!(
+            q.tracks()[*rack.app.queue.tagged.iter().next().unwrap()]
+                .album
+                .as_deref(),
+            Some("Record 18")
+        );
+        drop(q);
+        for (codec, kbps) in [("mp3", 320), ("aac", 256), ("vorbis", 192), ("opus", 160)] {
+            rack.app.player.state.codec.store(Arc::new(codec.into()));
+            rack.app.player.state.sample_rate.store(44100, Relaxed);
+            rack.app.player.state.bitrate_kbps.store(kbps, Relaxed);
+            rack.app.player.state.bit_depth.store(0, Relaxed);
+            let tech = rack.player().tech;
+            assert!(
+                tech.contains(&format!("{kbps} kbps")),
+                "missing lossy bitrate: {tech}"
+            );
+            assert!(!tech.contains("0-bit"));
+            let scene = rack.scene(viewport);
+            assert!(scene.components.iter().any(|c| matches!(c, Component::Surface { surface, .. } if surface.nodes.iter().any(|n| matches!(n, Primitive::Text { text, .. } if text.contains(&format!("{kbps} kbps")))))));
+        }
+        rack.app.over.playlist_add = None;
         rack.app.shutdown();
         Ok(())
     }

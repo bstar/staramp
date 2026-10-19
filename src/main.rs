@@ -31,6 +31,7 @@ mod vfs;
 mod view;
 mod vis;
 
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -96,6 +97,8 @@ enum ScrobbleCmd {
     Auth { provider: activity::Provider },
     /// Show configured providers and queued submissions.
     Status,
+    /// Show local listening history and provider delivery state as JSON.
+    Snapshot,
     /// Remove a provider's saved credentials and disable it.
     Logout { provider: activity::Provider },
 }
@@ -253,6 +256,17 @@ enum Command {
 }
 
 fn main() -> Result<()> {
+    // The Nix build uses Nix's libasound, which must load a plugin built
+    // against the same libraries. Do this before any audio or worker threads.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("ALSA_PLUGIN_DIR").is_none() {
+        if let Some(dir) = option_env!("STARAMP_ALSA_PLUGIN_DIR") {
+            if !dir.is_empty() {
+                std::env::set_var("ALSA_PLUGIN_DIR", dir);
+            }
+        }
+    }
+
     let cli = Cli::parse();
 
     // The embedded player has no configuration, history, session, log, or
@@ -315,6 +329,7 @@ fn main() -> Result<()> {
         Some(Command::Scrobble { cmd }) => match cmd {
             ScrobbleCmd::Auth { provider } => activity::auth(provider),
             ScrobbleCmd::Status => activity::print_status(),
+            ScrobbleCmd::Snapshot => activity::print_snapshot(),
             ScrobbleCmd::Logout { provider } => activity::logout(provider),
         },
         Some(Command::Query {
@@ -1682,7 +1697,7 @@ fn cmd_art(cmd: ArtCmd) -> Result<()> {
 }
 
 fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result<()> {
-    let cfg = config::Config::load().unwrap_or_default();
+    let mut cfg = config::Config::load().unwrap_or_default();
 
     // Before anything touches the terminal. Detecting a graphics protocol
     // means writing a query and reading the answer off stdin, and once the app
@@ -1726,6 +1741,18 @@ fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result
         return app.run();
     }
 
+    // A fresh install has no index to open read-only. Ask for the library
+    // before starting the player, and leave a non-interactive launch with
+    // actionable instructions instead of a SQLite error.
+    let index = index_path()?;
+    let first_run = target.is_none() && !index.exists();
+    if first_run {
+        if !first_run_setup(&cfg)? {
+            return Ok(());
+        }
+        cfg = config::Config::load()?;
+    }
+
     // With no argument, open on the configured playlist directory. A curated
     // playlist is a far better starting point than thirty thousand tracks in
     // album order, and it is what the playlists exist for.
@@ -1734,8 +1761,12 @@ fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result
         _ => Vec::new(),
     };
 
-    let (root, items) = build_queue(&cfg, target.as_deref(), &index_path()?)?;
+    let (root, items) = build_queue(&cfg, target.as_deref(), &index)?;
     if items.is_empty() && playlists.is_empty() {
+        if first_run {
+            println!("No playable tracks found. Try `staramp scan <music-directory>` or open a folder with `staramp ui <folder>`.");
+            return Ok(());
+        }
         anyhow::bail!(
             "nothing to play — run `staramp scan <dir>` first, or pass a playlist or directory"
         );
@@ -1756,6 +1787,52 @@ fn cmd_tui(target: Option<PathBuf>, graphics_override: Option<String>) -> Result
         }
     }
     app.run()
+}
+
+fn first_run_setup(cfg: &config::Config) -> Result<bool> {
+    eprintln!("Welcome to STAR/AMP. Choose a music folder to build your library index.");
+    if !io::stdin().is_terminal() {
+        eprintln!("Run `staramp scan <music-directory>`, then launch `staramp` again.");
+        return Ok(false);
+    }
+
+    loop {
+        match &cfg.library_root {
+            Some(root) => eprint!("Music folder [{}] (q to quit): ", root.display()),
+            None => eprint!("Music folder (q to quit): "),
+        }
+        io::stderr().flush()?;
+        let mut answer = String::new();
+        if io::stdin().read_line(&mut answer)? == 0 || answer.trim() == "q" {
+            eprintln!("Run `staramp scan <music-directory>` when you're ready.");
+            return Ok(false);
+        }
+        let typed = answer.trim().trim_matches(['\'', '"']);
+        let root = if typed.is_empty() {
+            match &cfg.library_root {
+                Some(root) => root.clone(),
+                None => {
+                    eprintln!("Enter a folder, or q to quit.");
+                    continue;
+                }
+            }
+        } else if let Some(rest) = typed.strip_prefix("~/") {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(rest)
+        } else {
+            PathBuf::from(typed)
+        };
+        if !root.is_dir()
+            || std::fs::read_dir(&root).is_ok_and(|mut entries| entries.next().is_none())
+        {
+            eprintln!(
+                "{} is not a populated directory. Choose another folder.",
+                root.display()
+            );
+            continue;
+        }
+        cmd_scan(Some(root), false)?;
+        return Ok(true);
+    }
 }
 
 fn cmd_query(expr: String, count_only: bool, explain: bool) -> Result<()> {

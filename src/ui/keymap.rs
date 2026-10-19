@@ -434,13 +434,13 @@ pub const BINDINGS: &[Binding] = &[
     Binding {
         action: Action::CopyTagged,
         keys: "y",
-        label: "copy",
+        label: "yank tracks",
         group: "tagging",
     },
     Binding {
         action: Action::PasteTagged,
-        keys: "u",
-        label: "put them here",
+        keys: "p / u",
+        label: "paste tracks here",
         group: "tagging",
     },
     Binding {
@@ -499,7 +499,7 @@ pub const BINDINGS: &[Binding] = &[
     },
     Binding {
         action: Action::TogglePlaylistPanel,
-        keys: "p",
+        keys: "alt+p",
         label: "playlist on/off",
         group: "windows",
     },
@@ -860,7 +860,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('t'), false, _, false) => Action::TagRow,
         (Char('T'), ..) => Action::ClearTags,
         (Char('y'), false, _, false) => Action::CopyTagged,
-        (Char('u'), false, _, false) => Action::PasteTagged,
+        (Char('p' | 'u'), false, _, false) => Action::PasteTagged,
         (Char('m'), false, _, false) => Action::MoveTagged,
         (Delete, ..) | (Char('D'), ..) => Action::RemoveTagged,
         (Char('f'), false, _, false) => Action::OpenFilter,
@@ -879,7 +879,7 @@ pub fn resolve(k: KeyEvent) -> Option<Action> {
         (Char('i'), _, _, true) => Action::ChooseCover,
         (Char('r'), _, _, true) => Action::RetryCover,
         (Char('t'), _, _, true) => Action::NextTheme,
-        (Char('p'), false, _, false) => Action::TogglePlaylistPanel,
+        (Char('p'), false, _, true) => Action::TogglePlaylistPanel,
         (Char('e'), _, _, true) => Action::OpenPlaylistPicker,
         (Char('s'), _, _, true) => Action::ToggleHistoryPanel,
         (Tab, ..) => Action::FocusNext,
@@ -947,13 +947,14 @@ mod tests {
     }
 
     #[test]
-    fn the_playlist_panel_and_its_picker_have_separate_keys() {
-        // `p` used to reach the picker whenever there was one to reach, which
-        // made it useless for the thing it is named after.
+    fn paste_playlist_panel_and_picker_have_separate_keys() {
         use super::*;
         let plain = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
         let alt = |c: char| KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT);
-        assert_eq!(resolve(plain('p')), Some(Action::TogglePlaylistPanel));
+        assert_eq!(resolve(plain('y')), Some(Action::CopyTagged));
+        assert_eq!(resolve(plain('p')), Some(Action::PasteTagged));
+        assert_eq!(resolve(plain('u')), Some(Action::PasteTagged));
+        assert_eq!(resolve(alt('p')), Some(Action::TogglePlaylistPanel));
         assert_eq!(resolve(alt('e')), Some(Action::OpenPlaylistPicker));
     }
 

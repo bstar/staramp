@@ -2,6 +2,9 @@
 
 `staramp` with no arguments opens the player. Everything else is a subcommand,
 and `staramp --help` lists them all; each has its own `--help`.
+On first launch, when no library index exists, it asks for a music folder and
+scans it before opening the player. A non-interactive launch prints the setup
+command and exits successfully.
 
 ## The library
 
@@ -63,6 +66,7 @@ staramp analyze --status                    # sonic-index coverage
 staramp analyze --all                       # analyze everything pending
 staramp scrobble auth lastfm                # store a provider's credentials
 staramp scrobble status                     # providers and queued submissions
+staramp scrobble snapshot                   # JSON provider state and recent local listens
 staramp scrobble logout lastfm              # forget them and disable it
 ```
 

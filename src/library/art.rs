@@ -64,6 +64,8 @@ pub struct Album {
     /// library-relative path for a sidecar image, a cache path for a fetched
     /// one.
     pub art: Option<String>,
+    /// A small local image for desktop media controls, including embedded art.
+    pub desktop_art_url: Option<String>,
     /// Decoded and shrunk, ready for the panel to sample.
     ///
     /// Decoding happens here rather than in the panel because a cover can be a
@@ -98,6 +100,7 @@ impl Album {
             uri,
             detail: None,
             art: None,
+            desktop_art_url: None,
             image: None,
             source: None,
             choice: 0,
@@ -706,6 +709,7 @@ fn gather(
 fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: String) -> Album {
     let chosen = entry.candidates.get(entry.choice);
     let image = chosen.and_then(|c| load(vfs, detail, c, entry.embedded.as_deref()));
+    let desktop_art_url = image.as_deref().and_then(cache_desktop_art);
     let art = match chosen {
         Some(cover::Candidate::File(rel)) => Some(rel.clone()),
         Some(cover::Candidate::Remote(p)) | Some(cover::Candidate::Original(p)) => {
@@ -717,6 +721,7 @@ fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: Stri
         uri,
         detail: Some(detail.clone()),
         art,
+        desktop_art_url,
         source: image
             .is_some()
             .then(|| chosen.map(|c| c.source()))
@@ -726,6 +731,47 @@ fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: Stri
         choices: entry.candidates.len(),
         labels: entry.candidates.iter().map(|c| c.label()).collect(),
         offers: entry.offers.clone(),
+    }
+}
+
+/// Export the already decoded cover once, on the art worker rather than the UI.
+fn cache_desktop_art(image: &starkit::image::RgbaImage) -> Option<String> {
+    let dir = crate::paths::cache_dir().ok()?.join("mpris-art");
+    std::fs::create_dir_all(&dir).ok()?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&image.width().to_le_bytes());
+    hasher.update(&image.height().to_le_bytes());
+    hasher.update(image.as_raw());
+    let hash = hasher.finalize();
+    let path = dir.join(format!("{hash}.png"));
+    if !path.exists() {
+        let small = starkit::image::DynamicImage::ImageRgba8(image.clone()).thumbnail(256, 256);
+        let temp = tempfile::Builder::new()
+            .suffix(".png")
+            .tempfile_in(&dir)
+            .ok()?;
+        small
+            .save_with_format(temp.path(), starkit::image::ImageFormat::Png)
+            .ok()?;
+        temp.persist(&path).ok()?;
+        prune_desktop_art(&dir, 64);
+    }
+    url::Url::from_file_path(path).ok().map(|u| u.to_string())
+}
+
+fn prune_desktop_art(dir: &Path, keep: usize) {
+    let Ok(files) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut files: Vec<_> = files
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "png"))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .collect();
+    files.sort_by_key(|(modified, _)| *modified);
+    let remove = files.len().saturating_sub(keep);
+    for (_, path) in files.into_iter().take(remove) {
+        let _ = std::fs::remove_file(path);
     }
 }
 

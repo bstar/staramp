@@ -129,6 +129,7 @@ fn looks_like_art(path: &str) -> bool {
 /// from being corrected instead of being final.
 pub fn candidates(db: &Db, vfs: &crate::vfs::Vfs, detail: &AlbumDetail) -> Candidates {
     let mut list = Vec::new();
+    let root_track = !detail.file_rel.contains('/');
 
     // A picture in the file itself is unambiguous -- somebody chose it for
     // this record -- so nothing on disk should outrank it. Kept rather than
@@ -145,19 +146,26 @@ pub fn candidates(db: &Db, vfs: &crate::vfs::Vfs, detail: &AlbumDetail) -> Candi
     // Named artwork directories first, then any other child that has images
     // in it. A subfolder full of its own audio contributes nothing either way,
     // because only images come back out of it.
-    let (named, rest): (Vec<_>, Vec<_>) = db
-        .child_dirs(detail.dir_id)
-        .unwrap_or_default()
-        .into_iter()
-        .partition(|(_, path)| looks_like_art(path));
-    dirs.extend(named.into_iter().map(|(id, _)| id));
-    dirs.extend(rest.into_iter().map(|(id, _)| id));
+    // A loose file at the library root has no album folder. Its children are
+    // artists and albums, so searching them can assign somebody else's cover.
+    if !root_track {
+        let (named, rest): (Vec<_>, Vec<_>) = db
+            .child_dirs(detail.dir_id)
+            .unwrap_or_default()
+            .into_iter()
+            .partition(|(_, path)| looks_like_art(path));
+        dirs.extend(named.into_iter().map(|(id, _)| id));
+        dirs.extend(rest.into_iter().map(|(id, _)| id));
+    }
 
     let mut confident = !list.is_empty();
     for dir in dirs {
-        let Ok(images) = db.images_in_dir(dir) else {
+        let Ok(mut images) = db.images_in_dir(dir) else {
             continue;
         };
+        if root_track {
+            images.retain(|image| stem(image) == stem(&detail.file_rel));
+        }
         let ranked = rank(&images);
         confident |= ranked.iter().any(|(_, good)| *good);
         list.extend(
@@ -338,6 +346,48 @@ mod tests {
 
     fn v(names: &[&str]) -> Vec<String> {
         names.iter().map(|n| format!("A/B/{n}")).collect()
+    }
+
+    #[test]
+    fn loose_root_track_never_borrows_another_albums_art() {
+        let db = Db::open_in_memory().unwrap();
+        db.conn
+            .execute_batch(
+                "INSERT INTO dir (id, rel_path, scan_gen) VALUES
+                    (1, '', 1), (2, 'Another Album', 1);
+                 INSERT INTO file (id, dir_id, rel_path, size, mtime_ns, kind, scan_gen) VALUES
+                    (1, 1, 'cover.jpg', 1, 1, 2, 1),
+                    (2, 2, 'Another Album/folder.jpg', 1, 1, 2, 1),
+                    (3, 1, 'PinkNoise.jpg', 1, 1, 2, 1);",
+            )
+            .unwrap();
+        let detail = AlbumDetail {
+            album: None,
+            artist: None,
+            year: None,
+            codec: None,
+            genre: None,
+            mb_release_id: None,
+            mb_artist_id: None,
+            track_count: 1,
+            total_ms: 0,
+            dir_id: 1,
+            file_rel: "PinkNoise.flac".into(),
+            track_title: Some("PinkNoise".into()),
+            track_artist: None,
+        };
+        let vfs = crate::vfs::Vfs::Local {
+            root: std::path::PathBuf::from("/nonexistent/staramp-test-library"),
+            confined: true,
+        };
+
+        let found = candidates(&db, &vfs, &detail);
+        assert_eq!(found.list, vec![Candidate::File("PinkNoise.jpg".into())]);
+
+        db.conn
+            .execute("DELETE FROM file WHERE id = 3", [])
+            .unwrap();
+        assert!(candidates(&db, &vfs, &detail).list.is_empty());
     }
 
     #[test]

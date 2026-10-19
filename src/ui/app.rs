@@ -49,6 +49,7 @@ use crate::vis::spectrum::{Motion, Spectrum};
 /// Animation cadence. The reference's separation of animation from analysis is
 /// worth keeping: the FFT does not need to run at frame rate.
 const FRAME: Duration = Duration::from_millis(33);
+const THEME_SELECTION_FOR: Duration = Duration::from_secs(3);
 
 /// Below this the docked layout has nowhere to go.
 const MIN_WIDTH: u16 = 40;
@@ -62,6 +63,26 @@ fn clamp_padding(requested: u16, available: u16, minimum: u16) -> u16 {
 const SEEK_SHEEN_PERIOD: f32 = 3.5;
 
 const MARQUEE_STEP: Duration = Duration::from_millis(200);
+
+/// Keep the cursor on a row this window can draw. Filters and folds are local
+/// presentation, so this automatic move must not be sent as a new shared
+/// cursor choice on the next frame.
+fn keep_cursor_visible_locally(
+    rows: &playlist::Rows,
+    items: &[QueueItem],
+    cursor: &mut usize,
+    last_view: &mut crate::view::View,
+) {
+    let Some(next) = rows.nearest_shown(*cursor) else {
+        return;
+    };
+    if next != *cursor {
+        if let Some(item) = items.get(next) {
+            *cursor = next;
+            last_view.cursor = item.uri.to_string();
+        }
+    }
+}
 
 /// Where the docked windows sit.
 ///
@@ -568,6 +589,75 @@ fn indicator_width(segments: &[(String, bool)]) -> u16 {
     (labels + gaps) as u16
 }
 
+fn draw_status_bar(
+    area: Rect,
+    buf: &mut starkit::ratatui::buffer::Buffer,
+    theme: &Theme,
+    segments: &[(String, bool)],
+    selecting_theme: bool,
+) {
+    use unicode_width::UnicodeWidthStr;
+
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let bg = rgb(theme.status_bg);
+    for x in 0..area.width {
+        buf[(area.x + x, area.y)]
+            .set_char(' ')
+            .set_style(Style::default().bg(bg));
+    }
+
+    if area.width < 1 + "? help".len() as u16 + 3 {
+        return;
+    }
+
+    let help = "? help";
+    buf.set_string(
+        area.x + 1,
+        area.y,
+        help,
+        Style::default().fg(rgb(theme.accent)).bg(bg),
+    );
+
+    let mut left_end = area.x + 1 + help.len() as u16;
+    if selecting_theme {
+        let theme_x = left_end + 3;
+        let available = area.right().saturating_sub(theme_x + 1) as usize;
+        let theme_label = player::truncate(&format!("theme: {}", theme.name), available);
+        left_end = theme_x + UnicodeWidthStr::width(theme_label.as_str()) as u16;
+        buf.set_string(
+            theme_x,
+            area.y,
+            &theme_label,
+            Style::default().fg(rgb(theme.status_fg)).bg(bg),
+        );
+    }
+
+    let ind_w = indicator_width(segments);
+    if left_end + 2 + ind_w < area.right() {
+        let on = rgb(theme.transport_toggle_on_fg);
+        let off = rgb(theme.transport_toggle_off_fg);
+        let dim = rgb(theme.dim);
+
+        // Drawn segment by segment so each one is lit by its own state.
+        let mut x = area.right() - ind_w - 1;
+        for (i, (label, lit)) in segments.iter().enumerate() {
+            if i > 0 {
+                buf.set_string(x, area.y, SEPARATOR, Style::default().fg(dim).bg(bg));
+                x += SEPARATOR.chars().count() as u16;
+            }
+            buf.set_string(
+                x,
+                area.y,
+                label,
+                Style::default().fg(if *lit { on } else { off }).bg(bg),
+            );
+            x += label.chars().count() as u16;
+        }
+    }
+}
+
 /// The marquee line: `Artist — Title (Album)`.
 ///
 /// `None` when there is no title to build around, so the caller can fall back
@@ -659,8 +749,8 @@ fn draw_help_overlay(
 #[cfg(test)]
 mod tests {
     use super::{
-        bar_fraction, clamp_padding, codec_label, equalizer_enabled, g_prefix, hit,
-        indicator_width, network_scrobblers, shifted_history_offset, slider_fraction, snap,
+        bar_fraction, clamp_padding, codec_label, draw_status_bar, equalizer_enabled, g_prefix,
+        hit, indicator_width, network_scrobblers, shifted_history_offset, slider_fraction, snap,
         status_indicators, step_toward, track_line, PrefixKey, KEY_VOLUME_STEP, MIN_HEIGHT,
         MIN_WIDTH, VOLUME_STEP,
     };
@@ -797,6 +887,37 @@ mod tests {
     }
 
     #[test]
+    fn a_local_filter_cannot_publish_a_cursor_jump_over_a_cue_track() {
+        use super::keep_cursor_visible_locally;
+        use crate::playlist::queue::QueueItem;
+        use crate::playlist::uri::TrackUri;
+        use crate::ui::panels::playlist::Rows;
+
+        let cue = QueueItem::new(TrackUri::parse("Artist/Album/rip.cue/track0010"));
+        let plain = QueueItem::new(TrackUri::parse("Artist/Other/01.flac"));
+        let items = [cue, plain];
+        let rows = Rows::flat(items.len()).matching(&[false, true]);
+        let mut cursor = 0;
+        let mut last_view = crate::view::View {
+            cursor: items[0].uri.to_string(),
+            ..Default::default()
+        };
+        let shared = crate::view::shared();
+        crate::view::publish(&shared, &last_view);
+
+        keep_cursor_visible_locally(&rows, &items, &mut cursor, &mut last_view);
+
+        assert_eq!(cursor, 1);
+        assert_eq!(last_view.cursor, items[1].uri.to_string());
+        let local_view = crate::view::View {
+            cursor: items[cursor].uri.to_string(),
+            ..Default::default()
+        };
+        assert!(!local_view.differs(&last_view));
+        assert_eq!(shared.lock().unwrap().cursor, items[0].uri.to_string());
+    }
+
+    #[test]
     fn only_two_plain_g_keys_go_to_the_first_visible_track() {
         use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -923,6 +1044,30 @@ mod tests {
                 m.name()
             );
             assert!(vis.starts_with("w "), "the key that cycles it is missing");
+        }
+    }
+
+    #[test]
+    fn footer_names_the_theme_only_while_selecting_it() {
+        use starkit::ratatui::buffer::Buffer;
+
+        let segments = status_indicators(VisMode::Dots, false, RepeatMode::Off, false);
+        for id in ["kanagawa", "cosmic"] {
+            let theme = crate::theme::builtin::load(id).unwrap();
+            for width in [40, 100] {
+                let area = Rect::new(0, 0, width, 1);
+                let mut buf = Buffer::empty(area);
+                draw_status_bar(area, &mut buf, &theme, &segments, false);
+                let row: String = (0..width).map(|x| buf[(x, 0)].symbol()).collect();
+                assert!(!row.contains("theme:"), "{row}");
+
+                draw_status_bar(area, &mut buf, &theme, &segments, true);
+                let row: String = (0..width).map(|x| buf[(x, 0)].symbol()).collect();
+                assert!(row.contains(&format!("theme: {}", theme.name)), "{row}");
+                if width == 100 {
+                    assert!(row.contains("w DOTS"), "{row}");
+                }
+            }
         }
     }
 
@@ -1394,6 +1539,8 @@ struct Look {
     /// Every theme that can be cycled to, and where in that list we are.
     ids: Vec<String>,
     index: usize,
+    /// The footer names the theme only briefly while it is being chosen.
+    theme_selection_until: Option<Instant>,
     /// Which transport button faces to draw.
     glyphs: crate::ui::panels::player::Glyphs,
     /// Which characters the seek bar is drawn from.
@@ -1752,6 +1899,7 @@ pub struct App {
     art: Option<crate::library::art::Watcher>,
     /// The URI the worker was last asked about, so it is asked once per track.
     art_uri: Option<String>,
+    last_mpris_art_serial: u64,
     /// Set while a lookup asked for by hand is in flight, holding the worker's
     /// publication count from the moment it was asked. When that count moves,
     /// the answer -- found or not -- has arrived.
@@ -2823,6 +2971,7 @@ impl App {
                 theme,
                 ids: theme_ids,
                 index: theme_index,
+                theme_selection_until: None,
                 glyphs: crate::ui::panels::player::Glyphs::default(),
                 seek_style: crate::ui::panels::player::SeekStyle::parse(&cfg.ui.seek_style)
                     .unwrap_or_default(),
@@ -2832,6 +2981,7 @@ impl App {
             },
             art: None,
             art_uri: None,
+            last_mpris_art_serial: 0,
             retrying: None,
             retry_phase: 0.0,
             graphics: crate::ui::graphics::Graphics::disabled(),
@@ -4195,7 +4345,11 @@ impl App {
         self.begin_title_effect(&title);
         self.pump_album();
         if let Some(m) = &self.mpris {
-            m.notify(crate::mpris::MprisEvent::TrackChanged);
+            // A cover may already have been published by the art worker before
+            // this track revision arrived. Clearing MPRIS must also make the
+            // next frame publish that same result again.
+            self.last_mpris_art_serial = 0;
+            m.set_artwork(None, None);
         }
     }
 
@@ -5065,6 +5219,19 @@ impl App {
     fn publish_mpris(&mut self) {
         let Some(m) = &self.mpris else { return };
 
+        if let Some(w) = &self.art {
+            let serial = w.serial();
+            if serial != self.last_mpris_art_serial {
+                self.last_mpris_art_serial = serial;
+                let uri = self.current_uri();
+                let url = uri
+                    .as_deref()
+                    .and_then(|u| w.album_for(u))
+                    .and_then(|a| a.desktop_art_url.clone());
+                m.set_artwork(uri, url);
+            }
+        }
+
         let state = self.player.state.state();
         if state != self.last_state {
             self.last_state = state;
@@ -5074,6 +5241,10 @@ impl App {
 
     fn handle(&mut self, action: Action) {
         use Action::*;
+
+        if action != NextTheme {
+            self.look.theme_selection_until = None;
+        }
 
         if self.handle_playlist_add(action) {
             return;
@@ -5492,6 +5663,7 @@ impl App {
                 let (t, why) = builtin::resolve_named(&id);
                 self.note(format!("{} — {why}", t.name));
                 self.look.theme = t;
+                self.look.theme_selection_until = Some(Instant::now() + THEME_SELECTION_FOR);
             }
             FocusNext => self.move_focus(1),
             CursorUp if self.panels.focus == Focus::History => self.move_history(-1),
@@ -7764,11 +7936,16 @@ impl App {
                 self.queue.rows = std::mem::take(&mut self.queue.rows).matching(&mask);
             }
             self.queue.rows_from = from;
-            // A cursor inside a record that has just been folded away has to
-            // come back out; there is nothing on screen for it to sit on.
-            if let Some(t) = self.queue.rows.nearest_shown(self.queue.cursor) {
-                self.queue.cursor = t;
-            }
+            // A cursor hidden by this window's filter or fold needs a visible
+            // local row. This is a redraw adjustment, not a user selection:
+            // sending it back through the shared view would pull another
+            // window off a track that remains visible there.
+            keep_cursor_visible_locally(
+                &self.queue.rows,
+                &self.queue.items,
+                &mut self.queue.cursor,
+                &mut self.session.last,
+            );
         }
 
         let visible = playlist::list_rect(area).height as usize;
@@ -9550,10 +9727,9 @@ impl App {
 
     /// Ask the art worker about the current track, once per track.
     ///
-    /// Only while the panel is open: there is no point resolving covers nobody
-    /// is looking at, and it keeps a closed panel entirely free.
+    /// Resolve for either the album panel or the desktop's MPRIS artwork.
     fn pump_album(&mut self) {
-        if !self.panels.album {
+        if !self.panels.album && self.mpris.is_none() {
             return;
         }
         let Some(w) = &self.art else { return };
@@ -9568,14 +9744,6 @@ impl App {
     }
 
     fn draw_status(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
-        let t = &self.look.theme;
-        let bg = rgb(t.status_bg);
-        for x in 0..area.width {
-            buf[(area.x + x, area.y)]
-                .set_char(' ')
-                .set_style(Style::default().bg(bg));
-        }
-
         // The right-hand indicators are always shown, lit or dim. A transient
         // message must not be the only way to learn what mode you are in --
         // that is state, not news, and the visualizer had exactly that problem:
@@ -9585,41 +9753,11 @@ impl App {
             (q.shuffled(), q.repeat())
         };
         let segments = status_indicators(self.vis.mode, shuffled, repeat, self.player.crossfade());
-        let ind_w = indicator_width(&segments);
-
-        // The footer is reserved for stable state. Transient notes belong in
-        // the interaction flow; this affordance is always present and opens
-        // the same modal as the `?` key.
-        buf.set_string(
-            area.x + 1,
-            area.y,
-            "? help",
-            Style::default().fg(rgb(t.accent)).bg(bg),
-        );
-
-        if area.width > ind_w + 4 {
-            let on = rgb(t.transport_toggle_on_fg);
-            let off = rgb(t.transport_toggle_off_fg);
-            let dim = rgb(t.dim);
-
-            // Drawn segment by segment so each one is lit by its own state.
-            // A single colour over the whole string lit SHUF whenever repeat
-            // was on, which said the wrong thing.
-            let mut x = area.x + area.width - ind_w - 1;
-            for (i, (label, lit)) in segments.iter().enumerate() {
-                if i > 0 {
-                    buf.set_string(x, area.y, SEPARATOR, Style::default().fg(dim).bg(bg));
-                    x += SEPARATOR.chars().count() as u16;
-                }
-                buf.set_string(
-                    x,
-                    area.y,
-                    label,
-                    Style::default().fg(if *lit { on } else { off }).bg(bg),
-                );
-                x += label.chars().count() as u16;
-            }
-        }
+        let selecting_theme = self
+            .look
+            .theme_selection_until
+            .is_some_and(|until| Instant::now() < until);
+        draw_status_bar(area, buf, &self.look.theme, &segments, selecting_theme);
     }
 
     fn draw_help(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {

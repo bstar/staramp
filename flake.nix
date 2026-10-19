@@ -124,6 +124,17 @@
             pkgsFor.alsa-lib
             pkgsFor.dbus
           ];
+        alsaPluginDir = pkgsFor:
+          if pkgsFor.stdenv.hostPlatform.isLinux then
+            # A Nix-linked libasound cannot load the host distro's PipeWire
+            # or PulseAudio module and its glibc dependencies. Bundle matching
+            # plugins for whichever one the host chooses as its default.
+            pkgsFor.runCommand "staramp-alsa-plugins" { } ''
+              mkdir -p $out
+              ln -s ${pkgsFor.pipewire}/lib/alsa-lib/*.so $out/
+              ln -s ${pkgsFor.alsa-plugins}/lib/alsa-lib/*.so $out/
+            ''
+          else "";
         runtimeLibs = [ pkgs.ffmpeg ] ++ linuxLibs pkgs;
         buildTools = with pkgs; [ pkg-config clang ];
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
@@ -164,6 +175,7 @@
 
             LIBCLANG_PATH = "${pkgsFor.llvmPackages.libclang.lib}/lib";
             BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgsFor;
+            STARAMP_ALSA_PLUGIN_DIR = alsaPluginDir pkgsFor;
 
             # freedesktop assets, which mean nothing on macOS.
             postInstall = pkgsFor.lib.optionalString pkgsFor.stdenv.hostPlatform.isLinux ''
@@ -239,6 +251,7 @@
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgs;
+          STARAMP_ALSA_PLUGIN_DIR = alsaPluginDir pkgs;
 
           shellHook = ''
             echo "staramp devshell · rustc $(rustc --version | cut -d' ' -f2) · ffmpeg $(ffmpeg -version | head -1 | cut -d' ' -f3)"

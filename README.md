@@ -23,6 +23,9 @@ nix run github:bstar/staramp        # Nix, on Linux or Apple Silicon macOS
 [Installing](docs/installing.md) covers every route, including building from
 source on Linux and macOS.
 
+On Omarchy, the optional [STAR/AMP shell widget](docs/omarchy.md) adds a
+now-playing popup with playback controls to the bar.
+
 ## Play something
 
 ```sh
@@ -30,15 +33,17 @@ staramp scan ~/Music     # index it, once
 staramp                  # play
 ```
 
-`scan` remembers the directory, so you pass it once. To try a single folder or
-a playlist with no index at all:
+`scan` remembers the directory, so you pass it once. On a fresh interactive
+launch, `staramp` can ask for the music folder and scan it for you. Without a
+terminal it prints the scan command and exits cleanly. To try a single folder
+or a playlist with no index at all:
 
 ```sh
 staramp ui "/path/to/an/album"
 staramp ui some-playlist.m3u
 ```
 
-Inside the player, `?` shows every key, `space` plays and pauses, `p` opens the
+Inside the player, `?` shows every key, `space` plays and pauses, `alt+p` opens the
 playlist, `i` the album window, `l` the library browser, and `q` quits. The
 mouse works everywhere the keyboard does.
 

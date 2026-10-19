@@ -74,8 +74,8 @@ the player, where they do not scroll away with the list.
 | --- | --- |
 | `t` | tag this row |
 | `T` | clear every tag |
-| `y` | copy the tagged rows |
-| `u` | put them here |
+| `y` or `yy` | yank the tagged rows, or the selected track |
+| `p` / `u` | paste the copied tracks after the selected track |
 | `m` | move them here |
 | `del` / `D` | remove them |
 
@@ -93,7 +93,7 @@ the player, where they do not scroll away with the list.
 
 | Key | Does |
 | --- | --- |
-| `p` | playlist on or off |
+| `alt+p` | playlist on or off |
 | `i` | album window on or off |
 | `alt+g` | equalizer panel on or off |
 | `alt+s` | Activity panel on or off |
@@ -145,7 +145,7 @@ time and retains the latest 100 for navigation.
 | `[` / `]` | previous / next preset |
 | `w` / `W` | next / previous visualizer |
 | `+` / `-` | bar width |
-| `alt+t` | next theme |
+| `alt+t` | next theme; the bottom footer names it briefly while you choose |
 | `a` | animations on or off |
 | `esc` | close whatever is open |
 | `?` / `F1` | help |

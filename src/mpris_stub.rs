@@ -30,6 +30,7 @@ pub struct MprisHandle {
 
 impl MprisHandle {
     pub fn notify(&self, _e: MprisEvent) {}
+    pub fn set_artwork(&self, _uri: Option<String>, _url: Option<String>) {}
 }
 
 /// Always `None`: there is no bus to publish on.

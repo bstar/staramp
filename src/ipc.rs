@@ -578,6 +578,16 @@ fn handle_with_activity(
         }
         "status" => {
             let st = &player.state;
+            let (index, total, shuffle, repeat) = {
+                let q = player.queue.lock().unwrap();
+                (
+                    q.current_index().map(|_| q.view_cursor() + 1).unwrap_or(0),
+                    q.len(),
+                    q.shuffled(),
+                    q.repeat().to_string(),
+                )
+            };
+            let track_revision = st.track_revision.load(Ordering::Relaxed);
             let state = match st.state() {
                 PlayState::Playing => "playing",
                 PlayState::Paused => "paused",
@@ -596,7 +606,8 @@ fn handle_with_activity(
             // JSON by hand: one object with fixed keys does not justify a
             // serialisation dependency on the control path.
             format!(
-                r#"{{"state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{}}}"#,
+                r#"{{"version":"{}","state":"{state}","artist":{},"title":{},"position":{:.2},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
+                env!("CARGO_PKG_VERSION"),
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
@@ -1326,7 +1337,13 @@ mod tests {
         let (_path, stop, client) = serving();
         assert_eq!(ask(&client, "ping"), "pong");
         assert_eq!(ask(&client, "ping"), "pong");
-        assert!(ask(&client, "status").starts_with('{'), "status is JSON");
+        let status: serde_json::Value = serde_json::from_str(&ask(&client, "status")).unwrap();
+        assert_eq!(status["index"], 0);
+        assert_eq!(status["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(status["total"], 0);
+        assert_eq!(status["shuffle"], false);
+        assert_eq!(status["repeat"], "Off");
+        assert_eq!(status["trackId"], "/org/staramp/track/0");
         assert_eq!(ask(&client, "volume"), "1.00");
         assert!(ask(&client, "nonsense").starts_with("error:"));
         // And the connection still works after an error.

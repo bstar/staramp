@@ -130,8 +130,8 @@ g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  tagging                            click outside        close the picker    ║          
           ║  t             tag this row         click `close`        close a panel       ║          
           ║  T             clear every tag      click `settings`     what that panel     ║          
-          ║  y             copy               controls                                   ║          
-          ║  u             put them here                                                 ║          
+          ║  y             yank tracks        controls                                   ║          
+          ║  p / u         paste tracks here                                             ║          
           ║  m             move here                                                     ║          
           ║  del / D       remove them                                                   ║          
           ║  album                                                                       ║          
@@ -174,8 +174,8 @@ aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeffffffffffeeeeeeeeeeeeeeeeeeeeeeee
 aaaaaaaaaabfffffffffeeeeeeeeeeeeeeeeeeeeeeeeeecccccccccccccccccccccccddddddddddddddddeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccddddddddddddeeeeeeecccccccccccccccccccccccdddddddddddddeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddddddeeeecccccccccccccccccccccccdddddddddddddddeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccddddeeeeeeeeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
-aaaaaaaaaabccccccccccccccccdddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
+aaaaaaaaaabccccccccccccccccdddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabccccccccccccccccdddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
 aaaaaaaaaabfffffffeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebaaaaaaaaaa
@@ -249,7 +249,7 @@ g fg Some(Rgb(132, 132, 132)) bg Some(Rgb(27, 27, 27)) mods NONE
           ║  i             album info on/off    double click         play it             ║          
           ║  alt+i         choose a cover       right click          track actions       ║          
           ║  alt+r         look the cover up    click `sorting`      order the playlist  ║          
-          ║  p             playlist on/off      click `gravity`      create a related    ║          
+          ║  alt+p         playlist on/off      click `gravity`      create a related    ║          
           ║  alt+s         listening activity list                                       ║          
           ║  alt+e         choose a playlist    player                                   ║          
           ║  tab           next pane            click the transport  transport           ║          

@@ -17,7 +17,10 @@ The same commands without `--ssh` work from an existing SSH shell when the
 local Kitty STAR/KIT integration is installed. Its local `star-kit-terminal`
 frontend must also use the matching KIT build. Without that bridge, the player
 explains how to launch from the local machine. F9 switches terminal and Classic
-presentation while retaining the same player.
+presentation while retaining the same player. Plain `staramp --ssh HOST` restores
+the client's saved F9 preference; a client without a saved choice starts graphical
+when supported. The host's presentation preference does not override the client.
+Explicit `graphical` or `ui` launches override the view for that launch.
 
 The server owns decoding, the queue, DSP and listening history. PCM travels over
 the existing SSH connection to a local device; the server does not open a sound

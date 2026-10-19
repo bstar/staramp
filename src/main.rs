@@ -332,7 +332,12 @@ fn main() -> Result<()> {
                 }
                 _ => None,
             };
-            return launch_session(&cli, target, !graphical);
+            let cells = match cli.command {
+                Some(Command::Graphical { .. }) => Some(false),
+                Some(Command::Ui { .. }) => Some(true),
+                _ => None,
+            };
+            return launch_session(&cli, target, cells);
         }
     }
     #[cfg(not(feature = "terminal-graphics"))]
@@ -1959,7 +1964,27 @@ fn cmd_tui_mode(
 }
 
 #[cfg(feature = "terminal-graphics")]
-fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()> {
+fn client_prefers_cells(path: &Path) -> Result<bool> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error).context("Read the client's presentation preference"),
+    };
+    let saved: toml::Value =
+        toml::from_str(&text).context("Read the client's presentation preference")?;
+    match saved
+        .get("ui")
+        .and_then(|ui| ui.get("presentation"))
+        .and_then(toml::Value::as_str)
+    {
+        None | Some("graphical") => Ok(false),
+        Some("cells") => Ok(true),
+        Some(other) => anyhow::bail!("Unknown client presentation: {other}"),
+    }
+}
+
+#[cfg(feature = "terminal-graphics")]
+fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: Option<bool>) -> Result<()> {
     use starkit::terminal_graphics::{
         client::{self, Launch},
         terminal_bridge,
@@ -1967,11 +1992,15 @@ fn launch_session(cli: &Cli, target: Option<PathBuf>, cells: bool) -> Result<()>
     if cli.ssh.is_none() {
         if let Some(terminal) = terminal_bridge::probe()? {
             let socket = ensure_graphical(&cli.session, target.as_deref(), cli.attach)?;
-            return terminal.relay_with_presentation(&socket, None, Some(cells));
+            return terminal.relay_with_presentation(&socket, None, cells);
         }
         anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/KIT Kitty integration.");
     }
     paths::init_private_dirs();
+    let cells = match cells {
+        Some(cells) => cells,
+        None => client_prefers_cells(&paths::config_dir()?.join("presentation"))?,
+    };
     client::run_with_preference(
         Launch {
             executable: if cli.ssh.is_some() {
@@ -2406,6 +2435,20 @@ fn cmd_shuffle_probe(n: usize) -> Result<()> {
 #[cfg(test)]
 mod launch_tests {
     use super::*;
+
+    #[cfg(feature = "terminal-graphics")]
+    #[test]
+    fn ssh_client_restores_its_saved_presentation() {
+        let dir = tempfile::tempdir().unwrap();
+        let preference = dir.path().join("presentation");
+        assert!(!client_prefers_cells(&preference).unwrap());
+        for (mode, cells) in [("cells", true), ("graphical", false)] {
+            let text = format!("[ui]\npresentation = \"{mode}\"\n");
+            std::fs::write(&preference, &text).unwrap();
+            assert_eq!(client_prefers_cells(&preference).unwrap(), cells);
+            assert_eq!(std::fs::read_to_string(&preference).unwrap(), text);
+        }
+    }
 
     #[test]
     fn ui_accepts_a_graphics_override_before_a_file() {

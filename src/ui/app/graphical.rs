@@ -2105,22 +2105,13 @@ fn append(
                 insets[3] = bottom;
             }
         }
-        match node {
-            Primitive::Fill { rect: r, .. }
-            | Primitive::Border { rect: r, .. }
-            | Primitive::Text { rect: r, .. }
-            | Primitive::Icon { rect: r, .. }
-            | Primitive::Sprite { rect: r, .. } => *r = rect,
-            Primitive::Path {
-                rect: r, points, ..
-            } => {
-                let delta = rect.y as i32 - (original.y as i32 + y);
-                for p in points.iter_mut() {
-                    p[1] = (i32::from(p[1]) - delta).clamp(0, i32::from(rect.height - 1)) as u16;
-                }
-                *r = rect;
+        if let Primitive::Path { points, .. } = node {
+            let delta = rect.y as i32 - (original.y as i32 + y);
+            for p in points.iter_mut() {
+                p[1] = (i32::from(p[1]) - delta).clamp(0, i32::from(rect.height - 1)) as u16;
             }
         }
+        *node.rect_mut() = rect;
         node_indices[index] = Some(target.nodes.len() as u16);
         target.nodes.push(node.clone());
     }

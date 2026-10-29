@@ -26,7 +26,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 # Tagged releases use immutable version tags. Update this manifest and its
 # Git-sourced lock together in a separate dependency commit.
 # Use scripts/check-kit.sh for newer local changes without rewriting the lock.
-starkit = { git = "https://github.com/bstar/starkit", rev = "a48b35761a0974cdaf18c58df8de7732756a03df", version = "0.13", features = [
+starkit = { git = "https://github.com/bstar/starkit", rev = "41f1a0ee97bae21747dd15a83cb0f94c6f99564d", version = "0.13", features = [
     "image",
     "wsz",
     "audio-output",

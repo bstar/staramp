@@ -123,7 +123,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
         pump(2)
         if args.resize:
             deadline = time.monotonic() + 20
-            while b'\x1b_Ga=T,' not in output:
+            while not re.search(rb'\x1b_Ga=(?:T|p),', output):
                 pump(.1)
                 assert child.poll() is None, diagnostic()
                 assert time.monotonic() < deadline, diagnostic()
@@ -142,7 +142,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
                 assert child.poll() is None, diagnostic()
                 wire = bytes(output[start:])
                 assert b'\x1b[2J' in wire, f'Missing full redraw after resize to {geometry}: {wire[:500]!r}'
-                regions = re.findall(rb'\x1b_Ga=T,([^;]*);', wire)
+                regions = re.findall(rb'\x1b_Ga=(?:T|p),([^;]*);', wire)
                 covered = 0
                 for region in regions:
                     fields = dict(item.split(b'=', 1) for item in region.split(b',') if b'=' in item)
@@ -158,9 +158,9 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             assert child.poll() is None, diagnostic()
             wire = bytes(output[start:])
             assert b'\x1b[2J' in wire, 'No redraw at the settled size after rapid resizing'
-            assert b'\x1b_Ga=T,' in wire, 'No image replacement after rapid resizing'
+            assert re.search(rb'\x1b_Ga=(?:T|p),', wire), 'No image replacement after rapid resizing'
             covered = 0
-            for region in re.findall(rb'\x1b_Ga=T,([^;]*);', wire):
+            for region in re.findall(rb'\x1b_Ga=(?:T|p),([^;]*);', wire):
                 fields = dict(item.split(b'=', 1) for item in region.split(b',') if b'=' in item)
                 covered += int(fields[b'c']) * int(fields[b'r'])
             assert covered >= geometry[0] * geometry[1], 'Settled window was only partially replaced'
@@ -220,7 +220,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             start = len(output)
             started = time.monotonic()
             os.write(master, b'\x1b[<35;600;352M')
-            while b'\x1b_Ga=T,' not in output[start:]:
+            while not re.search(rb'\x1b_Ga=(?:T|p),', output[start:]):
                 pump(.005)
                 assert child.poll() is None, diagnostic()
                 assert time.monotonic() - started < 1, 'Local hover did not repaint'

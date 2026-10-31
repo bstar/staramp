@@ -51,15 +51,20 @@ Play when paused or stopped, in both graphical and terminal presentations.
 
 ## Native Classic rack (experimental)
 
-Run `staramp graphical` inside Kitty for the native Rust Classic rack.
+Run `staramp` for the native Rust Classic rack when supported by the terminal;
+it falls back to cells otherwise. `staramp --cells` explicitly selects cells.
+`staramp graphical` remains available as an alias. Interactive import review
+also prefers graphics, so `staramp import ~/Downloads/ALBUMS` is sufficient.
 F9 switches graphical/cell presentation without replacing the player session.
 All sixteen themes are available with Alt+T. Panel corners are configurable;
 transport buttons stay square. See [graphical mode](docs/graphical/README.md)
 for configuration, EQ imports, SSH behavior, and verification limits.
 
-Standard builds include both CPU and GPU rendering. CPU is selected by default;
-`STAR_GRAPHICS_RENDERER=gpu` requests hardware acceleration and
-`STAR_GRAPHICS_RENDERER=auto` allows CPU fallback. For a smaller CPU-only build,
+Standard builds include both CPU and GPU rendering. Graphical frontends prefer
+the GPU and fall back to CPU if setup or rendering fails, including when
+`STAR_GRAPHICS_RENDERER=gpu` is inherited from the shell. A small GPU/CPU badge
+in the lower right shows the active renderer. `STAR_GRAPHICS_RENDERER=cpu`
+explicitly disables acceleration. For a smaller CPU-only build,
 use `--no-default-features --features terminal-graphics`. Local Nix builds can
 provide GPU loader libraries to `scripts/run-local.sh` with
 `nix build .#graphics-runtime --out-link target/graphics-runtime`.

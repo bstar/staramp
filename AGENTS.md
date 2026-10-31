@@ -100,13 +100,21 @@ system audio dependencies are available in the ambient shell.
 nix develop -c cargo build --release
 ```
 
-Standard builds include KIT's optional GPU renderer, while runtime selection
-still defaults to CPU. Do not rebuild the installed command without GPU support
-when the user's shell sets `STAR_GRAPHICS_RENDERER=gpu`: it fails during frontend
-initialization, including graphical imports. CPU-only builds use
+Standard builds include KIT's optional GPU renderer. Terminal frontends prefer
+hardware and recover through CPU on initialization/frame errors, including
+with `STAR_GRAPHICS_RENDERER=gpu`; explicit `cpu` skips GPU setup. The frontend's
+small GPU/CPU badge reports actual frame rendering. CPU-only builds use
 `--no-default-features --features terminal-graphics`. The local launcher retains
 ALSA plugins and adds `target/graphics-runtime/lib` when present; build that link
 with `nix build .#graphics-runtime --out-link target/graphics-runtime`.
+Graphical launches initialize file logging before the early frontend dispatch,
+so backend selection/fallback and connection errors reach `cache/staramp.log`.
+Interactive launches (including local import review) prefer graphics, with
+capability-based cell fallback and an explicit `--cells` override. Stock
+crossterm does not parse OSC 72: use the ordinary KIT preference entry point,
+which leaves extension negotiation disabled. Its `t=q` reply previously quit
+AMP after its first Kitty frame. The PTY responder models that reply; real
+private Kitty import startup must remain open until an explicit quit.
 
 Run other Cargo commands through the flake in the same way, for example
 `nix develop -c cargo test --all`.

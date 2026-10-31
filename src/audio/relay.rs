@@ -56,14 +56,28 @@ pub fn reset_credit() {
     CREDIT.store(0, Ordering::Relaxed);
 }
 pub fn credit(count: usize) {
-    let _ = CREDIT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
-        Some(n.saturating_add(count).min(8))
-    });
+    let _ = change_credit(&CREDIT, |n| Some(n.saturating_add(count).min(8)));
 }
 pub fn take_credit() -> bool {
-    CREDIT
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-        .is_ok()
+    change_credit(&CREDIT, |n| n.checked_sub(1))
+}
+
+// compare_exchange remains available at the MSRV. fetch_update was renamed
+// by newer compilers; using the new spelling would break Rust 1.90 builds.
+fn change_credit(
+    counter: &std::sync::atomic::AtomicUsize,
+    update: impl Fn(usize) -> Option<usize>,
+) -> bool {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        let Some(next) = update(current) else {
+            return false;
+        };
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return true,
+            Err(actual) => current = actual,
+        }
+    }
 }
 
 pub fn current_epoch() -> u64 {

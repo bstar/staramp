@@ -127,8 +127,8 @@ impl Tap {
             return false;
         }
         let start = out.len() - count;
-        for (slot, bytes) in out[start..].iter_mut().zip(bytes.chunks_exact(4)) {
-            *slot = f32::from_le_bytes(bytes.try_into().unwrap());
+        for (slot, bytes) in out[start..].iter_mut().zip(bytes.as_chunks::<4>().0) {
+            *slot = f32::from_le_bytes(*bytes);
         }
         true
     }

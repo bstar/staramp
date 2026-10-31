@@ -73,6 +73,9 @@ struct Cli {
     session: String,
     #[arg(long, global = true)]
     attach: bool,
+    /// Use terminal cells instead of the preferred graphical presentation.
+    #[arg(long, global = true)]
+    cells: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -324,10 +327,16 @@ fn main() -> Result<()> {
         if let Some(Command::Import {
             staging,
             quarantine,
-            graphical: true,
+            graphical,
         }) = &cli.command
         {
-            return launch_graphical_import(&cli, staging.clone(), quarantine.clone());
+            let local_interactive = io::stdin().is_terminal()
+                && io::stdout().is_terminal()
+                && cli.ssh.is_none()
+                && std::env::var_os("SSH_CONNECTION").is_none();
+            if *graphical || (!cli.cells && local_interactive) {
+                return launch_graphical_import(&cli, staging.clone(), quarantine.clone());
+            }
         }
         let graphical = matches!(cli.command, Some(Command::Graphical { .. }));
         let player_launch = matches!(
@@ -343,7 +352,7 @@ fn main() -> Result<()> {
                 }
                 _ => None,
             };
-            return launch_session(&cli, target, !graphical);
+            return launch_session(&cli, target, cli.cells);
         }
     }
     #[cfg(not(feature = "terminal-graphics"))]
@@ -2014,6 +2023,14 @@ fn launch_session_with(
     name: &str,
     attach_only: bool,
 ) -> Result<()> {
+    // Graphical launches dispatch before main's ordinary logging setup. Keep
+    // renderer/connection failures in the log even when a terminal closes.
+    let _frontend_log = if tracing::dispatcher::has_been_set() {
+        None
+    } else {
+        paths::init_private_dirs();
+        Some(starkit::logging::init(&paths::PATHS, cli.verbose)?)
+    };
     use starkit::terminal_graphics::{
         client::{self, Launch},
         terminal_bridge,
@@ -2026,7 +2043,7 @@ fn launch_session_with(
         anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/KIT Kitty integration.");
     }
     paths::init_private_dirs();
-    client::run_with_preference(
+    let result = client::run_with_preference(
         Launch {
             executable: if cli.ssh.is_some() {
                 cli.remote_executable.clone()
@@ -2047,7 +2064,11 @@ fn launch_session_with(
             cells,
             path: paths::config_dir()?.join("presentation"),
         },
-    )
+    );
+    if let Err(error) = &result {
+        tracing::error!(%error, "Graphical frontend failed");
+    }
+    result
 }
 
 #[cfg(feature = "terminal-graphics")]
@@ -2115,7 +2136,7 @@ fn launch_graphical_import(
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
-    let result = launch_session_with(cli, None, false, &name, true);
+    let result = launch_session_with(cli, None, cli.cells, &name, true);
     if result.is_err() {
         let _ = child.kill();
         let _ = child.wait();

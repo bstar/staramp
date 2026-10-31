@@ -93,6 +93,10 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             for query, reply in [(b'\x1b[16t', f'\x1b[6;{height // rows};{width // columns}t'.encode()),
                                  (b'\x1b[14t', f'\x1b[4;{height};{width}t'.encode()),
                                  (b'\x1b[c', b'\x1b[?62;4;22c'), (b'\x1b[5n', b'\x1b[0n'),
+                                 # Modern Kitty answers this OSC 72 capability
+                                 # query. It must never become ordinary keys
+                                 # (notably the q that would quit the player).
+                                 (b'\x1b]72;t=q:i=1\x1b\\', b'\x1b]72;t=q:i=1\x1b\\'),
                                  (b'\x1b[?u', b'\x1b[?0u')]:
                 if query in pending:
                     os.write(master, reply)

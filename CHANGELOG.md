@@ -14,9 +14,17 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Graphical startup no longer interprets Kitty's OSC 72 capability reply as
+  keystrokes, which could quit the player immediately after its first frame.
+  Frontend backend selection and startup errors are now recorded in the log.
+
+- Interactive player and local import launches prefer graphics, with automatic
+  cell fallback on unsupported terminals and `--cells` for an explicit choice.
+
 - Standard graphical builds include the optional GPU renderer, so a shell with
-  `STAR_GRAPHICS_RENDERER=gpu` can start the player and import reviewer. CPU
-  remains the default backend. Nix/local launchers provide GPU loader libraries
+  `STAR_GRAPHICS_RENDERER=gpu` can start the player and import reviewer.
+  Frontends prefer GPU, recover through CPU on errors, and display the active
+  GPU/CPU renderer in a small corner indicator. Nix/local launchers provide GPU loader libraries
   alongside the existing audio plugin environment.
 
 - Update Rustls, certificate verification/roots and Tokio to patched releases

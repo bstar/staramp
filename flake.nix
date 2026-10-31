@@ -143,6 +143,14 @@
             ''
           else "";
         runtimeLibs = [ pkgs.ffmpeg ] ++ linuxLibs pkgs;
+        gpuLibs = pkgsFor: pkgsFor.lib.optionals pkgsFor.stdenv.hostPlatform.isLinux [
+          pkgsFor.vulkan-loader pkgsFor.libGL
+        ];
+        graphicsRuntime = pkgsFor: pkgsFor.buildEnv {
+          name = "staramp-graphics-runtime";
+          paths = gpuLibs pkgsFor ++ [ pkgsFor.mesa ];
+          pathsToLink = [ "/lib" "/share/vulkan/icd.d" ];
+        };
         buildTools = with pkgs; [ pkg-config clang ];
         libclangPath = "${pkgs.llvmPackages.libclang.lib}/lib";
 
@@ -178,7 +186,7 @@
             cargoLock.allowBuiltinFetchGit = true;
 
             nativeBuildInputs = with pkgsFor; [ pkg-config clang makeWrapper ];
-            buildInputs = [ pkgsFor.ffmpeg ] ++ linuxLibs pkgsFor;
+            buildInputs = [ pkgsFor.ffmpeg ] ++ linuxLibs pkgsFor ++ gpuLibs pkgsFor;
 
             LIBCLANG_PATH = "${pkgsFor.llvmPackages.libclang.lib}/lib";
             BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgsFor;
@@ -198,7 +206,8 @@
               test -f ${alsaPlugins pkgsFor}/lib/alsa-lib/libasound_module_pcm_pipewire.so
               test -f ${alsaPlugins pkgsFor}/lib/alsa-lib/libasound_module_pcm_pulse.so
               wrapProgram $out/bin/staramp \
-                --set-default ALSA_PLUGIN_DIR ${alsaPlugins pkgsFor}/lib/alsa-lib
+                --set-default ALSA_PLUGIN_DIR ${alsaPlugins pkgsFor}/lib/alsa-lib \
+                --prefix LD_LIBRARY_PATH : ${pkgsFor.lib.makeLibraryPath (gpuLibs pkgsFor)}
             '';
 
             meta = with pkgsFor.lib; {
@@ -216,6 +225,7 @@
           staramp = mkStaramp { };
         } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           alsa-plugins = alsaPlugins pkgs;
+          graphics-runtime = graphicsRuntime pkgs;
         };
 
         # There was a `headless` package here, built against ffmpeg-headless
@@ -264,7 +274,7 @@
             # upstream Crossterm parser fix; this checks that allowlist too.
             cargo-deny
           ])
-          ++ buildTools ++ runtimeLibs;
+          ++ buildTools ++ runtimeLibs ++ gpuLibs pkgs;
 
           LIBCLANG_PATH = libclangPath;
           BINDGEN_EXTRA_CLANG_ARGS = bindgenArgs pkgs;
@@ -275,6 +285,7 @@
           '';
         } // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
           ALSA_PLUGIN_DIR = "${alsaPlugins pkgs}/lib/alsa-lib";
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath (gpuLibs pkgs);
         });
       });
 }

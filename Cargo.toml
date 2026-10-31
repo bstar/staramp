@@ -212,8 +212,9 @@ opt-level = 2
 # ---------------------------------------------------------------------------
 
 [features]
-default = ["terminal-graphics"]
+default = ["terminal-graphics", "gpu-renderer"]
 terminal-graphics = ["starkit/terminal-graphics", "starkit/media"]
+gpu-renderer = ["terminal-graphics", "starkit/gpu-renderer"]
 
 [[example]]
 name = "skin-player"

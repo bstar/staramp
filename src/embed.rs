@@ -143,7 +143,7 @@ enum Response<'a> {
         cells: Vec<Cell>,
         images: Vec<TransportImage>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        surface: Option<starkit::native_surface::Surface>,
+        surface: Option<&'a starkit::native_surface::Surface>,
     },
     Status {
         playing: bool,
@@ -540,7 +540,7 @@ pub fn run_stdio() -> Result<()> {
                     height: v.height,
                     cells,
                     images,
-                    surface,
+                    surface: surface.as_ref(),
                 },
             )?;
         }

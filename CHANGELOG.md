@@ -14,6 +14,14 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Fixed
 
+- Standard graphical builds include the optional GPU renderer, so a shell with
+  `STAR_GRAPHICS_RENDERER=gpu` can start the player and import reviewer. CPU
+  remains the default backend. Nix/local launchers provide GPU loader libraries
+  alongside the existing audio plugin environment.
+
+- Update Rustls, certificate verification/roots and Tokio to patched releases
+  required by the dependency advisory gate.
+
 - Legacy SSH embedding replaces the source speaker mask when converting mono to stereo. Contradictory layouts now return an error before FFmpeg plane allocation, preventing a stuck loading state after a player-thread panic.
 
 - **Importing an album from the staging inbox failed on its first step**, and

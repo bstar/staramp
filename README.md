@@ -57,6 +57,13 @@ All sixteen themes are available with Alt+T. Panel corners are configurable;
 transport buttons stay square. See [graphical mode](docs/graphical/README.md)
 for configuration, EQ imports, SSH behavior, and verification limits.
 
+Standard builds include both CPU and GPU rendering. CPU is selected by default;
+`STAR_GRAPHICS_RENDERER=gpu` requests hardware acceleration and
+`STAR_GRAPHICS_RENDERER=auto` allows CPU fallback. For a smaller CPU-only build,
+use `--no-default-features --features terminal-graphics`. Local Nix builds can
+provide GPU loader libraries to `scripts/run-local.sh` with
+`nix build .#graphics-runtime --out-link target/graphics-runtime`.
+
 ## What it does
 
 - **Plays everything.** FLAC, MP3, Vorbis, AAC and ALAC natively; Monkey's

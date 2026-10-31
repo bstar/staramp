@@ -12,4 +12,8 @@ plugins="$root/target/alsa-plugins/lib/alsa-lib"
 if [[ -z "${ALSA_PLUGIN_DIR:-}" && -d "$plugins" ]]; then
   export ALSA_PLUGIN_DIR="$plugins"
 fi
+graphics="$root/target/graphics-runtime"
+if [[ -d "$graphics/lib" ]]; then
+  export LD_LIBRARY_PATH="$graphics/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 exec "$root/target/release/staramp" "$@"

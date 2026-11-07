@@ -9,6 +9,26 @@ hashes. Design selection is separate from acceptance of the application.
 
 ## Production implementation
 
+### Album import progress · October 31
+
+The graphical import reviewer now reserves a persistent banner above the footer
+for album operations. It appears immediately, shows byte-based copy/checksum
+progress, and names installation, permanent-index, cleanup and inbox-refresh
+phases. Indeterminate phases animate; copy progress does not claim the entire
+transaction is complete. The banner remains visible with the playlist hidden or
+scrolled away, and completion/failure stays visible for 15 seconds. The cell
+reviewer shares the progress state in its title and status line.
+
+Copy/verification tests cover intermediate byte progress, nested files, checksum
+results and symlink rejection. The full Cargo suite passed: 916 unit tests,
+12 embed tests, first-run and the production rack rendering regression. The rack
+fixture checks copy, indexing and refresh phases at 1x/2x density with the
+playlist hidden, plus completion. Both captured progress banners were inspected.
+These checks use disposable data and do not import or move real music.
+Formatting, strict Clippy, the isolated real-frontend import launch/close check
+and the Linux release build also passed. The existing local launcher resolves
+to this checkout's release binary; running players were not restarted.
+
 ### Framework display recovery · October 15
 
 KIT now retains each rendered frame's matching layout, restores the framebuffer
@@ -924,3 +944,10 @@ terminal player's format string, including known kbps for lossy formats.
 Production-rack regressions cover these pointer paths at 1x/2x, stable cover
 assets through modal open/close, review state after removal, and visible
 MP3/AAC/Vorbis/Opus bitrates. All fixtures use private data.
+
+System-palette mode now refreshes the shared player theme once per second in
+both cell and graphical event loops. Named palettes remain explicit choices;
+a missing or incomplete desktop palette retains the last working colors.
+Regression checks cover changed, unchanged, missing and incomplete palettes,
+named-theme isolation, and polling throttling. The Linux suite passed 920
+unit tests (5 ignored), 12 embedding tests, and both command integration tests.

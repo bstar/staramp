@@ -1032,7 +1032,7 @@ pub fn spawn(
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
 ) -> Option<PathBuf> {
-    spawn_at_inner(socket_path().ok()?, player, view, stop, None)
+    spawn_at_inner(socket_path().ok()?, player, view, stop, None, None)
 }
 
 pub fn spawn_controlled(
@@ -1040,8 +1040,16 @@ pub fn spawn_controlled(
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
     activity: crate::activity::Control,
+    import_release: crossbeam_channel::Sender<crossbeam_channel::Sender<bool>>,
 ) -> Option<PathBuf> {
-    spawn_at_inner(socket_path().ok()?, player, view, stop, Some(activity))
+    spawn_at_inner(
+        socket_path().ok()?,
+        player,
+        view,
+        stop,
+        Some(activity),
+        Some(import_release),
+    )
 }
 
 /// As `spawn`, at a path of the caller's choosing.
@@ -1056,7 +1064,7 @@ pub fn spawn_at(
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
 ) -> Option<PathBuf> {
-    spawn_at_inner(path, player, view, stop, None)
+    spawn_at_inner(path, player, view, stop, None, None)
 }
 
 fn spawn_at_inner(
@@ -1065,6 +1073,7 @@ fn spawn_at_inner(
     view: crate::view::Shared,
     stop: Arc<AtomicBool>,
     activity: Option<crate::activity::Control>,
+    import_release: Option<crossbeam_channel::Sender<crossbeam_channel::Sender<bool>>>,
 ) -> Option<PathBuf> {
     let listener = match listen(&path) {
         Ok(l) => l,
@@ -1100,12 +1109,21 @@ fn spawn_at_inner(
                         let player = Arc::clone(&player);
                         let view = Arc::clone(&view);
                         let activity = activity.clone();
+                        let import_release = import_release.clone();
                         // One thread per connection. A client holds its
                         // connection open for the life of the window, so this
                         // is one thread per window rather than one per request.
                         let _ = std::thread::Builder::new()
                             .name("staramp-ipc-conn".into())
-                            .spawn(move || serve(&player, &view, activity.as_ref(), stream));
+                            .spawn(move || {
+                                serve(
+                                    &player,
+                                    &view,
+                                    activity.as_ref(),
+                                    import_release.as_ref(),
+                                    stream,
+                                )
+                            });
                     }
                     // One refused connection is not a reason to stop answering
                     // for the rest of the process's life, which is what
@@ -1136,6 +1154,7 @@ fn serve(
     player: &Player,
     view: &crate::view::Shared,
     activity: Option<&crate::activity::Control>,
+    import_release: Option<&crossbeam_channel::Sender<crossbeam_channel::Sender<bool>>>,
     stream: UnixStream,
 ) {
     let reader = BufReader::new(match stream.try_clone() {
@@ -1145,7 +1164,22 @@ fn serve(
     let mut out = stream;
     for line in reader.lines() {
         let Ok(line) = line else { break };
-        let reply = handle_with_activity(player, view, activity, line.trim());
+        let reply = if line.trim() == "release-for-import" {
+            // The UI thread decides after processing attachment and playback
+            // changes. Never decide to stop an owner from an IPC snapshot.
+            let (reply, answer) = crossbeam_channel::bounded(1);
+            let released = import_release.is_some_and(|requests| requests.try_send(reply).is_ok())
+                && answer
+                    .recv_timeout(std::time::Duration::from_millis(250))
+                    .unwrap_or(false);
+            if released {
+                "ok".into()
+            } else {
+                "error: player is attached, playing, or busy".into()
+            }
+        } else {
+            handle_with_activity(player, view, activity, line.trim())
+        };
         if writeln!(out, "{reply}").is_err() {
             break;
         }

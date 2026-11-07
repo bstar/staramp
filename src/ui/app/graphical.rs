@@ -273,6 +273,7 @@ impl App {
             );
         }
         let root = graphical_root()?;
+        self.frontend_attached = false;
         session::serve_exclusive(
             &root,
             name,
@@ -316,34 +317,10 @@ pub fn graphical_root() -> Result<PathBuf> {
 }
 impl Rack<'_> {
     fn palette(&self) -> Palette {
-        if self.app.look.theme.id == "winamp-silver" {
-            return crate::embed::skin::SILVER_PALETTE;
-        }
-        // Winamp Classic is the selected stacked-rack treatment, including its
-        // original bitmap colors. Passing the legacy terminal palette through
-        // the generic recoloring path turns its slate panels black, its green
-        // phosphor neon, and its selected rows blue.
-        if self.reference_colors || self.app.look.theme.id == "winamp-classic" {
+        if self.reference_colors && self.app.look.theme.id != "winamp-silver" {
             return crate::embed::skin::REFERENCE_PALETTE;
         }
-        let t = &self.app.look.theme;
-        Palette {
-            // Kanagawa's raised background gives large graphical panes more
-            // separation than its terminal base without washing out the hue.
-            bg: color(if t.name == "Kanagawa" {
-                t.header_bg
-            } else {
-                t.bg
-            }),
-            inset_bg: (t.name == "Kanagawa")
-                .then(|| color(t.bg.mix(crate::theme::color::Rgb::new(0, 0, 0), 0.12))),
-            fg: color(t.fg),
-            muted: color(t.dim),
-            accent: color(t.accent),
-            selected: color(t.row_selected_bg),
-            border: color(t.border),
-            error: color(t.error),
-        }
+        Palette::for_chrome(&self.app.look.theme)
     }
     fn player(&mut self) -> PlayerRenderState {
         use std::sync::atomic::Ordering::Relaxed;
@@ -2135,6 +2112,12 @@ fn append(
             target.centered_text.push(*node);
         }
     }
+    for mut caret in source.text_carets {
+        if let Some(Some(node)) = node_indices.get(usize::from(caret.node)) {
+            caret.node = *node;
+            target.text_carets.push(caret);
+        }
+    }
     for hit in source.hits {
         if let Some(rect) = translate(hit.rect).filter(|r| r.height == hit.rect.height) {
             target.hits.push(HitRegion {
@@ -2149,6 +2132,9 @@ fn append(
     }
 }
 impl Controller for Rack<'_> {
+    fn attached(&mut self) {
+        self.app.frontend_attached = true;
+    }
     fn tick(&mut self) {
         self.app.tick_player();
         if self
@@ -2173,6 +2159,7 @@ impl Controller for Rack<'_> {
         self.cells = c.cell_presentation.unwrap_or(false);
     }
     fn detached(&mut self) {
+        self.app.frontend_attached = false;
         self.audio.detached(self.app);
     }
     fn media(&mut self, message: starkit::terminal_graphics::media::ToHost) {
@@ -2303,6 +2290,12 @@ impl Controller for Rack<'_> {
         let w = v.width as u16 / density;
         let h = v.height as u16 / density;
         let footer_y = h - font - 12;
+        let import_banner = self.app.import_banner();
+        let content_bottom = footer_y.saturating_sub(if import_banner.is_some() {
+            font + 20
+        } else {
+            0
+        });
         let mut surface = Surface::new(w, h, "transparent".into());
         if self.skins {
             if let Err(error) = self.skin.prepare(&palette, density, self.radius == 0) {
@@ -2344,7 +2337,15 @@ impl Controller for Rack<'_> {
         if self.app.panels.focus == Focus::Player && !self.app.overlay_open() {
             self.focus_outline(&mut player);
         }
-        append(&mut surface, player, 0, 0, 0..footer_y, density, "player");
+        append(
+            &mut surface,
+            player,
+            0,
+            0,
+            0..content_bottom,
+            density,
+            "player",
+        );
         classic::label(
             &mut surface,
             R::new(w - 114, 7, 70, 24),
@@ -2417,7 +2418,7 @@ impl Controller for Rack<'_> {
         if self.app.panels.playlist {
             // Fill the remaining rack space above the status footer. Use the
             // unscrolled position so scrolling never changes the module size.
-            let playlist_height = (i32::from(h) - i32::from(font + 20) - y).max(260) as u16;
+            let playlist_height = (i32::from(content_bottom) - 8 - y).max(260) as u16;
             let s = self.playlist(w, playlist_height, &c, font);
             let s = self.fold_module(s, "playlist", &c);
             let hh = s.height;
@@ -2425,7 +2426,7 @@ impl Controller for Rack<'_> {
             modules.push((s, 0, y, "playlist"));
             y += i32::from(hh + 8);
         }
-        self.max_offset = (y - i32::from(h) + i32::from(font + 12)).max(0) as u16;
+        self.max_offset = (y - i32::from(content_bottom)).max(0) as u16;
         self.offset = self.offset.min(self.max_offset);
         // Clamp against the new layout before painting, so resizing or closing
         // a module cannot leave a frame at the previous scroll offset.
@@ -2435,12 +2436,51 @@ impl Controller for Rack<'_> {
                 module,
                 x,
                 y - i32::from(self.offset),
-                top..footer_y,
+                top..content_bottom,
                 density,
                 name,
             );
         }
         let album_y = album_y - i32::from(self.offset);
+        if let Some((message, fraction)) = &import_banner {
+            surface.fill(
+                R::new(0, content_bottom, w, footer_y - content_bottom),
+                &c.panel,
+                0,
+            );
+            classic::label(
+                &mut surface,
+                R::new(10, content_bottom, w.saturating_sub(20), font + 10),
+                message,
+                &c.accent,
+                font,
+                false,
+            );
+            let bar = R::new(10, footer_y.saturating_sub(6), w.saturating_sub(20), 3);
+            surface.fill(bar, &c.inset, 0);
+            if let Some(fraction) = fraction {
+                surface.fill(
+                    R::new(
+                        bar.x,
+                        bar.y,
+                        (f64::from(bar.width) * fraction) as u16,
+                        bar.height,
+                    ),
+                    &c.accent,
+                    0,
+                );
+            } else if self
+                .app
+                .import
+                .as_ref()
+                .is_some_and(|m| m.operation.is_some())
+            {
+                let width = (bar.width / 6).max(1);
+                let travel = bar.width.saturating_sub(width).max(1);
+                let x = ((self.app.look.marquee as u32 * 13) % u32::from(travel)) as u16;
+                surface.fill(R::new(bar.x + x, bar.y, width, bar.height), &c.accent, 0);
+            }
+        }
         // Use the ASCII status model, but lay out native segments in pixels.
         // A flattened terminal row can clip away the right-hand indicators
         // when the native and terminal font advances differ.
@@ -6633,6 +6673,61 @@ impl App {
             PlaylistAddStep::ImportReject
         ));
         rack.app.over.playlist_add = None;
+        // Import activity remains visible without the playlist, after the
+        // transient status message expires. This exercises the production scene.
+        {
+            use crate::library::import::{Phase, Progress};
+            let (hold, result) = std::sync::mpsc::channel();
+            let progress = Arc::new(std::sync::Mutex::new(Progress {
+                phase: Phase::Copying,
+                completed_bytes: 50,
+                total_bytes: 100,
+            }));
+            let mode = rack.app.import.as_mut().unwrap();
+            mode.operation = Some("IMPORTING · Review Artist — Review Album".into());
+            mode.running = Some(ImportJob {
+                result,
+                thread: std::thread::spawn(|| {}),
+                progress: Arc::clone(&progress),
+            });
+            rack.app.status = None;
+            rack.app.panels.playlist = false;
+            for density in [1, 2] {
+                for (phase, label) in [
+                    (Phase::Copying, "Copying and verifying"),
+                    (Phase::Indexing, "Updating permanent library"),
+                    (Phase::Refreshing, "Refreshing inbox"),
+                ] {
+                    progress.lock().unwrap().phase = phase;
+                    let viewport = Viewport {
+                        width: 1200 * density,
+                        height: 900 * density,
+                        columns: 120,
+                        rows: 45,
+                        generation: 0,
+                    };
+                    let scene = rack.scene(viewport);
+                    let json = serde_json::to_string(&scene)?;
+                    assert!(
+                        json.contains(label),
+                        "import progress disappeared without playlist"
+                    );
+                    if phase == Phase::Copying {
+                        assert!(json.contains("50%"));
+                        starkit::terminal_graphics::renderer::render_reference(&scene)?
+                            .save(output.join(format!("import-progress-{density}x.png")))?;
+                    }
+                }
+            }
+            let mode = rack.app.import.as_mut().unwrap();
+            mode.running.take().unwrap().thread.join().unwrap();
+            mode.operation = None;
+            mode.outcome = Some(("imported 1 track · Review Album".into(), Instant::now()));
+            assert!(serde_json::to_string(&rack.scene(viewport))?.contains("imported 1 track"));
+            rack.app.import.as_mut().unwrap().outcome = None;
+            rack.app.panels.playlist = true;
+            drop(hold);
+        }
         // Preserve selection, scroll anchor, folds, tags and the playback cursor
         // when a completed import removes a preceding album from the inbox.
         let albums: Vec<_> = (0..30)

@@ -13,6 +13,7 @@ import pty
 import re
 import select
 import signal
+import socket
 import struct
 import subprocess
 import tempfile
@@ -28,7 +29,10 @@ parser.add_argument('--local-hover', action='store_true', help='check queue hove
 parser.add_argument('--motion-burst', action='store_true', help='check rapid hover input before closing')
 parser.add_argument('--fold-playlist', action='store_true', help='collapse and expand the playlist repeatedly at both densities')
 parser.add_argument('--imports', action='store_true', help='launch the graphical import reviewer with a disposable album')
+parser.add_argument('--orphan-player', action='store_true', help='verify import recovers a disconnected idle player')
 args = parser.parse_args()
+if args.orphan_player and not args.imports:
+    parser.error('--orphan-player requires --imports')
 binary = str(Path(args.binary).resolve())
 with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
     root = Path(temporary)
@@ -47,6 +51,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
     subprocess.run([binary, 'scrobble', 'status'], env=env, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
     launch = [binary, 'graphical']
+    orphan = None
     if args.imports:
         library = root / 'library'
         library.mkdir()
@@ -59,6 +64,36 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
             audio.writeframes(b'\0\0' * 4410)
         (root / 'config/config.toml').write_text(f'library_root = "{library}"\n')
         launch = [binary, 'import', '--graphical', str(staging)]
+        if args.orphan_player:
+            orphan = subprocess.Popen([binary, '--graphical-server', 'player'], env=env,
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.PIPE)
+            try:
+                owner_socket = root / 'runtime/staramp/graphical/player.sock'
+                deadline = time.monotonic() + 10
+                while not owner_socket.exists():
+                    assert orphan.poll() is None, orphan.stderr.read().decode()
+                    assert time.monotonic() < deadline, 'Idle player did not start'
+                    time.sleep(.02)
+                # A connected window must never be silently replaced by imports.
+                with socket.socket(socket.AF_UNIX) as frontend:
+                    frontend.settimeout(5)
+                    frontend.connect(str(owner_socket))
+                    viewport = dict(columns=100, rows=40, width=1000, height=800, generation=1)
+                    frontend.sendall((json.dumps(dict(type='hello', version=1,
+                                                     viewport=viewport, client='import-recovery-proof')) + '\n').encode())
+                    with frontend.makefile('rb') as reader:
+                        assert json.loads(reader.readline())['type'] == 'hello'
+                        result = subprocess.run([binary, 'ctl', 'release-for-import'], env=env,
+                                                capture_output=True, text=True, timeout=5)
+                        assert result.stdout.startswith('error:'), result
+                        assert orphan.poll() is None, 'Import request stopped an attached player'
+                # Closing this connection reproduces a killed frontend.
+                time.sleep(.2)
+            except BaseException:
+                orphan.kill()
+                orphan.wait()
+                raise
 
     def session():
         os.setsid()
@@ -264,6 +299,10 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
         assert b'\x1b[?1016l' in output, 'Pixel mouse mode was not restored'
         assert b'panicked at' not in output, bytes(output[-2000:])
         if args.imports:
+            if orphan is not None:
+                assert orphan.wait(timeout=5) == 0, 'Idle player did not shut down cleanly'
+                print(json.dumps({'attached_player_protected': True,
+                                  'disconnected_idle_player_recovered': True}))
             assert (root / 'data/imports.sqlite').is_file(), 'Import reviewer did not index staging'
             assert not (root / 'data/index.sqlite').exists(), 'Import preview created a permanent index'
             assert track.is_file(), 'Preview removed the staged album'
@@ -273,6 +312,10 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
         print(json.dumps({'real_frontend_pty': True, 'zero_coordinates_survived': True,
                           'main_close_exits_frontend': True, 'pixel_mode_restored': True}))
     finally:
+        if orphan is not None:
+            if orphan.poll() is None:
+                orphan.kill()
+            orphan.wait()
         # Every child belongs to this private process group, never a user session.
         # macOS can reject signalling an exited group leader. Enumerate only
         # this private group's remaining processes, owned by the test user.

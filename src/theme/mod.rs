@@ -13,6 +13,7 @@
 
 pub mod builtin;
 pub mod schema;
+pub mod system_watch;
 
 use std::ops::Deref;
 

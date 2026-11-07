@@ -338,11 +338,13 @@ struct ImportMode {
     albums: Vec<crate::library::import::Album>,
     pending: Option<PendingImport>,
     running: Option<ImportJob>,
+    outcome: Option<(String, Instant)>,
     operation: Option<String>,
     active_uris: Vec<String>,
 }
 
 struct ImportJob {
+    progress: Arc<std::sync::Mutex<crate::library::import::Progress>>,
     result: std::sync::mpsc::Receiver<ImportResult>,
     thread: std::thread::JoinHandle<()>,
 }
@@ -1657,6 +1659,7 @@ impl Effects {
 /// animations that belong to the chrome rather than to the music.
 struct Look {
     theme: Theme,
+    system_theme_watch: crate::theme::system_watch::SystemThemeWatch,
     /// Every theme that can be cycled to, and where in that list we are.
     ids: Vec<String>,
     index: usize,
@@ -2006,6 +2009,9 @@ pub struct App {
     mpris: Option<crate::mpris::MprisHandle>,
     ipc_stop: Arc<std::sync::atomic::AtomicBool>,
     ipc_path: Option<PathBuf>,
+    import_release_tx: crossbeam_channel::Sender<crossbeam_channel::Sender<bool>>,
+    import_release_rx: crossbeam_channel::Receiver<crossbeam_channel::Sender<bool>>,
+    frontend_attached: bool,
     last_track_revision: u64,
     last_state: PlayState,
     look: Look,
@@ -3069,12 +3075,14 @@ impl App {
 
         // Remote control is best-effort too.
         let ipc_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (import_release_tx, import_release_rx) = crossbeam_channel::bounded(1);
         let view = crate::view::shared();
         let ipc_path = crate::ipc::spawn_controlled(
             Arc::clone(&player),
             Arc::clone(&view),
             Arc::clone(&ipc_stop),
             activity.control(),
+            import_release_tx.clone(),
         );
         if let Some(p) = &ipc_path {
             tracing::info!("ipc listening on {}", p.display());
@@ -3098,6 +3106,9 @@ impl App {
             mpris,
             ipc_stop,
             ipc_path,
+            import_release_tx,
+            import_release_rx,
+            frontend_attached: true,
             last_track_revision: 0,
             last_state: PlayState::Stopped,
             panels: Panels {
@@ -3126,6 +3137,7 @@ impl App {
             },
             look: Look {
                 theme,
+                system_theme_watch: Default::default(),
                 ids: theme_ids,
                 index: theme_index,
                 theme_selection_until: None,
@@ -3305,6 +3317,7 @@ impl App {
             Arc::clone(&self.session.shared),
             Arc::clone(&self.ipc_stop),
             self.activity.control(),
+            self.import_release_tx.clone(),
         );
         let Some(path) = path else {
             // Somebody else got there first. Follow them.
@@ -3691,6 +3704,7 @@ impl App {
             albums,
             pending: None,
             running: None,
+            outcome: None,
             operation: None,
             active_uris: Vec::new(),
         });
@@ -4034,6 +4048,29 @@ impl App {
     }
 
     fn tick_player(&mut self) {
+        if let Some(theme) = self
+            .look
+            .system_theme_watch
+            .poll(&self.look.ids[self.look.index], Instant::now())
+        {
+            self.look.theme = theme;
+        }
+        while let Ok(reply) = self.import_release_rx.try_recv() {
+            let idle = !self.frontend_attached
+                && !self.is_mirror()
+                && self.player.state.state() != PlayState::Playing
+                && !self.player.state.is_loading()
+                && !self
+                    .import
+                    .as_ref()
+                    .is_some_and(|mode| mode.running.is_some() || mode.pending.is_some());
+            // A timed-out launcher must not shut down the player later.
+            if idle && reply.try_send(true).is_ok() {
+                self.quit = true;
+            } else {
+                let _ = reply.try_send(false);
+            }
+        }
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.25);
         self.last_frame = now;
@@ -5030,6 +5067,27 @@ impl App {
         }
     }
 
+    fn import_banner(&self) -> Option<(String, Option<f64>)> {
+        let mode = self.import.as_ref()?;
+        if let Some(operation) = &mode.operation {
+            let progress = mode
+                .running
+                .as_ref()
+                .and_then(|job| job.progress.lock().ok().map(|p| *p));
+            let label = progress.map_or_else(|| "Waiting to start…".into(), |p| p.label());
+            let spinner = ["|", "/", "-", "\\"][self.look.marquee % 4];
+            Some((
+                format!("{spinner} {label} · {operation}"),
+                progress.and_then(|p| p.fraction()),
+            ))
+        } else {
+            mode.outcome
+                .as_ref()
+                .filter(|(_, when)| when.elapsed() < Duration::from_secs(15))
+                .map(|(text, _)| (text.clone(), None))
+        }
+    }
+
     fn apply_import_album(
         &mut self,
         source: QueueItem,
@@ -5052,6 +5110,7 @@ impl App {
             self.command(&Command::Stop, "stop");
         }
         if let Some(mode) = &mut self.import {
+            mode.outcome = None;
             mode.operation = Some(format!("IMPORTING · {} — {}", album.artist, album.title));
             mode.active_uris = album
                 .tracks
@@ -5093,6 +5152,10 @@ impl App {
         let library = mode.library.clone();
         let quarantine = mode.quarantine.clone();
         let (tx, result) = std::sync::mpsc::channel();
+        let progress = Arc::new(std::sync::Mutex::new(
+            crate::library::import::Progress::default(),
+        ));
+        let report = Arc::clone(&progress);
         let thread = std::thread::Builder::new()
             .name("album-import".into())
             .spawn(move || {
@@ -5102,20 +5165,30 @@ impl App {
                         artist_dir,
                         conflict,
                     } => FinishedImport::Imported(
-                        crate::library::import::import(
+                        crate::library::import::import_with_progress(
                             &staging,
                             &library,
                             &quarantine,
                             &album,
                             &artist_dir,
                             conflict,
+                            |update| {
+                                if let Ok(mut current) = report.lock() {
+                                    *current = update;
+                                }
+                            },
                         )
                         .map_err(|error| format!("{error:#}")),
                     ),
-                    PendingImport::Reject(album) => FinishedImport::Rejected(
-                        crate::library::import::reject(&staging, &library, &quarantine, &album)
-                            .map_err(|error| format!("{error:#}")),
-                    ),
+                    PendingImport::Reject(album) => {
+                        if let Ok(mut p) = report.lock() {
+                            p.phase = crate::library::import::Phase::Quarantining;
+                        }
+                        FinishedImport::Rejected(
+                            crate::library::import::reject(&staging, &library, &quarantine, &album)
+                                .map_err(|error| format!("{error:#}")),
+                        )
+                    }
                 };
                 // The staging scan can take seconds on a large inbox. Keep
                 // it on this worker, never inside the render/input loop.
@@ -5124,6 +5197,9 @@ impl App {
                     FinishedImport::Imported(Ok(_)) | FinishedImport::Rejected(Ok(_))
                 )
                 .then(|| {
+                    if let Ok(mut p) = report.lock() {
+                        p.phase = crate::library::import::Phase::Refreshing;
+                    }
                     crate::library::import::discover(&staging, &library)
                         .map_err(|error| format!("{error:#}"))
                 });
@@ -5133,7 +5209,13 @@ impl App {
                 });
             });
         match thread {
-            Ok(thread) => mode.running = Some(ImportJob { result, thread }),
+            Ok(thread) => {
+                mode.running = Some(ImportJob {
+                    result,
+                    thread,
+                    progress,
+                })
+            }
             Err(error) => {
                 mode.operation = None;
                 mode.active_uris.clear();
@@ -5147,7 +5229,11 @@ impl App {
             .import
             .as_mut()
             .and_then(|mode| mode.running.as_mut())
-            .and_then(|job| job.result.try_recv().ok());
+            .and_then(|job| match job.result.try_recv() {
+                Ok(result)=>Some(result),
+                Err(std::sync::mpsc::TryRecvError::Empty)=>None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>Some(ImportResult{finished:FinishedImport::Imported(Err("album worker stopped before reporting a result; check the staging and library folders before retrying".into())),refreshed:None}),
+            });
         let Some(ImportResult {
             finished,
             refreshed,
@@ -5208,6 +5294,12 @@ impl App {
                 "album moved; staging index refresh failed: {error}"
             ));
         }
+        if let Some(mode) = &mut self.import {
+            mode.outcome = self
+                .status
+                .as_ref()
+                .map(|(text, _)| (text.clone(), Instant::now()));
+        }
     }
 
     fn apply_reject_album(&mut self, source: QueueItem) {
@@ -5227,6 +5319,7 @@ impl App {
             self.command(&Command::Stop, "stop");
         }
         if let Some(mode) = &mut self.import {
+            mode.outcome = None;
             mode.operation = Some(format!("REJECTING · {} — {}", album.artist, album.title));
             mode.active_uris = album
                 .tracks
@@ -8573,13 +8666,8 @@ impl App {
         } else {
             self.queue.name.clone()
         };
-        if let Some(operation) = self
-            .import
-            .as_ref()
-            .and_then(|mode| mode.operation.as_deref())
-        {
-            const SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
-            name = format!("{} {operation}", SPINNER[self.look.marquee % SPINNER.len()]);
+        if let Some((progress, _)) = self.import_banner() {
+            name = progress;
         }
         // The filter in force is part of what the panel is showing, so it
         // goes in the title beside the name rather than only in a note that
@@ -10383,7 +10471,8 @@ impl App {
             .is_some_and(|until| Instant::now() < until);
         draw_status_bar(area, buf, &self.look.theme, &segments, selecting_theme);
         if !selecting_theme {
-            if let Some(output) = &self.audio_output {
+            let progress = self.import_banner().map(|(text, _)| text);
+            if let Some(output) = progress.as_ref().or(self.audio_output.as_ref()) {
                 let width = area.width.saturating_sub(indicator_width(&segments) + 12);
                 buf.set_stringn(
                     area.x + 9,

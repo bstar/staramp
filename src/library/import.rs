@@ -35,6 +35,57 @@ pub struct Imported {
     pub tracks: usize,
 }
 
+/// A bounded snapshot of the current transaction, shared with its presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Preparing,
+    Copying,
+    Verifying,
+    Installing,
+    Indexing,
+    Cleaning,
+    Refreshing,
+    Quarantining,
+}
+#[derive(Debug, Clone, Copy)]
+pub struct Progress {
+    pub phase: Phase,
+    pub completed_bytes: u64,
+    pub total_bytes: u64,
+}
+impl Default for Progress {
+    fn default() -> Self {
+        Self {
+            phase: Phase::Preparing,
+            completed_bytes: 0,
+            total_bytes: 0,
+        }
+    }
+}
+impl Progress {
+    /// The fraction covers copy plus checksum reads, not indexing or cleanup.
+    pub fn fraction(self) -> Option<f64> {
+        if !matches!(self.phase, Phase::Copying | Phase::Verifying) || self.total_bytes == 0 {
+            return None;
+        }
+        Some((self.completed_bytes as f64 / self.total_bytes as f64).clamp(0.0, 1.0))
+    }
+    pub fn label(self) -> String {
+        match self.phase {
+            Phase::Preparing => "Preparing album…".into(),
+            Phase::Copying | Phase::Verifying => self.fraction().map_or_else(
+                || "Copying and verifying…".into(),
+                |f| format!("Copying and verifying · {:.0}%", (f * 100.0).floor()),
+            ),
+            Phase::Installing => "Installing verified album…".into(),
+            Phase::Indexing => "Updating permanent library index…".into(),
+            Phase::Cleaning => "Removing verified staging copy…".into(),
+            Phase::Refreshing => "Refreshing inbox…".into(),
+            Phase::Quarantining => "Moving album to quarantine…".into(),
+        }
+    }
+}
+
 /// Refresh the staging index and return physical album folders oldest-first.
 pub fn discover(staging: &Path, library: &Path) -> Result<Vec<Album>> {
     validate_roots(staging, library, None)?;
@@ -104,6 +155,28 @@ pub fn import(
     artist_dir: &Path,
     conflict: Conflict,
 ) -> Result<Imported> {
+    import_with_progress(
+        staging,
+        library,
+        quarantine,
+        album,
+        artist_dir,
+        conflict,
+        |_| {},
+    )
+}
+
+pub fn import_with_progress(
+    staging: &Path,
+    library: &Path,
+    quarantine: &Path,
+    album: &Album,
+    artist_dir: &Path,
+    conflict: Conflict,
+    mut notify: impl FnMut(Progress),
+) -> Result<Imported> {
+    let mut progress = Progress::default();
+    notify(progress);
     validate_roots(staging, library, Some(quarantine))?;
     anyhow::ensure!(conflict != Conflict::Cancel, "import cancelled");
     let source = contained(staging, &staging.join(&album.source_rel))?;
@@ -113,6 +186,9 @@ pub fn import(
         source.display()
     );
 
+    progress.total_bytes = content_bytes(&source)?
+        .checked_mul(2)
+        .context("album size exceeds progress limit")?;
     let requested_artist_dir = if artist_dir.is_absolute() {
         artist_dir.to_path_buf()
     } else {
@@ -170,12 +246,18 @@ pub fn import(
     // directory inside the album and wrong for the one above that was created
     // a moment ago on purpose. Copying a whole album this way was the case no
     // test covered, and it failed on its first step.
-    if let Err(error) = copy_contents_verified(&source, &partial) {
+    if let Err(error) = copy_contents_progress(&source, &partial, &mut |phase, bytes| {
+        progress.phase = phase;
+        progress.completed_bytes = progress.completed_bytes.saturating_add(bytes);
+        notify(progress);
+    }) {
         let _ = fs::remove_dir_all(&partial);
         undo_artist_dir();
         return Err(error).context("copying staged album");
     }
 
+    progress.phase = Phase::Installing;
+    notify(progress);
     let mut backup = None;
     if destination.exists() {
         anyhow::ensure!(conflict == Conflict::Replace, "destination already exists");
@@ -194,6 +276,8 @@ pub fn import(
         return Err(error).context("installing verified album");
     }
 
+    progress.phase = Phase::Indexing;
+    notify(progress);
     let scan_result = (|| -> Result<()> {
         let mut db = Db::open(&crate::paths::index_file()?)?;
         scan::scan(&mut db, library, &scan::ScanOptions::default())?;
@@ -224,6 +308,8 @@ pub fn import(
         return Err(error).context("refreshing the permanent library index");
     }
 
+    progress.phase = Phase::Cleaning;
+    notify(progress);
     fs::remove_dir_all(&source)
         .with_context(|| format!("removing verified staging copy {}", source.display()))?;
     Ok(Imported {
@@ -469,20 +555,55 @@ fn create_private_dir(path: &Path) -> std::io::Result<()> {
     builder.create(path)
 }
 
+// Inspect physical files, including artwork, without following symlinks.
+fn content_bytes(path: &Path) -> Result<u64> {
+    let metadata = path.symlink_metadata()?;
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "refusing to follow symlink {}",
+        path.display()
+    );
+    if metadata.is_file() {
+        return Ok(metadata.len());
+    }
+    anyhow::ensure!(
+        metadata.is_dir(),
+        "unsupported album entry {}",
+        path.display()
+    );
+    let mut total = 0u64;
+    for entry in fs::read_dir(path)? {
+        total = total
+            .checked_add(content_bytes(&entry?.path())?)
+            .context("album size exceeds progress limit")?;
+    }
+    Ok(total)
+}
+
 /// Copy everything inside `from` into `into`, which must already exist.
 ///
 /// The top of an album is created by the caller, atomically and refusing a
 /// leftover; everything beneath it is created here, the same way.
 fn copy_contents_verified(from: &Path, into: &Path) -> Result<()> {
+    copy_contents_progress(from, into, &mut |_, _| {})
+}
+fn copy_contents_progress(
+    from: &Path,
+    into: &Path,
+    progress: &mut dyn FnMut(Phase, u64),
+) -> Result<()> {
     for entry in fs::read_dir(from)? {
         let entry = entry?;
-        copy_verified(&entry.path(), &into.join(entry.file_name()))?;
+        copy_progress(&entry.path(), &into.join(entry.file_name()), progress)?;
     }
     Ok(())
 }
 
 /// Copy `from` to `to`, creating `to`, and refusing a `to` that exists.
 fn copy_verified(from: &Path, to: &Path) -> Result<()> {
+    copy_progress(from, to, &mut |_, _| {})
+}
+fn copy_progress(from: &Path, to: &Path, progress: &mut dyn FnMut(Phase, u64)) -> Result<()> {
     anyhow::ensure!(
         !from.symlink_metadata()?.file_type().is_symlink(),
         "refusing to follow symlink {}",
@@ -490,7 +611,7 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
     );
     if from.is_dir() {
         create_private_dir(to)?;
-        return copy_contents_verified(from, to);
+        return copy_contents_progress(from, to, progress);
     }
     let mut input = fs::File::open(from)?;
     // `create_new`, so a symlink planted at the destination is not written
@@ -505,6 +626,7 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
         }
         source_hash.update(&buffer[..read]);
         output.write_all(&buffer[..read])?;
+        progress(Phase::Copying, read as u64);
     }
     output.sync_all()?;
     let mut copied = fs::File::open(to)?;
@@ -515,6 +637,7 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
             break;
         }
         destination_hash.update(&buffer[..read]);
+        progress(Phase::Verifying, read as u64);
     }
     anyhow::ensure!(
         source_hash.finalize() == destination_hash.finalize(),
@@ -540,6 +663,70 @@ fn copy_verified(from: &Path, to: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn album_progress_counts_copy_and_verification_without_losing_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("album");
+        let destination = dir.path().join("copied");
+        fs::create_dir_all(source.join("disc 2")).unwrap();
+        let audio = vec![42u8; 2 * 1024 * 1024 + 17];
+        fs::write(source.join("disc 2/track.flac"), &audio).unwrap();
+        fs::write(source.join("cover.jpg"), b"cover").unwrap();
+        let total = content_bytes(&source).unwrap() * 2;
+        create_private_dir(&destination).unwrap();
+        let mut updates = Vec::new();
+        let mut completed = 0;
+        copy_contents_progress(&source, &destination, &mut |phase, bytes| {
+            completed += bytes;
+            let progress = Progress {
+                phase,
+                completed_bytes: completed,
+                total_bytes: total,
+            };
+            updates.push((phase, progress.fraction().unwrap()));
+        })
+        .unwrap();
+        assert!(updates
+            .iter()
+            .any(|(p, f)| *p == Phase::Copying && *f > 0.0 && *f < 1.0));
+        assert!(updates.iter().any(|(p, _)| *p == Phase::Verifying));
+        assert!(updates.windows(2).all(|p| p[0].1 <= p[1].1));
+        assert_eq!(completed, total);
+        assert_eq!(updates.last().unwrap().1, 1.0);
+        assert_eq!(
+            fs::read(destination.join("disc 2/track.flac")).unwrap(),
+            audio
+        );
+        assert_eq!(fs::read(destination.join("cover.jpg")).unwrap(), b"cover");
+        for phase in [
+            Phase::Installing,
+            Phase::Indexing,
+            Phase::Cleaning,
+            Phase::Refreshing,
+        ] {
+            assert!(
+                Progress {
+                    phase,
+                    completed_bytes: total,
+                    total_bytes: total
+                }
+                .fraction()
+                .is_none(),
+                "later phases must not imply the import is complete"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn progress_inventory_refuses_symlinks_before_copying() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("album");
+        fs::create_dir(&source).unwrap();
+        std::os::unix::fs::symlink(dir.path(), source.join("escape")).unwrap();
+        assert!(content_bytes(&source).is_err());
+    }
 
     #[test]
     fn alternate_artist_spellings_are_suggested_but_rank_after_exact() {

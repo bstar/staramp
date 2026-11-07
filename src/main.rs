@@ -344,7 +344,10 @@ fn main() -> Result<()> {
             None | Some(Command::Ui { .. }) | Some(Command::Graphical { .. })
         );
         if player_launch
-            && (cli.ssh.is_some() || graphical || std::env::var_os("SSH_CONNECTION").is_some())
+            && (cli.ssh.is_some()
+                || graphical
+                || std::env::var_os("SSH_CONNECTION").is_some()
+                || (io::stdin().is_terminal() && io::stdout().is_terminal()))
         {
             let target = match &cli.command {
                 Some(Command::Ui { target, .. }) | Some(Command::Graphical { target }) => {
@@ -940,6 +943,25 @@ fn cmd_import(staging: Option<PathBuf>, quarantine: Option<PathBuf>) -> Result<(
     cmd_import_mode(staging, quarantine, None)
 }
 
+fn prepare_import_session() -> Result<()> {
+    let Some(owner) = mirror::Mirror::connect() else {
+        return Ok(());
+    };
+    anyhow::ensure!(
+        owner.ask("release-for-import").as_deref() == Some("ok"),
+        "STAR/AMP still owns playback. Quit its player window before opening import mode; closing the terminal can leave its background session running."
+    );
+    let deadline = Instant::now() + std::time::Duration::from_secs(5);
+    while owner.alive() {
+        anyhow::ensure!(
+            Instant::now() < deadline,
+            "STAR/AMP is still finishing its background session; retry import shortly"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    Ok(())
+}
+
 fn cmd_import_mode(
     staging: Option<PathBuf>,
     quarantine: Option<PathBuf>,
@@ -957,10 +979,7 @@ fn cmd_import_mode(
     // Import mode owns an audio player just like the ordinary TUI. Do not
     // quietly start a second leader and contend for the audio device or IPC
     // socket when STAR/AMP is already open elsewhere.
-    anyhow::ensure!(
-        mirror::Mirror::connect().is_none(),
-        "STAR/AMP is already running — close it before opening import mode"
-    );
+    prepare_import_session()?;
     let socket = ipc::socket_path()?;
     anyhow::ensure!(
         ipc::claim_session(&socket),
@@ -2093,10 +2112,7 @@ fn launch_graphical_import(
     let quarantine = quarantine
         .or(cfg.imports.quarantine_root.clone())
         .unwrap_or_else(|| default_import_quarantine(&staging));
-    anyhow::ensure!(
-        mirror::Mirror::connect().is_none(),
-        "STAR/AMP is already running — close it before opening import mode"
-    );
+    prepare_import_session()?;
     // Start the import-aware backend before attaching the ordinary renderer.
     // Its own graphical socket keeps import rendering separate while retaining
     // the ordinary playback-owner lease and the shared KIT launch protocol.

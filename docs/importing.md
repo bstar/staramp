@@ -28,13 +28,18 @@ Kitty (or a terminal with the STAR/KIT graphics integration):
 staramp import --graphical ~/Downloads/ALBUMS
 ```
 
-Close the existing STAR/AMP player first: import review owns playback and must
+Quit an open STAR/AMP player first: import review owns playback and must
 not silently join the permanent-library queue. The graphical reviewer uses a
 separate import session and the same staging index, duplicate decisions, and
 verified import transactions as the terminal reviewer. Right-click an album
 heading or one of its tracks to import or reject the whole album, including
 when its heading is folded. The graphical flag currently reviews local staging
 directories; it does not start an SSH import session.
+
+If a terminal was closed or killed, a disconnected graphical player that is
+paused or stopped is shut down cleanly when import review starts. Its normal session is
+saved first. An attached window, playing audio, or an album transaction in
+progress still blocks import review; quit that player normally and try again.
 
 When no quarantine is configured, the first form uses the sibling directory
 `~/Downloads/ALBUMS-rejected`.
@@ -69,6 +74,15 @@ The two decisions are:
 An import preserves the album folder name and puts it below the album-artist
 directory. Existing and similarly spelled artist directories are offered
 before a new one is made.
+
+Starting an import immediately shows an activity indicator. The graphical
+reviewer keeps a banner above the footer, even when the playlist is hidden or
+scrolled away. Copying and checksum verification show byte-based progress;
+installation, library indexing and inbox refresh show their current phase with
+an animated indicator. The percentage describes copying and verification, not
+the entire transaction. Completion or failure remains visible for 15 seconds.
+The terminal reviewer shows the same progress in its playlist title and status
+line. Playback controls and navigation remain responsive during the operation.
 
 If an apparent copy of the album already exists, STAR/AMP stops and offers to
 keep both versions or replace the old one. Replaced albums are quarantined.

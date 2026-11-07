@@ -56,7 +56,10 @@ it falls back to cells otherwise. `staramp --cells` explicitly selects cells.
 `staramp graphical` remains available as an alias. Interactive import review
 also prefers graphics, so `staramp import ~/Downloads/ALBUMS` is sufficient.
 F9 switches graphical/cell presentation without replacing the player session.
-All sixteen themes are available with Alt+T. Panel corners are configurable;
+All sixteen themes are available with Alt+T. Selecting `system` follows the
+desktop palette while the player runs, checking once per second. Missing or
+incomplete palettes retain the last working colors. Named themes stay fixed.
+Panel corners are configurable;
 transport buttons stay square. See [graphical mode](docs/graphical/README.md)
 for configuration, EQ imports, SSH behavior, and verification limits.
 

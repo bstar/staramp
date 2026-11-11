@@ -3818,8 +3818,8 @@ dependencies = [
 
 [[package]]
 name = "starkit"
-version = "0.13.0"
-source = "git+https://github.com/bstar/starkit?rev=bb79dc34da263a20ac19fd1f39135f7f736e725b#bb79dc34da263a20ac19fd1f39135f7f736e725b"
+version = "0.19.0"
+source = "git+https://github.com/bstar/starkit?rev=1128a4d7ecb3803175179ac99b244568f8718463#1128a4d7ecb3803175179ac99b244568f8718463"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -3849,6 +3849,7 @@ dependencies = [
  "tracing-subscriber",
  "unicode-width",
  "ureq",
+ "url",
  "vello",
  "zip",
 ]

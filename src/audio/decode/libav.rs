@@ -169,9 +169,9 @@ impl LibavDecoder {
         Ok(Self {
             spec: StreamSpec {
                 sample_format: match decoder.format() {
-                    Sample::F32(_) => starkit::pcm::SampleFormat::F32,
-                    Sample::F64(_) => starkit::pcm::SampleFormat::F64,
-                    _ => starkit::pcm::SampleFormat::I32,
+                    Sample::F32(_) => starcore::pcm::SampleFormat::F32,
+                    Sample::F64(_) => starcore::pcm::SampleFormat::F64,
+                    _ => starcore::pcm::SampleFormat::I32,
                 },
                 channel_mask: layout.bits(),
                 sample_rate: out_rate,

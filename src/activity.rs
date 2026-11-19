@@ -171,7 +171,7 @@ impl Credentials {
 
     fn save(&self) -> Result<()> {
         let path = crate::paths::credentials_file()?;
-        starkit::fs::write_private(&path, toml::to_string_pretty(self)?.as_bytes())
+        starcore::fs::write_private(&path, toml::to_string_pretty(self)?.as_bytes())
     }
 }
 
@@ -1065,7 +1065,7 @@ fn submit_now_playing(
 }
 
 fn http_agent() -> ureq::Agent {
-    starkit::net::agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
+    starcore::net::agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
 }
 
 fn lastfm_signature(fields: &[(String, String)], secret: &str) -> String {

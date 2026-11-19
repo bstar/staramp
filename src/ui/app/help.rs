@@ -1,6 +1,6 @@
-//! AMP owns the command catalogue; KIT owns browsing and presentation.
+//! AMP owns the command catalogue; CORE owns browsing and presentation.
 use super::keymap::{self, Action};
-use starkit::help::{Command, Guide};
+use starcore::help::{Command, Guide};
 
 fn category(group: &str) -> &'static str {
     match group {
@@ -37,7 +37,7 @@ pub fn guide() -> Guide {
             Action::FilterQueue => ("Search or filter the playlist", "Press / to search the current queue. Type the text or query, use arrows to choose a result, and Escape to close the search. This is separate from browsing your full library with L (lowercase).", "find search filter queue tracks artist song album"),
             Action::LoadLibrary => ("Load the whole music library", "Press Shift+L to replace the current queue with the full indexed library. Press L (lowercase) to browse without loading everything.", "all tracks collection reset library queue"),
             Action::LibrarySearch => ("Search the library", "Open the library with L (lowercase), then press /. Type your search in its search line. Library navigation keys take precedence while the browser is open.", "find artist song album collection query"),
-            Action::NextTheme => ("Cycle the colour theme", "Press Alt+T to cycle the available themes. The theme name appears in the footer. The graphical rack and cell interface share KIT's theme palettes.", "color colour palette appearance dark light theme"),
+            Action::NextTheme => ("Cycle the colour theme", "Press Alt+T to cycle the available themes. The theme name appears in the footer. The graphical rack and cell interface share CORE's theme palettes.", "color colour palette appearance dark light theme"),
             Action::Help => ("Search the command guide", "Type words in any order. Search includes shortcuts, mouse gestures, aliases and instructions, and tolerates common spelling mistakes. Use quotes for exact phrases and -word to exclude a word. Narrow results with category:audio, key:ctrl+s or title:record. Tab changes category; Ctrl+F searches all categories; Ctrl+U clears. Scroll instructions or use Ctrl+PageUp/PageDown. Esc or F1 closes help.", "manual documentation tutorial find command help search filter"),
             Action::ClearTags => ("Clear all tagged playlist rows", context, "selection unmark clear tracks tags"),
             Action::CopyTagged => ("Copy tagged tracks", context, "yank clipboard selected copy queue"),
@@ -83,7 +83,7 @@ pub fn guide() -> Guide {
         ("gravity","Create a Gravity Queue","Playlist","Click Gravity","Build a related listening sequence from the queue.","Click Gravity in the playlist header and choose the available options. It reshapes the unplayed part of the queue while keeping the played prefix and membership. Save the resulting order as a normal playlist if you want to keep it.","smart related sonic similar journey shuffle sort algorithm"),
         ("playlist-actions","Open track actions","Playlist","Right-click track","Access context-specific queue and library actions.","Right-click a playlist track to open its action menu. Select an available action for that track. Tagged rows provide operations on multiple queue entries. Removing a queue row does not delete your audio files.","context menu actions metadata tags queue selected"),
         ("graphical","Switch graphical and terminal presentation","Appearance","F9","Change presentation while retaining the same player.","In a graphical session, F9 switches native graphics and cell presentation. Start a native session with staramp graphical in a compatible terminal such as Kitty. A terminal without graphics support uses the cell interface.","native classic rack graphics cell tui mode terminal fallback"),
-        ("refresh","Refresh missing graphics","Appearance","Ctrl+L","Repaint controls and artwork without restarting playback.","Press Ctrl+L if your terminal loses image placements. KIT also repairs quiet regions automatically and repaints on terminal focus return. Playback ownership remains unchanged.","redraw repair corrupt missing visuals cover image display"),
+        ("refresh","Refresh missing graphics","Appearance","Ctrl+L","Repaint controls and artwork without restarting playback.","Press Ctrl+L if your terminal loses image placements. CORE also repairs quiet regions automatically and repaints on terminal focus return. Playback ownership remains unchanged.","redraw repair corrupt missing visuals cover image display"),
         ("fold","Collapse or expand a graphical panel","Workspace","Panel fold control","Make room in the native rack without closing a panel.","Use the fold control in the graphical panel header. A folded panel keeps its playback and service state. Focus the panel and press Enter to expand it. Alt+P and the other panel toggles show or hide whole panels instead.","collapse expand rack minimize playlist window"),
         ("remote","Play a remote library over SSH","Library","","Connect from your shell to a remote library host.","Use staramp --ssh HOST to connect. The frontend and host must support compatible audio and graphics capabilities. Use staramp --help in your shell for CLI options and library management commands.","ssh remote server network music host connection"),
         ("scan","Index a music folder","Library","","Make local music available to the library browser.","In your shell run staramp scan ~/Music, using your music folder. Then launch staramp and press L (lowercase) to browse the indexed library. Scanning updates the rebuildable index without replacing listening history.","rescan scan import add directory folder files index collection"),
@@ -117,14 +117,14 @@ mod tests {
         }
         assert_eq!(
             g.handle_named("char:q", 0),
-            starkit::help::Outcome::Consumed
+            starcore::help::Outcome::Consumed
         );
         g.search("microphone");
         assert!(g.results().is_empty());
         g.search("");
         #[cfg(feature = "terminal-graphics")]
         if let Some(path) = std::env::var_os("STAR_HELP_PROOF_DIR") {
-            use starkit::{
+            use starcore::{
                 native_surface::{style::Style, PixelRect},
                 terminal_graphics::{
                     protocol::{Component, Viewport},
@@ -149,7 +149,7 @@ mod tests {
                 let mut scene = style.scene(v);
                 let r = Guide::native_rect(width as u16, height as u16);
                 scene.components.push(Component::Menu {
-                    rect: starkit::native_surface::style::logical_rect(
+                    rect: starcore::native_surface::style::logical_rect(
                         PixelRect::new(r.x, r.y, r.width, r.height),
                         v,
                     ),

@@ -542,8 +542,8 @@ mod tests {
     /// A one-pixel PNG, so the bytes that come back can be compared exactly.
     fn tiny_png() -> Vec<u8> {
         let mut out = std::io::Cursor::new(Vec::new());
-        starkit::image::RgbImage::from_pixel(1, 1, starkit::image::Rgb([7, 8, 9]))
-            .write_to(&mut out, starkit::image::ImageFormat::Png)
+        starcore::image::RgbImage::from_pixel(1, 1, starcore::image::Rgb([7, 8, 9]))
+            .write_to(&mut out, starcore::image::ImageFormat::Png)
             .unwrap();
         out.into_inner()
     }

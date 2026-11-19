@@ -13,11 +13,11 @@
 //! wrong record; that is the judgement this hands back to the user.
 
 use super::overlay::{self, Anchor, Overlay};
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
@@ -42,7 +42,7 @@ pub struct ChooserView<'a> {
     pub scroll: usize,
     /// Where this frame's scrollbar is recorded, so a later press or drag can
     /// find it. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 /// Where the overlay lands, so a click can be tested against it.
@@ -63,7 +63,7 @@ pub fn list_rect(area: Rect, rows: usize) -> Rect {
 
 /// Which row is at a point, given the same `rows` and `scroll` the overlay was
 /// drawn with. The inverse of the loop in `render`, beside
-/// [`starkit::chrome::settings::hit`] for the same reason.
+/// [`starcore::chrome::settings::hit`] for the same reason.
 pub fn hit(area: Rect, rows: usize, scroll: usize, x: u16, y: u16) -> Option<usize> {
     if rows == 0 {
         return None;
@@ -76,8 +76,8 @@ pub fn hit(area: Rect, rows: usize, scroll: usize, x: u16, y: u16) -> Option<usi
     (index < rows).then_some(index)
 }
 
-/// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
-pub use starkit::list::clamp_scroll;
+/// Keep the cursor visible. One rule, in starcore, for every list that scrolls.
+pub use starcore::list::clamp_scroll;
 
 impl<'a> Widget for ChooserView<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -170,7 +170,7 @@ impl<'a> Widget for ChooserView<'a> {
 mod tests {
     use super::*;
     use crate::theme::builtin;
-    use starkit::ratatui::style::Color;
+    use starcore::ratatui::style::Color;
 
     fn rows() -> Vec<Row> {
         vec![
@@ -197,7 +197,7 @@ mod tests {
             rows,
             cursor,
             scroll: 0,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..h)
@@ -249,7 +249,7 @@ mod tests {
             rows: &rows,
             cursor: 1,
             scroll: 0,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 

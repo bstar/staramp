@@ -1,10 +1,10 @@
 //! The album window: the cover, and what the record is.
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::library::art::{Album, Source};
 use crate::theme::Theme;
@@ -336,7 +336,7 @@ pub struct AlbumView<'a> {
     pub fallback_artist: Option<&'a str>,
     /// A real-pixel rendering of the cover, when the terminal can take one.
     /// `None` falls back to half blocks, which every terminal can.
-    pub protocol: Option<&'a starkit::ratatui_image::protocol::Protocol>,
+    pub protocol: Option<&'a starcore::ratatui_image::protocol::Protocol>,
     /// False for `graphics = "off"`: the details, and no picture at all.
     pub show_cover: bool,
     /// Whether a lookup asked for by hand is in flight, and how far the
@@ -388,7 +388,7 @@ impl<'a> Widget for AlbumView<'a> {
                     width: w,
                     height: h,
                 };
-                starkit::ratatui_image::Image::new(p).render(fitted, buf)
+                starcore::ratatui_image::Image::new(p).render(fitted, buf)
             }
             (None, Some(img)) => crate::ui::graphics::halfblocks(img, g.art, buf),
             (None, None) => draw_placeholder(g.art, buf, t),
@@ -509,8 +509,8 @@ mod tests {
     use super::*;
     use crate::library::db::AlbumDetail;
     use crate::theme::builtin;
-    use starkit::graphics::HALF;
-    use starkit::ratatui::style::Color;
+    use starcore::graphics::HALF;
+    use starcore::ratatui::style::Color;
 
     fn detail() -> AlbumDetail {
         AlbumDetail {
@@ -556,7 +556,7 @@ mod tests {
             .collect()
     }
 
-    fn album_with(detail: Option<AlbumDetail>, img: Option<starkit::image::RgbaImage>) -> Album {
+    fn album_with(detail: Option<AlbumDetail>, img: Option<starcore::image::RgbaImage>) -> Album {
         Album {
             uri: "A/B/01.flac".into(),
             detail,
@@ -695,7 +695,7 @@ mod tests {
 
         // One that already has a cover, and one that is not in the index at
         // all. Retrying either achieves nothing.
-        let mut has_cover = album_with(Some(detail()), Some(starkit::image::RgbaImage::new(2, 2)));
+        let mut has_cover = album_with(Some(detail()), Some(starcore::image::RgbaImage::new(2, 2)));
         has_cover.source = Some(Source::Sidecar);
         assert!(!can_retry(Some(&has_cover)));
         assert!(!can_retry(Some(&album_with(None, None))));
@@ -871,7 +871,7 @@ mod tests {
     #[test]
     fn a_cover_fills_its_rect_with_half_blocks() {
         let img =
-            starkit::image::RgbaImage::from_pixel(8, 8, starkit::image::Rgba([200, 40, 40, 255]));
+            starcore::image::RgbaImage::from_pixel(8, 8, starcore::image::Rgba([200, 40, 40, 255]));
         let rows = draw(Some(album_with(Some(detail()), Some(img))), 60, PANEL_ROWS);
         let g = geometry(Rect::new(0, 0, 60, PANEL_ROWS), true, CELL_ASPECT).unwrap();
         for y in g.art.y..g.art.y + g.art.height {
@@ -889,12 +889,12 @@ mod tests {
     fn a_cover_reproduces_its_colours() {
         // Two solid halves: the top of the image must reach the top of the
         // rect, and sampling must not smear one into the other.
-        let mut img = starkit::image::RgbaImage::new(4, 4);
+        let mut img = starcore::image::RgbaImage::new(4, 4);
         for (_, y, p) in img.enumerate_pixels_mut() {
             *p = if y < 2 {
-                starkit::image::Rgba([255, 0, 0, 255])
+                starcore::image::Rgba([255, 0, 0, 255])
             } else {
-                starkit::image::Rgba([0, 0, 255, 255])
+                starcore::image::Rgba([0, 0, 255, 255])
             };
         }
         let theme = builtin::load("cosmic").unwrap();

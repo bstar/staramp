@@ -42,8 +42,8 @@ impl RateMode {
 /// used to do -- meant the answer arrived after every decision that needed it,
 /// and a rate the device had refused was simply played at the wrong speed.
 pub struct Plan {
-    device: Option<starkit::pcm_output::Plan>,
-    pub source: starkit::pcm::Spec,
+    device: Option<starcore::pcm_output::Plan>,
+    pub source: starcore::pcm::Spec,
     pub device_name: String,
     /// What the device will actually run at.
     pub sample_rate: u32,
@@ -125,8 +125,8 @@ pub fn plan(spec: &crate::audio::decode::StreamSpec, fixed_rate: Option<u32>) ->
             remixed_from: (!super::relay::precise() && spec.channels != 2).then_some(spec.channels),
         });
     }
-    let device = starkit::pcm_output::Plan::select(
-        starkit::pcm::Spec {
+    let device = starcore::pcm_output::Plan::select(
+        starcore::pcm::Spec {
             sample_rate: fixed_rate.unwrap_or(spec.sample_rate),
             ..spec.pcm()
         },
@@ -234,7 +234,7 @@ impl Output {
     /// asked for anything yet.
     pub fn open(
         plan: Plan,
-        consumer: Consumer<starkit::pcm::Sample>,
+        consumer: Consumer<starcore::pcm::Sample>,
         source_done: Arc<AtomicBool>,
         tap: Arc<Tap>,
         start_paused: bool,
@@ -289,7 +289,7 @@ impl Output {
 
     fn relay(
         plan: Plan,
-        mut consumer: Consumer<starkit::pcm::Sample>,
+        mut consumer: Consumer<starcore::pcm::Sample>,
         done: Arc<AtomicBool>,
         tap: Arc<Tap>,
         paused: bool,
@@ -318,7 +318,7 @@ impl Output {
                     let capacity = if precise {
                         plan.source
                             .block_frames()
-                            .min(starkit::pcm::MAX_BLOCK_BYTES / (channels * 8))
+                            .min(starcore::pcm::MAX_BLOCK_BYTES / (channels * 8))
                             * channels
                     } else {
                         super::relay::FRAMES * 2
@@ -350,10 +350,10 @@ impl Output {
                         (0..count).map(|_| consumer.pop().unwrap().value).collect();
                     let pcm = if precise {
                         let spec = if processed {
-                            starkit::pcm::Spec {
-                                format: starkit::pcm::SampleFormat::F64,
+                            starcore::pcm::Spec {
+                                format: starcore::pcm::SampleFormat::F64,
                                 valid_bits: Some(match plan.source.format {
-                                    starkit::pcm::SampleFormat::F32 => 24,
+                                    starcore::pcm::SampleFormat::F32 => 24,
                                     _ => plan.source.valid_bits.unwrap_or(64),
                                 }),
                                 ..plan.source
@@ -533,7 +533,7 @@ mod relay_tests {
             sample_rate: 44100,
             channels: 1,
             channel_mask: ffmpeg_next::ChannelLayout::MONO.bits(),
-            sample_format: starkit::pcm::SampleFormat::I32,
+            sample_format: starcore::pcm::SampleFormat::I32,
             bit_depth: Some(16),
         };
         let mut plan = Plan {
@@ -587,11 +587,11 @@ mod relay_tests {
         }
         let output = Output::relay(
             Plan {
-                source: starkit::pcm::Spec {
+                source: starcore::pcm::Spec {
                     sample_rate: 48000,
                     channels: 2,
                     channel_mask: 3,
-                    format: starkit::pcm::SampleFormat::I32,
+                    format: starcore::pcm::SampleFormat::I32,
                     valid_bits: Some(16),
                 },
                 device: None,

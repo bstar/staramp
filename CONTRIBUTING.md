@@ -40,20 +40,20 @@ too:
 export BINDGEN_EXTRA_CLANG_ARGS="-I/opt/ffmpeg/include"
 ```
 
-The build also fetches [starkit](https://github.com/bstar/starkit) from git --
+The build also fetches [starcore](https://github.com/bstar/starcore) from git --
 it is this project's own shared foundation, pinned to a tag rather than
 published to crates.io, and it brings ratatui, crossterm, ratatui-image and
 image with it. So the first build needs network, and `nix build` needs it too:
 the flake sets `cargoLock.allowBuiltinFetchGit`, which fetches outside the
 sandbox rather than carrying a hash that would have to be recomputed on every
-starkit tag.
+starcore tag.
 
-To work on starkit and this at the same time, check it out beside this
+To work on starcore and this at the same time, check it out beside this
 repository and point the build at it with an untracked `.cargo/config.toml`:
 
 ```toml
-[patch."https://github.com/bstar/starkit"]
-starkit = { path = "../starkit" }
+[patch."https://github.com/bstar/starcore"]
+starcore = { path = "../starcore" }
 ```
 
 It is in `.gitignore`, because a committed one points CI at a path that does
@@ -98,20 +98,20 @@ Apple Silicon archive. `scripts/build-dist.sh nix` builds the Nix package;
 old-glibc build directory; `./scripts/build-dist.sh macos` runs on a Mac.
 Debian, Arch and standalone Linux tarballs are no longer release targets.
 
-## Taking a new starkit
+## Taking a new starcore
 
-Its own commit, "Take starkit 0.Y", and nothing else in it:
+Its own commit, "Take starcore 0.Y", and nothing else in it:
 
-1. Change the `tag` and the `version` requirement on the `starkit` dependency
+1. Change the `tag` and the `version` requirement on the `starcore` dependency
    in `Cargo.toml`.
-2. `cargo update -p starkit` so `Cargo.lock` records the new revision.
-3. Run the checks above. starkit's own CI has a job that builds both of its
+2. `cargo update -p starcore` so `Cargo.lock` records the new revision.
+3. Run the checks above. starcore's own CI has a job that builds both of its
    consumers against the tip of the library, so a break should have been
    caught there first, but the version this repository actually pins is the
    one that matters.
 
 Keeping it separate is the point: what arrived with the new version is then
-one diff to read rather than a line buried in a feature commit. starkit is
+one diff to read rather than a line buried in a feature commit. starcore is
 0.x, so a minor bump may change an API and a patch bump may not.
 
 ## Releasing

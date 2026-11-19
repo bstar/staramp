@@ -190,7 +190,7 @@ fn save(path: &PathBuf, vis: VisMode, seek: SeekStyle) -> Result<()> {
         visualizer: vis.name().into(),
         seek_style: seek.name().into(),
     };
-    starkit::fs::write_private(path, toml::to_string_pretty(&data)?.as_bytes())?;
+    starcore::fs::write_private(path, toml::to_string_pretty(&data)?.as_bytes())?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@
 //! `$STARAMP_DIR` overrides the location entirely. `$STARAMP_CONFIG_DIR` is
 //! honoured as well, for anyone who wants the config somewhere else.
 //!
-//! The rule, and every location both applications have, is starkit's
+//! The rule, and every location both applications have, is starcore's
 //! [`Paths`]; what is here is the player's own — the index, the listening
 //! history, the playlists, the equaliser profiles and the control socket —
 //! and free functions over [`PATHS`] for the rest, because forty-seven call
@@ -23,7 +23,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use starkit::paths::Paths;
+use starcore::paths::Paths;
 
 const APP: &str = "staramp";
 const DIR_ENV: &str = "STARAMP_DIR";

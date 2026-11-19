@@ -31,7 +31,7 @@ to this checkout's release binary; running players were not restarted.
 
 ### Framework display recovery · October 15
 
-KIT now retains each rendered frame's matching layout, restores the framebuffer
+CORE now retains each rendered frame's matching layout, restores the framebuffer
 on focus return, and refreshes quiet image regions from cached encoded tiles.
 Ctrl+L restores every graphics layer without recreating the rasterizer. This
 prevents mixed frame/layout composition and adds bounded recovery from terminal
@@ -43,7 +43,7 @@ focus and Ctrl+L restoration completed in under a second. Help modal restoration
 and cleanup passed. AMP's 906 unit tests, embedding, first-run, native rack
 rendering and strict Clippy passed. The shared live-canvas proof also restored
 quiet controls while two producers kept animating, then passed refresh, resize
-and reattachment. This remains an untagged local KIT candidate.
+and reattachment. This remains an untagged local CORE candidate.
 
 ### Unified Play/Pause · October 14
 
@@ -51,20 +51,20 @@ The graphical rack, terminal player and embedded player now have four transport
 buttons: Previous, Play/Pause, Stop and Next. The middle button shows Pause while
 playing and Play when paused or stopped; its hit target and keyboard focus stay
 stable. Loading disables the toggle. Explicit playback protocol commands retain
-their separate Play and Pause meanings. KIT's compact audio controls also use a
+their separate Play and Pause meanings. CORE's compact audio controls also use a
 single state-dependent button.
 
 Linux verification passed: 906 unit tests, 12 embedding tests, first-run and
 native rack rendering, including pointer pause/resume and repeated keyboard
 activation through both states. Formatting and strict Clippy passed for AMP
-and KIT; KIT's all/minimal feature suites and the other three consumer candidate
+and CORE; CORE's all/minimal feature suites and the other three consumer candidate
 checks passed. Production captures were visually reviewed; the Nix release
 build and installed command verification passed. This remains a local untagged
-KIT candidate.
+CORE candidate.
 
 ### Collapsed module references · October 14
 
-Collapsed rack modules now use KIT's node filtering to remap text decorations,
+Collapsed rack modules now use CORE's node filtering to remap text decorations,
 centered labels and hover references. Replacing the expanded frame also adjusts
 the retained header's references. Composing modules preserves centered labels
 and checks decoration indices before looking them up. Grouped playlist body
@@ -74,7 +74,7 @@ Linux verification passed: 906 unit tests, embedding/first-run/native rendering
 checks, strict Clippy and the Nix release build. A real frontend completed 12
 playlist collapse/expand actions at 1x/2x, resizing and fallback round trips,
 local hover, a 1500-report motion burst and orderly terminal restoration. The
-installed command points at the tested local release; KIT remains an untagged
+installed command points at the tested local release; CORE remains an untagged
 candidate and the portable release dependency lock is unchanged.
 
 ### Local seek-bar background · October 12
@@ -120,11 +120,11 @@ legacy frontend handling and final drain. A real `--ssh` cell frontend played
 through an isolated CPAL/ALSA null device and advanced the remote clock with no
 server sound device. The graphical renderer and real frontend mouse/resize
 checks also passed. Physical listening and macOS audio hardware remain
-unverified. See `../ssh-audio.md` for the published KIT v0.4.0 dependency and use.
+unverified. See `../ssh-audio.md` for the published CORE v0.4.0 dependency and use.
 
 ### Local queue hover · October 11
 
-Queue hover now uses negotiated native surface hover fills, painted by KIT's
+Queue hover now uses negotiated native surface hover fills, painted by CORE's
 frontend directly from physical pointer coordinates. Movement within the queue
 no longer requires controller input, state polling, scene rebuilding or a new
 scene transfer. Authoritative scene updates reapply the current local hover;
@@ -132,7 +132,7 @@ selection remains controller-owned. Selected rows keep their selection color.
 Hover fills follow clipping/density transforms and disappear for folded panes
 and modals. Older clients retain the controller-rendered hover path.
 
-AMP pins KIT revision `a811b7c`. KIT's 493 full-feature unit tests, four media
+AMP pins CORE revision `a811b7c`. CORE's 493 full-feature unit tests, four media
 integration tests, 305 minimal-feature unit tests and doc tests pass, as does
 strict Clippy with the existing dead-code allowance. AMP's 893 unit tests
 (5 ignored), 12 embedding tests and native rack integration pass. Native checks
@@ -148,18 +148,18 @@ view, theme and EQ/profile files were verified preserved.
 
 ### Queue pointer response · October 11
 
-KIT now forwards the latest position in each queued hover burst instead of
+CORE now forwards the latest position in each queued hover burst instead of
 replaying every intermediate mouse position. The bounded drain yields to
 frame presentation and preserves every click, drag, wheel, key and resize
 event in order. A 1,500-report PTY burst reproduced input queue overflow in
-the previous frontend. KIT revision `ff8c17e` introduced the correction.
+the previous frontend. CORE revision `ff8c17e` introduced the correction.
 
 Clicking a queue row now focuses the pane and selects the row on the same
 first left press. The next press can complete the normal double-click action;
 selection does not wait for another press after switching from a different
 pane. Slider and EQ graph focus behavior stays unchanged.
 
-KIT's full/minimal tests and strict Clippy pass. AMP's 893 unit tests (5
+CORE's full/minimal tests and strict Clippy pass. AMP's 893 unit tests (5
 ignored), 12 embedding tests and native rack integration pass, with first-click
 selection painted on the next frame at both densities without starting playback.
 The real frontend PTY passes seven resize transitions followed by 1,500 hover
@@ -173,11 +173,11 @@ files were verified preserved.
 
 ### Terminal resize repaint · October 11
 
-KIT's presentation caches now include the viewport generation. A rapid
+CORE's presentation caches now include the viewport generation. A rapid
 shrink/grow sequence can finish at the original dimensions after the terminal
 has clipped or moved its image placements; matching pixels and dimensions are
 insufficient to reuse those placements. Every resize now replaces all image
-regions, retires the old IDs and invalidates the cell diff buffer. KIT revision
+regions, retires the old IDs and invalidates the cell diff buffer. CORE revision
 `76ed6aa` introduced this correction.
 
 The rack clips scrolling modules above the footer, retains only the visible
@@ -185,7 +185,7 @@ portion of bitmap corners in physical source pixels at 1x/2x, and cancels
 pointer captures tied to the previous geometry. This prevents footer overlap
 and failures when a pane is reduced to a fragment shorter than its corners.
 
-The regression first failed against the previous image cache. KIT's full and
+The regression first failed against the previous image cache. CORE's full and
 minimal feature tests and strict Clippy pass. AMP's 893 unit tests (5 ignored),
 12 embedding tests and native integration pass, including 110 render cases
 through partial pane corners at both densities. An isolated real frontend PTY
@@ -297,7 +297,7 @@ the integration check and strict Clippy passed.
 
 A reported startup panic at Crossterm's SGR mouse parser was traced to its
 unchecked subtraction from zero coordinates. The root registry patch now pins
-upstream fix `d4e9929`, keeping KIT and Ratatui on one Crossterm instance. A real
+upstream fix `d4e9929`, keeping CORE and Ratatui on one Crossterm instance. A real
 frontend PTY check sends zero coordinates during startup and at both edges,
 then clicks the main X and verifies clean frontend exit and pixel mouse mode
 restoration. The full unit/embed/native checks, Clippy and dependency source,
@@ -334,7 +334,7 @@ EQ settings and all saved profile/draft hashes were preserved. Native treatment
 captures were refreshed; the frozen reference SVG/PNG hashes remain unchanged.
 
 The initial balanced-track spacing used a nominal 0.6em label width, which was
-too narrow after KIT applied the presenting terminal's font scale: VOL, 100 and
+too narrow after CORE applied the presenting terminal's font scale: VOL, 100 and
 the elapsed/total readouts became ellipses. Short readout boxes temporarily used a
 0.75em advance plus two pixels of raster slack, retaining equal 14px track gaps.
 A production-surface regression compares bounded labels with unrestricted
@@ -366,13 +366,13 @@ that executable, preserving playback, all 29,615 queued tracks, view/folds, EQ
 settings and saved profiles/drafts. Native EQ preview captures were refreshed.
 
 The initial relative-drag change did not remove character-cell stepping in the
-frontend: KIT was synthesizing `Input::Pointer.pixel` from cell centres. KIT
+frontend: CORE was synthesizing `Input::Pointer.pixel` from cell centres. CORE
 revision f569f00 enables SGR 1016 on known Kitty terminals with measured geometry,
 passes exact mouse pixels through the relay, and computes logical coordinates
 separately. The optional `pixel_mouse` capability leaves legacy reports readable;
 other terminals/multiplexers keep their cell path. Normal/panic restoration turns
 1016 off. A real-frontend PTY harness delivered four distinct one-pixel drag events
-inside the same logical cell and checked mode restoration. KIT strict Clippy and
+inside the same logical cell and checked mode restoration. CORE strict Clippy and
 its all-feature/no-default-feature suites passed (490/305 unit tests).
 
 The native player's timestamp widths now follow their text, with a shared 14px
@@ -620,7 +620,7 @@ segments, transport symbols and fixed-label lettering come from the selected
 study. Nine-slice frames retain their corners while interiors expand. Live
 Unicode metadata remains shaped text. The reference palette is the graphical
 default; Alt+T switches to existing AMP themes. Rounded/rigid corners remain
-configurable. Original artwork and player layout belong to AMP; KIT owns generic
+configurable. Original artwork and player layout belong to AMP; CORE owns generic
 rendering, asset caching, density and terminal transport.
 
 At wide sizes Album and Activity sit side by side; narrower layouts stack them.
@@ -705,10 +705,10 @@ a wide terminal row into a single native text label; the footer background
 remains transparent.
 
 Footer verification checks actual rendered glyph opacity, not just text-node
-presence. KIT's glyph compositor now writes alpha for text on transparent
+presence. CORE's glyph compositor now writes alpha for text on transparent
 surfaces; previously the RGB existed in reference images but Kitty discarded
 the invisible glyphs. Terminal gaps remain transparent.
-The KIT renderer's 23 native tests and AMP's all-theme pixel-opacity checks
+The CORE renderer's 23 native tests and AMP's all-theme pixel-opacity checks
 passed. Both running graphical clients were reloaded with the installed
 binary; a live Kitty capture confirmed Help, the resolved theme name and all
 right-hand status indicators were visible over the terminal background.
@@ -728,20 +728,20 @@ five panes at 1x/2x, including paired Album/Activity and their actual pointer
 coordinates.
 
 The playlist filter now has a native dialog with a full-width editable field,
-live matching, a result count, and Apply/Clear/Cancel controls. Shared KIT text
+live matching, a result count, and Apply/Clear/Cancel controls. Shared CORE text
 editing handles pasted text, Unicode, caret navigation and deletion. Apply
 commits the draft; Cancel or closing the dialog restores the previous filter.
 Filtering preserves the playing track and suppresses underlying playlist clicks.
 The ASCII filter uses the same editing and live matching model.
 
 The scrollbar thumb has a 24 logical pixel minimum (48 physical pixels at 2x).
-KIT uses the same minimum for painting, grabbing, track clicks and dragging.
+CORE uses the same minimum for painting, grabbing, track clicks and dragging.
 Production fixtures cover 30,002 tracks, expanded and folded albums, the full
 scroll range and stable release at both densities.
 
 The native rack has no outer container inset. Pane gaps, rounded outer corners
 and the status area are transparent, exposing the terminal background; pane
-interiors keep their theme colors. KIT preserves straight-alpha antialiased
+interiors keep their theme colors. CORE preserves straight-alpha antialiased
 edges for terminal composition. Close marks are slightly smaller while their
 larger hit targets remain unchanged.
 
@@ -756,7 +756,7 @@ The graphical playlist now uses the ASCII view's album headings, fold counts,
 artist/title fallbacks and disc/track numbering. Album dividers run through the
 spare width, dated records follow the selected release-year direction, undated
 records follow dated records, and tracks without an album remain last. The
-playlist's KIT scrollbar counts rendered headings and folded rows, paints only
+playlist's CORE scrollbar counts rendered headings and folded rows, paints only
 an inset content-sized thumb, and shares physical geometry with drag input at
 both densities. Wheel scrolling stays in the playlist, and releasing a drag
 preserves its viewport even when every album is folded.
@@ -780,7 +780,7 @@ services. The updated release is installed through the existing local launcher
 and as FOLD's AMP helper, with matching executable hashes.
 
 
-Graphical pointer dispatch now uses KIT's zero-based left/right/middle button
+Graphical pointer dispatch now uses CORE's zero-based left/right/middle button
 contract, including the cell-based modal and ASCII routes. Specific header
 controls take priority over the fold strip; settings overlays share the padded
 area used for mouse hit testing. The Player settings link now exposes existing
@@ -800,7 +800,7 @@ startup intermittently encountered existing activity-database contention;
 that separate startup race remains unresolved.
 
 Native Settings and track-action popups now lay out their original rows directly
-with STAR/KIT primitives. Labels, values and titles wrap within pixel bounds;
+with STAR/CORE primitives. Labels, values and titles wrap within pixel bounds;
 long menus scroll with the keyboard or wheel, and visible rows have matching
 native mouse hit regions. The track context menu retains all six ASCII actions,
 including destination flows and removal of the exact queue occurrence.
@@ -848,7 +848,7 @@ The release build and installed STAR/AMP and FOLD helper binaries match.
 The October 9 large-window startup failure was reproduced at 1400×2000:
 the rack capped its canvas at 1800 pixels high, causing the host to stretch
 fixed bitmap glyphs and reject the frame. The canvas now matches the physical
-viewport, including one-pixel gutters at 2x density. KIT accepts surface
+viewport, including one-pixel gutters at 2x density. CORE accepts surface
 coordinates up to its existing terminal viewport budget; decoded asset limits
 remain unchanged. Renderer failures also retain their underlying error in the
 terminal and file log.
@@ -934,7 +934,7 @@ reject the user's real music.
 Graphical import review now has visible Import/Reject toolbar actions,
 first-press right-click context menus across pane focus, hover selection in
 artist/conflict/reject dialogs, and a native artist-directory field with
-mouse caret placement and Use/Back controls. The field uses KIT's existing
+mouse caret placement and Use/Back controls. The field uses CORE's existing
 text editor for Unicode, paste and cursor/delete keys. Staging rescans run on
 the album worker; incremental queue edits retain playback, selection, scroll
 anchors, tags and folds after completed operations. Classic artwork is a

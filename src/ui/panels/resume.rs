@@ -4,11 +4,11 @@
 //! track on launch is startling, and there is no way to decline it afterwards.
 
 use super::overlay::{self, Anchor, Overlay};
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::session::{self, Session};
 use crate::theme::Theme;

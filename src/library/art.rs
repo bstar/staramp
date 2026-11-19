@@ -72,7 +72,7 @@ pub struct Album {
     /// 3000px scan and a frame has 16 milliseconds. Shrinking to
     /// [`THUMB_MAX`] costs a few hundred kilobytes and makes drawing a matter
     /// of sampling.
-    pub image: Option<Arc<starkit::image::RgbaImage>>,
+    pub image: Option<Arc<starcore::image::RgbaImage>>,
     pub source: Option<Source>,
     /// Which candidate is showing, and how many there are. The panel says so
     /// when there is more than one, because an alternative nobody knows about
@@ -472,11 +472,11 @@ fn original_path(
 }
 
 fn guessed_extension(bytes: &[u8]) -> Option<&'static str> {
-    match starkit::image::guess_format(bytes).ok()? {
-        starkit::image::ImageFormat::Png => Some("png"),
-        starkit::image::ImageFormat::Bmp => Some("bmp"),
-        starkit::image::ImageFormat::Gif => Some("gif"),
-        starkit::image::ImageFormat::WebP => Some("webp"),
+    match starcore::image::guess_format(bytes).ok()? {
+        starcore::image::ImageFormat::Png => Some("png"),
+        starcore::image::ImageFormat::Bmp => Some("bmp"),
+        starcore::image::ImageFormat::Gif => Some("gif"),
+        starcore::image::ImageFormat::WebP => Some("webp"),
         _ => Some("jpg"),
     }
 }
@@ -744,7 +744,7 @@ fn present(vfs: &crate::vfs::Vfs, detail: &AlbumDetail, entry: &Entry, uri: Stri
 }
 
 /// Export the already decoded cover once, on the art worker rather than the UI.
-fn cache_desktop_art(image: &starkit::image::RgbaImage) -> Option<String> {
+fn cache_desktop_art(image: &starcore::image::RgbaImage) -> Option<String> {
     let dir = crate::paths::cache_dir().ok()?.join("mpris-art");
     std::fs::create_dir_all(&dir).ok()?;
     let mut hasher = blake3::Hasher::new();
@@ -754,13 +754,13 @@ fn cache_desktop_art(image: &starkit::image::RgbaImage) -> Option<String> {
     let hash = hasher.finalize();
     let path = dir.join(format!("{hash}.png"));
     if !path.exists() {
-        let small = starkit::image::DynamicImage::ImageRgba8(image.clone()).thumbnail(256, 256);
+        let small = starcore::image::DynamicImage::ImageRgba8(image.clone()).thumbnail(256, 256);
         let temp = tempfile::Builder::new()
             .suffix(".png")
             .tempfile_in(&dir)
             .ok()?;
         small
-            .save_with_format(temp.path(), starkit::image::ImageFormat::Png)
+            .save_with_format(temp.path(), starcore::image::ImageFormat::Png)
             .ok()?;
         temp.persist(&path).ok()?;
         prune_desktop_art(&dir, 64);
@@ -790,7 +790,7 @@ fn load(
     detail: &AlbumDetail,
     candidate: &cover::Candidate,
     embedded: Option<&Vec<u8>>,
-) -> Option<Arc<starkit::image::RgbaImage>> {
+) -> Option<Arc<starcore::image::RgbaImage>> {
     match candidate {
         cover::Candidate::Embedded => {
             // Gathered with the candidate list. The fallback is for an entry
@@ -864,7 +864,7 @@ fn save_choice(
 /// Failure is silent and returns `None`: a corrupt or truncated JPEG in a
 /// music folder is common enough, and it is not worth a message on the status
 /// line every time a track changes.
-fn decode(path: &std::path::Path) -> Option<Arc<starkit::image::RgbaImage>> {
+fn decode(path: &std::path::Path) -> Option<Arc<starcore::image::RgbaImage>> {
     match crate::util::image::open_limited(path, crate::util::image::MAX_DIMENSION) {
         Ok(i) => shrink(Some(i)),
         Err(e) => {
@@ -875,7 +875,7 @@ fn decode(path: &std::path::Path) -> Option<Arc<starkit::image::RgbaImage>> {
 }
 
 /// Bring a decoded cover down to something a panel can hold.
-fn shrink(img: Option<starkit::image::DynamicImage>) -> Option<Arc<starkit::image::RgbaImage>> {
+fn shrink(img: Option<starcore::image::DynamicImage>) -> Option<Arc<starcore::image::RgbaImage>> {
     let img = img?;
     let (w, h) = (img.width(), img.height());
     let img = if w.max(h) > THUMB_MAX {
@@ -885,7 +885,7 @@ fn shrink(img: Option<starkit::image::DynamicImage>) -> Option<Arc<starkit::imag
         img.resize(
             THUMB_MAX,
             THUMB_MAX,
-            starkit::image::imageops::FilterType::Triangle,
+            starcore::image::imageops::FilterType::Triangle,
         )
     } else {
         img

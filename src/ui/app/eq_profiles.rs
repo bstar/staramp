@@ -142,7 +142,7 @@ impl EqState {
             drafts,
         };
         std::fs::create_dir_all(path.parent().context("EQ drafts directory")?)?;
-        starkit::fs::write_private(path, &serde_json::to_vec(&state)?)?;
+        starcore::fs::write_private(path, &serde_json::to_vec(&state)?)?;
         Ok(())
     }
     pub(super) fn restore_drafts(&mut self) {

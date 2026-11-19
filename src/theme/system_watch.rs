@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use super::{base16, color::Rgb, system, Theme};
-use starkit::theme::{Resolve, ThemeFile};
+use starcore::theme::{Resolve, ThemeFile};
 
 #[derive(PartialEq, Eq)]
 struct Snapshot {

@@ -11,8 +11,8 @@ pub struct Block {
     pub epoch: u64,
     pub samples: Vec<i16>,
     pub pcm: Option<(
-        starkit::pcm::Spec,
-        starkit::pcm::SampleFormat,
+        starcore::pcm::Spec,
+        starcore::pcm::SampleFormat,
         bool,
         Vec<u8>,
     )>,
@@ -108,9 +108,9 @@ pub fn set_compatibility(value: bool) {
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Packet {
     pub epoch: u64,
-    pub spec: starkit::pcm::Spec,
+    pub spec: starcore::pcm::Spec,
     pub data: String,
-    pub format: starkit::pcm::SampleFormat,
+    pub format: starcore::pcm::SampleFormat,
     pub processed: bool,
 }
 pub fn packet() -> Option<Packet> {

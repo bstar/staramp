@@ -166,12 +166,12 @@
             version = cargoToml.package.version;
             src = ./.;
             cargoLock.lockFile = ./Cargo.lock;
-            # starkit comes from a git tag rather than from crates.io, and
+            # starcore comes from a git tag rather than from crates.io, and
             # `cargoLock.lockFile` alone cannot fetch it: nix wants a hash for
             # every source it downloads. Two ways to give it one.
             #
             # `outputHashes` is the reproducible one, and it means a new hash
-            # to compute and commit on every starkit tag -- a second place the
+            # to compute and commit on every starcore tag -- a second place the
             # version lives, which is exactly the kind of copy that goes stale
             # between the bump and the person who notices.
             #
@@ -270,7 +270,7 @@
             # scripts/check-version.sh reads `cargo metadata`.
             jq
             # The licence and advisory gate CI runs, so it can be run here
-            # first. `deny.toml` restricts git sources to KIT and the pinned
+            # first. `deny.toml` restricts git sources to CORE and the pinned
             # upstream Crossterm parser fix; this checks that allowlist too.
             cargo-deny
           ])

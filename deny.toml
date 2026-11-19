@@ -73,7 +73,7 @@ wildcards = "deny"
 unknown-registry = "deny"
 unknown-git = "deny"
 
-# starkit is this project's own code, lifted out of this repository so that
+# starcore is this project's own code, lifted out of this repository so that
 # starcord can use the same theme engine and picture rendering rather than a
 # copy of them that drifts. It is not published to crates.io -- there is no
 # third consumer to publish it for -- so the dependency is a git tag, and an
@@ -81,6 +81,6 @@ unknown-git = "deny"
 # anything else. Crossterm is pinned to its upstream zero-coordinate parser
 # fix until that fix is released on crates.io.
 allow-git = [
-    "https://github.com/bstar/starkit",
+    "https://github.com/bstar/starcore",
     "https://github.com/crossterm-rs/crossterm",
 ]

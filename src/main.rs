@@ -382,7 +382,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let _guard = starkit::logging::init(&paths::PATHS, cli.verbose)?;
+    let _guard = starcore::logging::init(&paths::PATHS, cli.verbose)?;
 
     #[cfg(feature = "terminal-graphics")]
     if let Some(name) = cli.graphical_server {
@@ -1312,11 +1312,11 @@ fn cmd_search(query: String, limit: usize) -> Result<()> {
 /// Both at once on purpose: every caller is printing text out of a tag or a
 /// playlist, and forgetting the second half is exactly the mistake this exists
 /// to prevent. See [`util::printable`]. The shortening itself is
-/// `starkit::text::truncate`, which measures the display width rather than
+/// `starcore::text::truncate`, which measures the display width rather than
 /// the character count -- a CJK title counted by character alone claims half
 /// the columns it actually draws.
 fn truncate(s: &str, n: usize) -> String {
-    starkit::text::truncate(&util::printable(s), n)
+    starcore::text::truncate(&util::printable(s), n)
 }
 
 fn cmd_stats() -> Result<()> {
@@ -2048,9 +2048,9 @@ fn launch_session_with(
         None
     } else {
         paths::init_private_dirs();
-        Some(starkit::logging::init(&paths::PATHS, cli.verbose)?)
+        Some(starcore::logging::init(&paths::PATHS, cli.verbose)?)
     };
-    use starkit::terminal_graphics::{
+    use starcore::terminal_graphics::{
         client::{self, Launch},
         terminal_bridge,
     };
@@ -2059,7 +2059,7 @@ fn launch_session_with(
             let socket = ensure_graphical(name, target.as_deref(), attach_only)?;
             return terminal.relay_with_presentation(&socket, None, Some(cells));
         }
-        anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/KIT Kitty integration.");
+        anyhow::ensure!(std::env::var_os("SSH_CONNECTION").is_none(),"No local audio bridge is available. Run `staramp --ssh HOST` from your local machine, or install the STAR/CORE Kitty integration.");
     }
     paths::init_private_dirs();
     let result = client::run_with_preference(
@@ -2115,9 +2115,9 @@ fn launch_graphical_import(
     prepare_import_session()?;
     // Start the import-aware backend before attaching the ordinary renderer.
     // Its own graphical socket keeps import rendering separate while retaining
-    // the ordinary playback-owner lease and the shared KIT launch protocol.
+    // the ordinary playback-owner lease and the shared CORE launch protocol.
     let name = format!("{}-imports", cli.session);
-    let socket = starkit::terminal_graphics::session::socket_path(
+    let socket = starcore::terminal_graphics::session::socket_path(
         &paths::runtime_dir()?.join("graphical"),
         &name,
     )?;
@@ -2126,7 +2126,7 @@ fn launch_graphical_import(
         "an import review session is already running — close it before opening another"
     );
     let log = paths::log_dir()?.join("import-session.log");
-    starkit::fs::write_private(&log, b"")?;
+    starcore::fs::write_private(&log, b"")?;
     let mut child = std::process::Command::new(std::env::current_exe()?)
         .args(["--graphical-server", &name, "import"])
         .arg(staging)
@@ -2162,7 +2162,7 @@ fn launch_graphical_import(
 
 #[cfg(feature = "terminal-graphics")]
 fn ensure_graphical(name: &str, target: Option<&Path>, attach_only: bool) -> Result<PathBuf> {
-    use starkit::terminal_graphics::session;
+    use starcore::terminal_graphics::session;
     let root = paths::runtime_dir()?.join("graphical");
     let socket = session::socket_path(&root, name)?;
     if std::os::unix::net::UnixStream::connect(&socket).is_ok() {
@@ -2194,7 +2194,7 @@ fn ensure_graphical(name: &str, target: Option<&Path>, attach_only: bool) -> Res
 }
 #[cfg(feature = "terminal-graphics")]
 fn graphical_relay(name: &str, target: Option<&Path>, attach_only: bool) -> Result<()> {
-    starkit::terminal_graphics::session::relay(&ensure_graphical(name, target, attach_only)?)
+    starcore::terminal_graphics::session::relay(&ensure_graphical(name, target, attach_only)?)
 }
 
 fn first_run_setup(cfg: &config::Config) -> Result<bool> {

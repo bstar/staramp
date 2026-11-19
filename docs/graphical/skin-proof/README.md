@@ -1,6 +1,6 @@
 # First native skin proof
 
-Generate from the AMP checkout with its KIT skin foundation dependency:
+Generate from the AMP checkout with its CORE skin foundation dependency:
 
 ```sh
 nix develop -c cargo run --example skin-player -- docs/graphical/skin-proof
@@ -9,7 +9,7 @@ nix develop -c cargo run --example skin-player -- docs/graphical/skin-proof
 `approved-player.png` is the unscaled crop from the approved SVG study.
 `player-*` are actual Rust nine-slice + native compositor output; they are not
 SVG screenshots. `overlay.png` and `difference.png` compare outline output
-against the reference at identical dimensions. Fonts use KIT's explicitly selected
+against the reference at identical dimensions. Fonts use CORE's explicitly selected
 bundled Liberation Mono. This is recorded rather than implicitly
 substituting the host terminal's font.
 
@@ -37,7 +37,7 @@ Tab/Shift-Tab and Enter exercise the same controls as mouse clicks. Seek and
 volume support dragging and arrow keys. `c` switches chrome, `b` label fonts,
 `r` rigid/rounded corners, `d` 1x/2x density, `u` Unicode and `q` exits.
 `Alt+T` cycles the existing built-in themes and briefly displays their names.
-Pixel-free PTYs use KIT's measured cell size from terminal negotiation.
+Pixel-free PTYs use CORE's measured cell size from terminal negotiation.
 
 The default proof follows Classic Stacked Rack again, with beveled chrome and
 LED analyzer detail. `c` selects the separate flat FOLD-like experiment.

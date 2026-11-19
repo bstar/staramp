@@ -19,11 +19,11 @@
 // entry point would need.
 #![allow(dead_code)]
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::{Block, Borders, Widget};
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::{Block, Borders, Widget};
 
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
@@ -250,11 +250,11 @@ pub struct LibraryView<'a> {
     pub keys: &'a str,
     /// Where this frame's scrollbars are recorded, so a later press or drag
     /// can find them. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
-/// Keep the cursor visible. One rule, in starkit, for every list that scrolls.
-pub use starkit::list::clamp_scroll;
+/// Keep the cursor visible. One rule, in starcore, for every list that scrolls.
+pub use starcore::list::clamp_scroll;
 
 /// What is drawn when the row is too narrow for all of it.
 ///
@@ -772,7 +772,7 @@ impl Library {
 mod tests {
     use super::*;
     use crate::theme::builtin;
-    use starkit::ratatui::style::Color;
+    use starcore::ratatui::style::Color;
 
     fn entries(n: usize) -> Vec<Entry> {
         (0..n)
@@ -979,7 +979,7 @@ mod tests {
     #[test]
     fn pressing_a_columns_scrollbar_finds_that_column_and_no_other() {
         use crate::ui::panels::Bar;
-        use starkit::chrome::scrollbar::Scrollbars;
+        use starcore::chrome::scrollbar::Scrollbars;
 
         let theme = builtin::load("cosmic").unwrap();
         // Three full-width columns, all longer than the window, so every one
@@ -1043,7 +1043,7 @@ mod tests {
         let above = 1usize;
         let height = 1usize;
         let cursor =
-            starkit::list::cursor_into_view(lib.cursor(ARTISTS), above, height, lib.len(ARTISTS));
+            starcore::list::cursor_into_view(lib.cursor(ARTISTS), above, height, lib.len(ARTISTS));
         lib.set_scroll(ARTISTS, above);
         lib.select(ARTISTS, cursor);
 
@@ -1091,7 +1091,7 @@ mod tests {
             focus,
             summary: "862 artists",
             keys: "esc back",
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (buf, rows)
@@ -1180,7 +1180,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         assert!(text(&buf, area).contains("no albums here"));
@@ -1227,7 +1227,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         let all = text(&buf, area);
@@ -1263,7 +1263,7 @@ mod tests {
             focus: 0,
             summary: "",
             keys: "",
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         let l = layout(area, 0);
@@ -1309,7 +1309,7 @@ mod tests {
             focus: ARTISTS,
             summary: "",
             keys: "",
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 

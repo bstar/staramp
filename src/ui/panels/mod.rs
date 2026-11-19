@@ -15,10 +15,10 @@ pub mod visualizer;
 // The panel chrome itself -- the solid double-line frame, the settings overlay -- is
 // shared. Re-exported under the names the panels already use it by, since
 // where the code lives is not something a call site should have to know.
-pub use starkit::chrome::{frame, overlay, scrollbar, settings};
+pub use starcore::chrome::{frame, overlay, scrollbar, settings};
 
 /// One key per scrollbar a panel draws, shared with `App`'s single
-/// `starkit::chrome::scrollbar::Scrollbars<Bar>` so a press or drag on any of
+/// `starcore::chrome::scrollbar::Scrollbars<Bar>` so a press or drag on any of
 /// them is answered from the one place that owns the mouse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bar {

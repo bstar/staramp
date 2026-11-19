@@ -44,12 +44,12 @@ lines.append('];\n')
 lines.extend([
     'pub(super) struct ReadoutCell {',
     '    pub size: u16,', '    pub character: char,',
-    '    pub rect: starkit::native_surface::PixelRect,', '    pub advance: u16,', '}',
+    '    pub rect: starcore::native_surface::PixelRect,', '    pub advance: u16,', '}',
     'pub(super) const READOUT_CELLS: &[ReadoutCell] = &[',
 ])
 for cell in json.loads((root / 'assets/skins/classic/readout-glyphs.json').read_text()):
     lines.append(f"    ReadoutCell {{ size: {cell['size']}, character: '{cell['character']}', "
-                 f"rect: starkit::native_surface::PixelRect {{ x: {cell['x']}, y: {cell['y']}, "
+                 f"rect: starcore::native_surface::PixelRect {{ x: {cell['x']}, y: {cell['y']}, "
                  f"width: {cell['width']}, height: {cell['height']} }}, advance: {cell['advance']} }},")
 lines.append('];\n')
 (root / "src/embed/skin_assets.rs").write_text("\n".join(lines))

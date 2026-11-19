@@ -1,7 +1,7 @@
 //! The player's own colours, derived from the same file as everything else.
 //!
 //! The format, the derivation chain for the shared roles, the registry and the
-//! importers are starkit's. What is here is the sixty-odd roles only a music
+//! importers are starcore's. What is here is the sixty-odd roles only a music
 //! player has -- the marquee, the time readout, the seek bar, the volume
 //! slider, the equaliser, the transport buttons and the analyzer -- derived
 //! from the palette the core already resolved, so a theme dresses the analyzer
@@ -17,17 +17,17 @@ pub mod system_watch;
 
 use std::ops::Deref;
 
-use starkit::theme::color::{ramp, Rgb};
-use starkit::theme::{pick, Resolve, ThemeFile, WHITE};
+use starcore::theme::color::{ramp, Rgb};
+use starcore::theme::{pick, Resolve, ThemeFile, WHITE};
 
 // `crate::theme::color::Rgb` is spelled that way in forty-odd places, and
 // `safe_id`, the base16 reader and the desktop detection are called from
 // `main`. Re-exported rather than renamed: where they live is not something
 // the call sites should have to know.
-pub use starkit::theme::{base16, color, safe_id, system};
+pub use starcore::theme::{base16, color, safe_id, system};
 // Winamp skin import is behind a feature there, and this is the application
 // that turns it on.
-pub use starkit::theme::wsz;
+pub use starcore::theme::wsz;
 
 use schema::{
     EqColors, MarqueeColors, SeekColors, TimeColors, TransportColors, VisColors, VolumeColors,
@@ -36,7 +36,7 @@ use schema::{
 /// Every colour the player can ask for, all concrete.
 #[derive(Debug, Clone)]
 pub struct Theme {
-    core: starkit::theme::Theme,
+    core: starcore::theme::Theme,
 
     pub marquee_fg: Rgb,
     pub marquee_paused_fg: Rgb,
@@ -85,7 +85,7 @@ pub struct Theme {
 }
 
 impl Deref for Theme {
-    type Target = starkit::theme::Theme;
+    type Target = starcore::theme::Theme;
 
     fn deref(&self) -> &Self::Target {
         &self.core
@@ -94,7 +94,7 @@ impl Deref for Theme {
 
 impl Resolve for Theme {
     fn resolve(f: &ThemeFile) -> Self {
-        let core = starkit::theme::Theme::resolve(f);
+        let core = starcore::theme::Theme::resolve(f);
 
         // The player's own tables, out of the bag of tables the core does not
         // read. A malformed one is treated as absent rather than fatal: the
@@ -228,7 +228,7 @@ impl Resolve for Theme {
         }
     }
 
-    fn core(&self) -> &starkit::theme::Theme {
+    fn core(&self) -> &starcore::theme::Theme {
         &self.core
     }
 }

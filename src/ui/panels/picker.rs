@@ -5,11 +5,11 @@
 //! tracks in album order.
 
 use super::overlay::{self, Anchor, Overlay};
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::theme::Theme;
 use crate::ui::panels::player::truncate;
@@ -34,7 +34,7 @@ pub struct PickerView<'a> {
     pub empty_hint: &'a str,
     /// Where this frame's scrollbar is recorded, so a later press or drag can
     /// find it. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 /// Where the overlay lands, so a click can be tested against it.
@@ -48,7 +48,7 @@ pub fn list_rect(area: Rect, entries: usize) -> Rect {
 }
 
 /// Which entry is at a point, given the same `entries` and `scroll` the
-/// overlay was drawn with. Beside [`starkit::chrome::settings::hit`] for the
+/// overlay was drawn with. Beside [`starcore::chrome::settings::hit`] for the
 /// same reason.
 pub fn hit(area: Rect, entries: usize, scroll: usize, x: u16, y: u16) -> Option<usize> {
     if entries == 0 {
@@ -148,6 +148,6 @@ impl<'a> Widget for PickerView<'a> {
     }
 }
 
-/// Keep the cursor visible. Moved to starkit, where every list that scrolls
+/// Keep the cursor visible. Moved to starcore, where every list that scrolls
 /// needs it.
-pub use starkit::list::clamp_scroll;
+pub use starcore::list::clamp_scroll;

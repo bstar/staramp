@@ -1,6 +1,6 @@
 //! The tables that mean something to a music player.
 //!
-//! The format itself is starkit's, and so are the tables every application
+//! The format itself is starcore's, and so are the tables every application
 //! has: the palette, the chrome around a panel, the rows inside one, and the
 //! status line. What is left is what only a player has -- a marquee, a time readout, a seek
 //! bar, a volume slider, an equaliser, transport buttons and an analyzer --

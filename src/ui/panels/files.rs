@@ -5,10 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
 
 use crate::theme::Theme;
 
@@ -125,11 +125,11 @@ pub struct FileView<'a> {
     pub save_name: &'a str,
     /// Where this frame's scrollbar is recorded, so a later press or drag can
     /// find it. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 pub fn list_rect(area: Rect, purpose: Purpose) -> Rect {
-    let body = starkit::chrome::overlay::inner(area);
+    let body = starcore::chrome::overlay::inner(area);
     Rect {
         y: body.y.saturating_add(2),
         height: body
@@ -141,7 +141,7 @@ pub fn list_rect(area: Rect, purpose: Purpose) -> Rect {
 
 /// Visible toolbar geometry shared by painting and mouse dispatch.
 pub fn controls(area: Rect, purpose: Purpose) -> Vec<(Rect, &'static str)> {
-    let body = starkit::chrome::overlay::inner(area);
+    let body = starcore::chrome::overlay::inner(area);
     if body.height < 2 {
         return vec![];
     }

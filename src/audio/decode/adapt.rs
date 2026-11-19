@@ -134,12 +134,12 @@ impl Adapting {
         ff::software::resampler(
             (
                 packed,
-                starkit::pcm_output::channel_layout(in_spec.channel_mask, in_spec.channels),
+                starcore::pcm_output::channel_layout(in_spec.channel_mask, in_spec.channels),
                 in_spec.sample_rate,
             ),
             (
                 packed,
-                starkit::pcm_output::channel_layout(out.channel_mask, out.channels),
+                starcore::pcm_output::channel_layout(out.channel_mask, out.channels),
                 out.sample_rate,
             ),
         )
@@ -192,7 +192,7 @@ impl Adapting {
         let mut input = ff::frame::Audio::new(
             Sample::F64(SampleType::Packed),
             got,
-            starkit::pcm_output::channel_layout(
+            starcore::pcm_output::channel_layout(
                 Self::mid_spec(&self.in_spec, &self.out_spec).channel_mask,
                 mid_ch as u16,
             ),
@@ -235,7 +235,10 @@ impl Adapting {
         let mut f = ff::frame::Audio::new(
             Sample::F64(SampleType::Packed),
             frames + 64,
-            starkit::pcm_output::channel_layout(self.out_spec.channel_mask, self.out_spec.channels),
+            starcore::pcm_output::channel_layout(
+                self.out_spec.channel_mask,
+                self.out_spec.channels,
+            ),
         );
         f.set_rate(self.out_spec.sample_rate);
         f
@@ -361,7 +364,7 @@ mod tests {
         fn boxed(sample_rate: u32, channels: u16, len: u64) -> Box<dyn Decoder> {
             Box::new(Self {
                 spec: StreamSpec {
-                    sample_format: starkit::pcm::SampleFormat::F64,
+                    sample_format: starcore::pcm::SampleFormat::F64,
                     channel_mask: 0,
                     sample_rate,
                     channels,
@@ -423,7 +426,7 @@ mod tests {
 
     fn out(sample_rate: u32, channels: u16) -> StreamSpec {
         StreamSpec {
-            sample_format: starkit::pcm::SampleFormat::F64,
+            sample_format: starcore::pcm::SampleFormat::F64,
             channel_mask: 0,
             sample_rate,
             channels,

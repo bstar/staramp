@@ -462,7 +462,7 @@ fn native_surface_negotiation_resize_hidden_and_cell_fallback() {
     child.send(configure(20, 80, true, true));
     let frame = child.until("frame");
     assert!(frame["cells"].as_array().unwrap().is_empty());
-    let surface: starkit::native_surface::Surface =
+    let surface: starcore::native_surface::Surface =
         serde_json::from_value(frame["surface"].clone()).unwrap();
     surface.validate().unwrap();
     assert_eq!(surface.width, 640);
@@ -520,7 +520,7 @@ fn skin_negotiation_density_pointer_and_legacy_fallback() {
     };
     child.send(configure(50, 1, true));
     let frame = child.until("frame");
-    let surface: starkit::native_surface::Surface =
+    let surface: starcore::native_surface::Surface =
         serde_json::from_value(frame["surface"].clone()).unwrap();
     surface.validate().unwrap();
     assert!(!surface.assets.is_empty());
@@ -548,11 +548,11 @@ fn skin_negotiation_density_pointer_and_legacy_fallback() {
             break f;
         }
     };
-    let double: starkit::native_surface::Surface =
+    let double: starcore::native_surface::Surface =
         serde_json::from_value(double["surface"].clone()).unwrap();
     double.validate().unwrap();
     assert_eq!(double.width, surface.width * 2);
-    assert!(double.nodes.iter().any(|node|matches!(node,starkit::native_surface::Primitive::Sprite{source,..} if source.width==48)));
+    assert!(double.nodes.iter().any(|node|matches!(node,starcore::native_surface::Primitive::Sprite{source,..} if source.width==48)));
     child.send(configure(52, 1, false));
     let old = loop {
         let f = child.until("frame");

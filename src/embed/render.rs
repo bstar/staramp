@@ -5,11 +5,11 @@
 //! native height, then send only its borderless body. Short hosts select its
 //! useful rows rather than introducing a second player design.
 
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::Color;
-use starkit::ratatui::widgets::Widget;
-use starkit::theme::{Resolve, ThemeFile};
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::Color;
+use starcore::ratatui::widgets::Widget;
+use starcore::theme::{Resolve, ThemeFile};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
@@ -273,7 +273,7 @@ pub enum HitTarget {
 }
 
 fn theme(palette: &Palette) -> Theme {
-    use starkit::theme::color::Rgb;
+    use starcore::theme::color::Rgb;
     let rgb = |c: [u8; 3]| Rgb::new(c[0], c[1], c[2]);
     let mut file = ThemeFile::default();
     file.meta.name = "Embedded STAR/AMP".into();
@@ -526,7 +526,7 @@ mod tests {
 
     #[test]
     fn loading_is_visible_at_full_and_compact_sizes_without_stale_readouts() {
-        use starkit::native_surface::Primitive;
+        use starcore::native_surface::Primitive;
         let mut state = playing();
         state.loading = true;
         state.bit_perfect = true;
@@ -588,7 +588,7 @@ mod tests {
                 );
                 surface.validate().unwrap();
                 for previous in &surfaces {
-                    let previous: &starkit::native_surface::Surface = previous;
+                    let previous: &starcore::native_surface::Surface = previous;
                     assert_ne!(surface.nodes, previous.nodes);
                     assert_eq!(surface.hits, previous.hits);
                 }

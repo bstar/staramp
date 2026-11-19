@@ -1,13 +1,13 @@
 //! Themes compiled into the binary, so a fresh install has a working look
 //! without shipping a data directory alongside it.
 //!
-//! The themes, and the lookup that finds one, are starkit's; what is here is
+//! The themes, and the lookup that finds one, are starcore's; what is here is
 //! the player's registry: the shared built-ins plus Winamp Silver, resolved
 //! into the player's own [`Theme`].
 
 use std::sync::LazyLock;
 
-use starkit::theme::{Builtin, Registry};
+use starcore::theme::{Builtin, Registry};
 
 use super::Theme;
 
@@ -18,7 +18,7 @@ use super::Theme;
 /// `theme list` would print.
 static PLAYER_BUILTINS: LazyLock<Vec<Builtin>> = LazyLock::new(|| {
     let mut themes = Vec::new();
-    for builtin in starkit::theme::BUILTINS {
+    for builtin in starcore::theme::BUILTINS {
         themes.push(Builtin {
             id: builtin.id,
             toml: builtin.toml,
@@ -64,8 +64,8 @@ pub fn selectable() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starkit::theme::color::Rgb;
-    use starkit::theme::{BUILTINS, DEFAULT_ID};
+    use starcore::theme::color::Rgb;
+    use starcore::theme::{BUILTINS, DEFAULT_ID};
 
     #[test]
     fn silver_is_selectable_with_muted_green_player_roles() {
@@ -137,10 +137,10 @@ mod tests {
 
     /// The whole derivation chain, pinned byte for byte.
     ///
-    /// `every_builtin_is_legible` -- which now lives in starkit, beside the
+    /// `every_builtin_is_legible` -- which now lives in starcore, beside the
     /// roles it checks -- says the result is readable; this one says it is the
     /// *same* result as yesterday, for the player's roles as well as the
-    /// shared ones. It is what made moving the resolver into starkit a
+    /// shared ones. It is what made moving the resolver into starcore a
     /// refactor rather than a rewrite, because a single changed byte is a
     /// theme that no longer looks the way it did and nothing else in the suite
     /// would notice.

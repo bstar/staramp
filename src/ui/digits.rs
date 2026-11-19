@@ -1,5 +1,5 @@
 //! A three-row seven-segment font, for the time display.
 //!
-//! Moved to starkit.
+//! Moved to starcore.
 
-pub use starkit::digits::*;
+pub use starcore::digits::*;

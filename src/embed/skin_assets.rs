@@ -586,14 +586,14 @@ pub(super) const MINIMAL_LABELS: &[(&str, u16, u16, u16)] = &[
 pub(super) struct ReadoutCell {
     pub size: u16,
     pub character: char,
-    pub rect: starkit::native_surface::PixelRect,
+    pub rect: starcore::native_surface::PixelRect,
     pub advance: u16,
 }
 pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '0',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 0,
             y: 0,
             width: 12,
@@ -604,7 +604,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '1',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 12,
             y: 0,
             width: 12,
@@ -615,7 +615,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '2',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 24,
             y: 0,
             width: 12,
@@ -626,7 +626,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '3',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 36,
             y: 0,
             width: 12,
@@ -637,7 +637,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '4',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 48,
             y: 0,
             width: 12,
@@ -648,7 +648,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '5',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 60,
             y: 0,
             width: 12,
@@ -659,7 +659,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '6',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 72,
             y: 0,
             width: 12,
@@ -670,7 +670,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '7',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 84,
             y: 0,
             width: 12,
@@ -681,7 +681,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '8',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 96,
             y: 0,
             width: 12,
@@ -692,7 +692,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: '9',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 108,
             y: 0,
             width: 12,
@@ -703,7 +703,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: ':',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 120,
             y: 0,
             width: 12,
@@ -714,7 +714,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: 'V',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 132,
             y: 0,
             width: 12,
@@ -725,7 +725,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: 'O',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 144,
             y: 0,
             width: 12,
@@ -736,7 +736,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 11,
         character: 'L',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 156,
             y: 0,
             width: 12,
@@ -747,7 +747,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '0',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 0,
             y: 24,
             width: 12,
@@ -758,7 +758,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '1',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 12,
             y: 24,
             width: 12,
@@ -769,7 +769,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '2',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 24,
             y: 24,
             width: 12,
@@ -780,7 +780,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '3',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 36,
             y: 24,
             width: 12,
@@ -791,7 +791,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '4',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 48,
             y: 24,
             width: 12,
@@ -802,7 +802,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '5',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 60,
             y: 24,
             width: 12,
@@ -813,7 +813,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '6',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 72,
             y: 24,
             width: 12,
@@ -824,7 +824,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '7',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 84,
             y: 24,
             width: 12,
@@ -835,7 +835,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '8',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 96,
             y: 24,
             width: 12,
@@ -846,7 +846,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: '9',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 108,
             y: 24,
             width: 12,
@@ -857,7 +857,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: ':',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 120,
             y: 24,
             width: 12,
@@ -868,7 +868,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: 'V',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 132,
             y: 24,
             width: 12,
@@ -879,7 +879,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: 'O',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 144,
             y: 24,
             width: 12,
@@ -890,7 +890,7 @@ pub(super) const READOUT_CELLS: &[ReadoutCell] = &[
     ReadoutCell {
         size: 13,
         character: 'L',
-        rect: starkit::native_surface::PixelRect {
+        rect: starcore::native_surface::PixelRect {
             x: 156,
             y: 24,
             width: 12,

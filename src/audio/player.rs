@@ -437,7 +437,7 @@ impl Drop for Player {
 /// Everything the worker needs for the currently open output.
 struct Stream {
     output: Output,
-    producer: rtrb::Producer<starkit::pcm::Sample>,
+    producer: rtrb::Producer<starcore::pcm::Sample>,
     source_done: Arc<AtomicBool>,
     sample_rate: u32,
     channels: u16,
@@ -1347,7 +1347,7 @@ fn run(
                             // and a limiter in it would be a lie.
                             let limiting = needs_limiting(&settings, scale);
                             for &x in buf.iter() {
-                                let _ = s.producer.push(starkit::pcm::Sample {
+                                let _ = s.producer.push(starcore::pcm::Sample {
                                     value: if limiting { soft_clip(x) } else { x },
                                     processed: fading || scale != 1.0 || !settings.is_transparent(),
                                 });
@@ -1676,7 +1676,7 @@ fn start_crossfade(
         return;
     }
     let target = super::decode::StreamSpec {
-        sample_format: starkit::pcm::SampleFormat::F64,
+        sample_format: starcore::pcm::SampleFormat::F64,
         channel_mask: 0,
         sample_rate: stream.sample_rate,
         channels: stream.channels,
@@ -1922,7 +1922,7 @@ fn warm_next(
 ///
 /// Left as a named call rather than deleted so the two seek paths keep pointing
 /// at the one place a fix belongs.
-fn drain(p: &mut rtrb::Producer<starkit::pcm::Sample>) {
+fn drain(p: &mut rtrb::Producer<starcore::pcm::Sample>) {
     let _ = p;
 }
 
@@ -2341,7 +2341,7 @@ mod tests {
 
     fn spec(rate: u32, ch: u16) -> StreamSpec {
         StreamSpec {
-            sample_format: starkit::pcm::SampleFormat::F64,
+            sample_format: starcore::pcm::SampleFormat::F64,
             channel_mask: 0,
             sample_rate: rate,
             channels: ch,

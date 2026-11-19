@@ -64,7 +64,7 @@ const EXTENSIONS: &[&str] = &[
     "aifc", "ape", "wv", "mpc", "mp+", "dsf", "dff", "wma", "tta", "tak", "shn", "mka", "caf",
 ];
 
-pub use starkit::media_controls::Palette;
+pub use starcore::media_controls::Palette;
 
 /// Terminal cell pixels, supplied only when the host can draw image overlays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -84,7 +84,7 @@ pub struct TransportImage {
     pub rgba: Vec<u8>,
 }
 
-pub use starkit::media_controls::Cell;
+pub use starcore::media_controls::Cell;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -143,7 +143,7 @@ enum Response<'a> {
         cells: Vec<Cell>,
         images: Vec<TransportImage>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        surface: Option<&'a starkit::native_surface::Surface>,
+        surface: Option<&'a starcore::native_surface::Surface>,
     },
     Status {
         playing: bool,
@@ -184,7 +184,7 @@ struct View {
     pixel_size: Option<[u16; 2]>,
     native_surface: bool,
     native_skins: bool,
-    last_surface: std::cell::RefCell<Option<starkit::native_surface::Surface>>,
+    last_surface: std::cell::RefCell<Option<starcore::native_surface::Surface>>,
     visible: bool,
 }
 
@@ -290,7 +290,7 @@ pub fn run_stdio() -> Result<()> {
     let mut metadata_key: Option<(String, u64)> = None;
     let mut current_metadata: Option<MetadataResult> = None;
     let mut image_cache = render::TransportImageCache::default();
-    let mut last_native: Option<(u64, starkit::native_surface::Surface)> = None;
+    let mut last_native: Option<(u64, starcore::native_surface::Surface)> = None;
     #[cfg(feature = "terminal-graphics")]
     let mut player_skin = skin::PlayerSkin::new()?;
 

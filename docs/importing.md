@@ -22,7 +22,7 @@ staramp import ~/Downloads/ALBUMS --quarantine /somewhere/else
 ```
 
 To review the same inbox in the native Classic graphical rack, run this in
-Kitty (or a terminal with the STAR/KIT graphics integration):
+Kitty (or a terminal with the STAR/CORE graphics integration):
 
 ```sh
 staramp import --graphical ~/Downloads/ALBUMS

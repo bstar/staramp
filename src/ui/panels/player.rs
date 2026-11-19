@@ -1,11 +1,11 @@
 //! The Winamp main window.
 
-use starkit::chrome::frame::{Badge, Frame, Tone, NO_WORDS};
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::{Constraint, Direction, Layout, Rect};
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::{Block, Borders, Widget};
+use starcore::chrome::frame::{Badge, Frame, Tone, NO_WORDS};
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::{Constraint, Direction, Layout, Rect};
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::{Block, Borders, Widget};
 
 use crate::audio::player::PlayState;
 use crate::playlist::queue::RepeatMode;
@@ -1030,15 +1030,15 @@ fn render_controls(
     }
 }
 
-/// Moved to starkit: a chat view scrolls a long channel topic the same way a
+/// Moved to starcore: a chat view scrolls a long channel topic the same way a
 /// player scrolls a long title, and both break on CJK without real width
 /// measurement.
-pub use starkit::text::{marquee, truncate};
+pub use starcore::text::{marquee, truncate};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starkit::ratatui::style::Color;
+    use starcore::ratatui::style::Color;
 
     /// Render the panel and return its rows as plain text.
     fn draw(subtitle: &str, tech: &str, width: u16) -> Vec<String> {

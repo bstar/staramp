@@ -1,6 +1,6 @@
-//! Legacy render-only JSON-lines entry point, backed by KIT media controls.
+//! Legacy render-only JSON-lines entry point, backed by CORE media controls.
 use anyhow::{ensure, Result};
-use starkit::media_controls::{render, Request};
+use starcore::media_controls::{render, Request};
 use std::io::{BufRead, Read, Write};
 
 pub fn run() -> Result<()> {

@@ -1,14 +1,14 @@
 //! Drawing real pixels in a terminal, where the terminal will have it.
 //!
-//! The machinery is `starkit::graphics` -- probing, the modes, the cache, the
+//! The machinery is `starcore::graphics` -- probing, the modes, the cache, the
 //! half-block fallback -- and what is left here is the part that is about this
 //! player: which pictures it draws, and the setting that says whether the
 //! transport buttons are pictures at all.
 
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui_image::protocol::Protocol;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui_image::protocol::Protocol;
 
-pub use starkit::graphics::{
+pub use starcore::graphics::{
     halfblocks, mend_unit_placeholder, placeholder, Graphics, ImageId, Mode,
 };
 

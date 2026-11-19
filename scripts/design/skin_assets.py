@@ -85,7 +85,7 @@ subprocess.run(['rsvg-convert',str(p),'-o',str(OUT/'1x/control-font.png')],check
 (OUT/'control-font.json').write_text(json.dumps(dict(height=7,baseline=7,glyphs=glyphs),indent=2)+'\n')
 (OUT/'manifest.json').write_text(json.dumps(dict(version=1,author='STAR/AMP',license='MIT',palette=PALETTE,insets=dict(panel=[6,6,6,6],well=[3,3,3,3],button=[4,4,4,4]),densities=[1,2]),indent=2)+'\n')
 
-# Separate coverage masks from palette colors. Runtime uses KIT's layer compositor;
+# Separate coverage masks from palette colors. Runtime uses CORE's layer compositor;
 # it never edits an already composited player screenshot to change themes.
 import xml.etree.ElementTree as ET
 roles={

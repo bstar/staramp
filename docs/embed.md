@@ -144,7 +144,7 @@ text control remains usable.
 
 A helper advertising `native_surface_v1` accepts `native_surface: true` alongside
 `graphics` in Configure. Frames then contain an empty `cells` array and a
-`surface` using STAR/KIT's bounded pixel primitives. The surface owns its title,
+`surface` using STAR/CORE's bounded pixel primitives. The surface owns its title,
 clock, spectrum, transport, seek and volume layout. STAR/FOLD only places it.
 Pointer coordinates remain terminal cells: STAR/AMP maps each cell's center to
 its own surface hit regions. This does not claim pixel-precise terminal input.
@@ -233,14 +233,14 @@ AMP owns both transport geometry and pointer hit testing.
 
 A helper built with terminal graphics advertises `native_skin_v1`. A supporting
 host may add `native_skins: true` to Configure only when its own frontend
-advertises KIT's `native_skins` capability and `native_surface` is also enabled.
+advertises CORE's `native_skins` capability and `native_surface` is also enabled.
 The helper returns the same AMP-owned player component as standalone playback,
 with content-addressed PNG assets and Sprite primitives inside its Surface.
 Hosts validate/place that surface and forward pointer input; they do not draw
-AMP controls. KIT transfers artwork reliably and caches it locally over SSH.
+AMP controls. CORE transfers artwork reliably and caches it locally over SSH.
 
 The helper includes payloads in its latest-frame protocol so discarding an
-obsolete helper frame cannot lose an asset. KIT strips repeated payloads at the
+obsolete helper frame cannot lose an asset. CORE strips repeated payloads at the
 network session boundary. Old hosts omit the flag and receive ordinary native
 primitives. Text is shaped at the chosen physical density; finished frames and
 text are not resampled. Short/narrow embedding regions use the existing compact

@@ -1,10 +1,10 @@
 //! Compact listening-history panel with network-delivery status.
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::activity::Snapshot;
 use crate::theme::Theme;
@@ -20,7 +20,7 @@ pub struct HistoryView<'a> {
     pub scroll: usize,
     /// Where this frame's scrollbar is recorded, so a later press or drag can
     /// find it. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 fn provider_summary(snapshot: &Snapshot) -> String {
@@ -181,7 +181,7 @@ mod tests {
     fn dragging_the_history_scrollbar_scrolls_it() {
         use crate::activity::Recent;
         use crate::ui::panels::Bar;
-        use starkit::chrome::scrollbar::Scrollbars;
+        use starcore::chrome::scrollbar::Scrollbars;
 
         let theme = crate::theme::builtin::load("cosmic").unwrap();
         let recent: Vec<Recent> = (0..20)

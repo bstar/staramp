@@ -1,6 +1,6 @@
 # Keys and mouse
 
-`?` or `F1` opens KIT's command guide. It includes keyboard bindings, mouse
+`?` or `F1` opens CORE's command guide. It includes keyboard bindings, mouse
 controls and features reached through settings or menus. Type a feature name,
 shortcut, or phrase to search; words can be in any order and common typos are
 tolerated. Quoted phrases match exactly; `-word` excludes a word.

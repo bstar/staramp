@@ -33,7 +33,7 @@ const PREFILL_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Block until the ring holds enough audio to cover the first few callbacks.
 fn prefill(
-    consumer: &rtrb::Consumer<starkit::pcm::Sample>,
+    consumer: &rtrb::Consumer<starcore::pcm::Sample>,
     sample_rate: u32,
     channels: u16,
     source_done: &AtomicBool,

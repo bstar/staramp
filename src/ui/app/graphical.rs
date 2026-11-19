@@ -6,11 +6,11 @@ mod eq_profiles;
 mod popup;
 use crate::audio::dsp::apo::{Filter, Width};
 use crate::embed::{native, render::PlayerRenderState, GraphicsConfig, Palette};
-use starkit::native_surface::{
+use starcore::native_surface::{
     classic::{self, Colors},
     HitRegion, HoverFill, PixelRect as R, Primitive, Surface,
 };
-use starkit::terminal_graphics::{
+use starcore::terminal_graphics::{
     protocol::{Component, Input, Scene, Viewport},
     session::{self, Controller},
 };
@@ -82,12 +82,15 @@ struct CoverCache {
 /// Enclose the physical artwork slot in cells, retaining its exact position
 /// inside the transported raster. One-to-one image presentation avoids another
 /// resampling pass that would blur the two-pixel outline on fractional grids.
-fn cover_layout(v: Viewport, slot: R) -> (starkit::terminal_graphics::protocol::Rect, [u32; 2], R) {
+fn cover_layout(
+    v: Viewport,
+    slot: R,
+) -> (starcore::terminal_graphics::protocol::Rect, [u32; 2], R) {
     let x = u32::from(slot.x) * u32::from(v.columns) / v.width;
     let y = u32::from(slot.y) * u32::from(v.rows) / v.height;
     let right = (u32::from(slot.x + slot.width) * u32::from(v.columns)).div_ceil(v.width);
     let bottom = (u32::from(slot.y + slot.height) * u32::from(v.rows)).div_ceil(v.height);
-    let rect = starkit::terminal_graphics::protocol::Rect {
+    let rect = starcore::terminal_graphics::protocol::Rect {
         x: x as u16,
         y: y as u16,
         width: (right - x) as u16,
@@ -111,8 +114,8 @@ fn cover_layout(v: Viewport, slot: R) -> (starkit::terminal_graphics::protocol::
     )
 }
 
-fn cover_raster(image: &starkit::image::RgbaImage, key: &CoverKey) -> starkit::image::RgbaImage {
-    use starkit::image::{imageops, Rgba, RgbaImage};
+fn cover_raster(image: &starcore::image::RgbaImage, key: &CoverKey) -> starcore::image::RgbaImage {
+    use starcore::image::{imageops, Rgba, RgbaImage};
     let color = |s: &str| {
         let c = crate::theme::color::Rgb::parse_hex(s).expect("artwork theme color");
         Rgba([c.r, c.g, c.b, 255])
@@ -1569,7 +1572,7 @@ impl Rack<'_> {
                     row_font,
                     true,
                 );
-                s.text_rules.push(starkit::native_surface::TextRule {
+                s.text_rules.push(starcore::native_surface::TextRule {
                     node: title_node,
                     end: count_x - 8,
                     gap: 10,
@@ -1712,7 +1715,7 @@ impl Rack<'_> {
                 false,
             );
         }
-        // Shared KIT geometry measures rendered rows (headings and folds
+        // Shared CORE geometry measures rendered rows (headings and folds
         // included). Only the thumb is painted, inside the well's border.
         let track = Rect::new(w - 28, body.y, 16, body.height);
         let mut bars = Scrollbars::new();
@@ -2151,7 +2154,7 @@ impl Controller for Rack<'_> {
             self.app.refresh_settings();
         }
     }
-    fn capabilities(&mut self, c: starkit::terminal_graphics::capabilities::Capabilities) {
+    fn capabilities(&mut self, c: starcore::terminal_graphics::capabilities::Capabilities) {
         self.audio.capabilities(self.app, c);
         self.paths = c.native_paths;
         self.local_hover = c.surface_hover;
@@ -2162,13 +2165,13 @@ impl Controller for Rack<'_> {
         self.app.frontend_attached = false;
         self.audio.detached(self.app);
     }
-    fn media(&mut self, message: starkit::terminal_graphics::media::ToHost) {
+    fn media(&mut self, message: starcore::terminal_graphics::media::ToHost) {
         self.audio.receive(self.app, message);
     }
-    fn media_chunks(&mut self) -> Vec<starkit::terminal_graphics::protocol::ServerMessage> {
+    fn media_chunks(&mut self) -> Vec<starcore::terminal_graphics::protocol::ServerMessage> {
         self.audio.chunks(self.app)
     }
-    fn effects(&mut self) -> Vec<starkit::terminal_graphics::protocol::ServerMessage> {
+    fn effects(&mut self) -> Vec<starcore::terminal_graphics::protocol::ServerMessage> {
         self.audio.effects(self.app)
     }
     fn supports_presentation_switch(&self) -> bool {
@@ -2215,15 +2218,15 @@ impl Controller for Rack<'_> {
         self.app.panels.cell_geometry = None;
         self.app.panels.last_area = Rect::new(0, 0, v.columns, v.rows);
         let area = Rect::new(0, 0, v.columns, v.rows);
-        let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);
+        let mut buffer = starcore::ratatui::buffer::Buffer::empty(area);
         if self.app.panels.help && !self.cells && self.paths && v.width >= 720 && v.height >= 360 {
             self.overlay = true;
-            let style = starkit::native_surface::style::Style::new(self.palette());
-            let r = starkit::help::Guide::native_rect(v.width as u16, v.height as u16);
+            let style = starcore::native_surface::style::Style::new(self.palette());
+            let r = starcore::help::Guide::native_rect(v.width as u16, v.height as u16);
             let mut scene = style.scene(v);
             scene.revision = self.revision;
             scene.components.push(Component::Menu {
-                rect: starkit::native_surface::style::logical_rect(r, v),
+                rect: starcore::native_surface::style::logical_rect(r, v),
             });
             style
                 .mount(
@@ -2259,14 +2262,14 @@ impl Controller for Rack<'_> {
                 self.radius,
             );
             let mut scene = Scene::from_buffer(
-                &starkit::ratatui::buffer::Buffer::empty(area),
+                &starcore::ratatui::buffer::Buffer::empty(area),
                 v,
                 self.revision,
             );
             scene.background = native::hex(self.palette().bg);
             scene.foreground = native::hex(self.palette().fg);
             scene.components.push(Component::Surface {
-                rect: starkit::terminal_graphics::protocol::Rect {
+                rect: starcore::terminal_graphics::protocol::Rect {
                     x: 0,
                     y: 0,
                     width: v.columns,
@@ -2611,7 +2614,7 @@ impl Controller for Rack<'_> {
                         outline: native::hex(palette.border),
                     };
                     if self.cover_cache.as_ref().is_none_or(|old| old.key != key) {
-                        self.cover_cache = starkit::terminal_graphics::assets::encode_skin(
+                        self.cover_cache = starcore::terminal_graphics::assets::encode_skin(
                             &cover_raster(image, &key),
                         )
                         .ok()
@@ -2651,14 +2654,14 @@ impl Controller for Rack<'_> {
             && !self.list_popup(&mut surface, &c)
         {
             self.overlay = true;
-            let mut modal = starkit::ratatui::buffer::Buffer::empty(area);
+            let mut modal = starcore::ratatui::buffer::Buffer::empty(area);
             // Ordinary mouse dispatch uses the padded application area.
             // Render the source cells there too, including at 2x density.
             let modal_area = self.app.regions(area).map_or(area, |regions| regions.area);
             self.app.draw_overlays(modal_area, &mut modal);
             let cw = f64::from(w) / f64::from(v.columns.max(1));
             let ch = f64::from(h) / f64::from(v.rows.max(1));
-            let meaningful = |cell: &starkit::ratatui::buffer::Cell| {
+            let meaningful = |cell: &starcore::ratatui::buffer::Cell| {
                 cell.symbol() != " " || cell.bg != Color::Reset
             };
             let points = (0..area.height)
@@ -2727,7 +2730,7 @@ impl Controller for Rack<'_> {
                             text,
                             &ink,
                             font,
-                            mods.contains(starkit::ratatui::style::Modifier::BOLD),
+                            mods.contains(starcore::ratatui::style::Modifier::BOLD),
                         );
                     }
                 }
@@ -2781,12 +2784,12 @@ impl Controller for Rack<'_> {
         surface.width = v.width as u16;
         surface.height = v.height as u16;
         let mut scene = Scene::from_buffer(
-            &starkit::ratatui::buffer::Buffer::empty(area),
+            &starcore::ratatui::buffer::Buffer::empty(area),
             v,
             self.revision,
         );
         scene.components.push(Component::Surface {
-            rect: starkit::terminal_graphics::protocol::Rect {
+            rect: starcore::terminal_graphics::protocol::Rect {
                 x: 0,
                 y: 0,
                 width: v.columns,
@@ -2832,7 +2835,7 @@ impl Controller for Rack<'_> {
                         outline: native::hex(palette.border),
                     };
                     if self.cover_cache.as_ref().is_none_or(|old| old.key != key) {
-                        self.cover_cache = starkit::terminal_graphics::assets::encode_png(
+                        self.cover_cache = starcore::terminal_graphics::assets::encode_png(
                             &cover_raster(image, &key),
                         )
                         .ok()
@@ -2847,7 +2850,7 @@ impl Controller for Rack<'_> {
                             rect,
                             id: cached.id.clone(),
                             png: Some(cached.png.clone()),
-                            scale: starkit::terminal_graphics::protocol::ImageScale::One,
+                            scale: starcore::terminal_graphics::protocol::ImageScale::One,
                             zoom: 100,
                         });
                         surface.hits.push(HitRegion {
@@ -3013,8 +3016,8 @@ impl Controller for Rack<'_> {
                             / u32::from(self.viewport.columns.max(1)),
                         u32::from(y) * self.viewport.height / u32::from(self.viewport.rows.max(1)),
                     ]);
-                    let style = starkit::native_surface::style::Style::new(self.palette());
-                    let bounds = starkit::help::Guide::native_rect(
+                    let style = starcore::native_surface::style::Style::new(self.palette());
+                    let bounds = starcore::help::Guide::native_rect(
                         self.viewport.width as u16,
                         self.viewport.height as u16,
                     );
@@ -3023,7 +3026,7 @@ impl Controller for Rack<'_> {
                         .panels
                         .help_guide
                         .pointer_native(&style, bounds, &action, px as u16, py as u16, button)
-                        == starkit::help::Outcome::Close
+                        == starcore::help::Outcome::Close
                     {
                         self.app.panels.help = false;
                     }
@@ -3041,7 +3044,7 @@ impl Controller for Rack<'_> {
                     return;
                 }
                 if self.surface.is_none() || self.overlay {
-                    // KIT's pointer protocol is zero based: left, right, middle.
+                    // CORE's pointer protocol is zero based: left, right, middle.
                     let mouse_button = match button {
                         0 => MouseButton::Left,
                         1 => MouseButton::Right,
@@ -3453,7 +3456,7 @@ impl App {
                 .unwrap()
                 .title
                 .contains("history"));
-            let r = starkit::help::Guide::native_rect(1280, 800);
+            let r = starcore::help::Guide::native_rect(1280, 800);
             rack.input(Input::Pointer {
                 action: "down".into(),
                 button: 0,
@@ -3495,10 +3498,10 @@ impl App {
                  VALUES (?1, 1, 'Artwork fixture', 'flac', 0, 0, 1)",
                 [&uri],
             )?;
-            starkit::image::RgbaImage::from_pixel(
+            starcore::image::RgbaImage::from_pixel(
                 32,
                 24,
-                starkit::image::Rgba([164, 215, 145, 255]),
+                starcore::image::Rgba([164, 215, 145, 255]),
             )
             .save(library.path().join("fixture.png"))?;
             rack.app.art = crate::library::art::Watcher::spawn(
@@ -3595,7 +3598,7 @@ impl App {
                         selector.x >= slot.x + slot.width,
                         "art selector must sit beside the enlarged cover"
                     );
-                    let rendered = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                    let rendered = starcore::terminal_graphics::renderer::render_reference(&scene)?;
                     let pixel = |x: u16, y: u16| rendered.get_pixel(u32::from(x), u32::from(y)).0;
                     let rgb = |s: &str| {
                         let c = crate::theme::color::Rgb::parse_hex(s).unwrap();
@@ -3657,7 +3660,7 @@ impl App {
                         .abs()
                             <= 1
                     );
-                    starkit::image::imageops::crop_imm(
+                    starcore::image::imageops::crop_imm(
                         &rendered,
                         u32::from(slot.x - 4),
                         u32::from(slot.y - 4),
@@ -3781,7 +3784,7 @@ impl App {
                         "resume dialog lost {value}: {contents}"
                     );
                 }
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("resume-session-{density}x.png")))?;
                 // Kitty uses larger glyph metrics than the bundled reference
                 // font. Compare actual clipped label boxes with an unrestricted
@@ -3796,7 +3799,7 @@ impl App {
                             _ => None,
                         })
                         .unwrap();
-                    let base = starkit::image::RgbaImage::new(220, 30);
+                    let base = starcore::image::RgbaImage::new(220, 30);
                     let mut label_surface = Surface::new(220, 30, "transparent".into());
                     classic::label(
                         &mut label_surface,
@@ -3806,14 +3809,14 @@ impl App {
                         14,
                         true,
                     );
-                    let bounded = starkit::terminal_graphics::renderer::render_surface_overlay(
+                    let bounded = starcore::terminal_graphics::renderer::render_surface_overlay(
                         &base,
                         &label_surface,
                     )?;
                     if let Primitive::Text { rect, .. } = &mut label_surface.nodes[0] {
                         rect.width = 220;
                     }
-                    let complete = starkit::terminal_graphics::renderer::render_surface_overlay(
+                    let complete = starcore::terminal_graphics::renderer::render_surface_overlay(
                         &base,
                         &label_surface,
                     )?;
@@ -3892,7 +3895,7 @@ impl App {
             error: [240, 60, 60],
         };
         let mut renderer =
-            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("JetBrains Mono");
+            starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new("JetBrains Mono");
         for density in [1, 2] {
             for width in [900, 1352] {
                 let surface = rack.skin.surface_at_density(
@@ -3908,7 +3911,7 @@ impl App {
                     density,
                 )?;
                 surface.validate()?;
-                let base = starkit::image::RgbaImage::new(
+                let base = starcore::image::RgbaImage::new(
                     u32::from(surface.width),
                     u32::from(surface.height),
                 );
@@ -3949,7 +3952,7 @@ impl App {
                     width >= 1056
                 );
                 if width == 1100 {
-                    starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    starcore::terminal_graphics::renderer::render_reference(&scene)?
                         .save(output.join(format!("album-activity-paired-{density}x.png")))?;
                 }
             }
@@ -4042,8 +4045,8 @@ impl App {
                 assert!(rows.iter().all(|h| h.rect.y + h.rect.height < 277));
                 let ledger = ledger.at_density(density)?;
                 ledger.validate()?;
-                starkit::terminal_graphics::renderer::render_surface_overlay(
-                    &starkit::image::RgbaImage::new(
+                starcore::terminal_graphics::renderer::render_surface_overlay(
+                    &starcore::image::RgbaImage::new(
                         u32::from(ledger.width),
                         u32::from(ledger.height),
                     ),
@@ -4085,7 +4088,7 @@ impl App {
             decorated.text_centered(R::new(20, 80, 160, 24), "Album section", &c.ink, 12, true);
             decorated
                 .text_rules
-                .push(starkit::native_surface::TextRule {
+                .push(starcore::native_surface::TextRule {
                     node,
                     end: 870,
                     gap: 8,
@@ -4153,7 +4156,7 @@ impl App {
                     let r = node.rect();
                     assert!(r.y + r.height <= footer || r.y >= footer);
                 }
-                starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                starcore::terminal_graphics::renderer::render_reference(&scene)?;
             }
         }
         for (width, height, rows) in [(1400, 2000, 100), (2737, 1801, 56), (3840, 2160, 67)] {
@@ -4173,7 +4176,7 @@ impl App {
             surface.validate()?;
             // Rendering is the gate: surface validation alone cannot detect a
             // host stretching a fixed atlas crop to a different pixel size.
-            starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            starcore::terminal_graphics::renderer::render_reference(&scene)?;
         }
         let selected_scene = rack.scene(selected_view);
         assert!(rack
@@ -4183,12 +4186,12 @@ impl App {
             .nodes
             .iter()
             .any(|node| matches!(node, Primitive::Text { text, .. } if text == "Theme: Classic")));
-        starkit::terminal_graphics::renderer::render_reference(&selected_scene)?
+        starcore::terminal_graphics::renderer::render_reference(&selected_scene)?
             .save(output.join("selected-rack.png"))?;
         rack.reference_colors = false;
         // Compare actual header pixels across the composed production modules.
         // Album/Activity wells must not change their title strip's palette.
-        let assert_common_headers = |rack: &Rack<'_>, image: &starkit::image::RgbaImage| {
+        let assert_common_headers = |rack: &Rack<'_>, image: &starcore::image::RgbaImage| {
             let scale = u32::from(rack.density);
             for action in [
                 "focus:player",
@@ -4243,7 +4246,7 @@ impl App {
                         if text == &theme_label && usize::from(rect.width) >= theme_label.width() * 8)
                 }));
                 let status_area = Rect::new(0, 0, columns, 1);
-                let mut status = starkit::ratatui::buffer::Buffer::empty(status_area);
+                let mut status = starcore::ratatui::buffer::Buffer::empty(status_area);
                 rack.app.look.theme_selection_until = Some(Instant::now() + Duration::from_secs(3));
                 rack.app.draw_status(status_area, &mut status);
                 let status_text = (0..columns)
@@ -4256,7 +4259,7 @@ impl App {
                         surface.validate()?;
                     }
                 }
-                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                let image = starcore::terminal_graphics::renderer::render_reference(&scene)?;
                 if name == "full" {
                     assert_common_headers(&rack, &image);
                 }
@@ -4267,13 +4270,13 @@ impl App {
                     // name intentionally differs.
                     rack.reference_colors = true;
                     let reference =
-                        starkit::terminal_graphics::renderer::render_reference(&rack.scene(v))?;
+                        starcore::terminal_graphics::renderer::render_reference(&rack.scene(v))?;
                     rack.reference_colors = false;
                     let body_height = height - 32;
                     assert!(
-                        starkit::image::imageops::crop_imm(&image, 0, 0, width, body_height)
+                        starcore::image::imageops::crop_imm(&image, 0, 0, width, body_height)
                             .to_image()
-                            == starkit::image::imageops::crop_imm(
+                            == starcore::image::imageops::crop_imm(
                                 &reference,
                                 0,
                                 0,
@@ -4284,7 +4287,7 @@ impl App {
                         "Winamp Classic diverged from the stacked-rack artwork at {width}x{height}"
                     );
                     assert!(
-                        !starkit::image::imageops::crop_imm(&image, 0, body_height, width, 32)
+                        !starcore::image::imageops::crop_imm(&image, 0, body_height, width, 32)
                             .to_image()
                             .pixels()
                             .any(|pixel| pixel.0[..3] == [0, 255, 0] && pixel.0[3] > 0),
@@ -4361,11 +4364,11 @@ impl App {
             R::new(102, 374, 58, 58)
         );
         rack.reference_colors = true;
-        starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?
+        starcore::terminal_graphics::renderer::render_reference(&rack.scene(v2))?
             .save(output.join("selected-rack-2x.png"))?;
         rack.reference_colors = false;
         rack.app.look.theme = crate::theme::builtin::load("winamp-silver").unwrap();
-        let silver_2x = starkit::terminal_graphics::renderer::render_reference(&rack.scene(v2))?;
+        let silver_2x = starcore::terminal_graphics::renderer::render_reference(&rack.scene(v2))?;
         assert_common_headers(&rack, &silver_2x);
         silver_2x.save(output.join("winamp-silver-full-2x.png"))?;
         // Wide layouts share a row; narrow layouts stack, with no overlapping
@@ -4894,7 +4897,7 @@ impl App {
                     .hits
                     .iter()
                     .any(|h| h.action == "eq-form:accept"));
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("eq-save-as-{density}x.png")))?;
             }
             click(&mut rack, "eq-form:accept");
@@ -5041,9 +5044,9 @@ impl App {
                     generation: 0,
                 };
                 let scene = rack.scene(view);
-                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                let image = starcore::terminal_graphics::renderer::render_reference(&scene)?;
                 image.save(output.join(format!("eq-reference-rack-{density}x.png")))?;
-                starkit::image::imageops::crop_imm(
+                starcore::image::imageops::crop_imm(
                     &image,
                     0,
                     238 * density,
@@ -5076,7 +5079,7 @@ impl App {
                     !surface.hits.iter().any(|h| h.action == "eq-plot"),
                     "modal must hide underlying controls"
                 );
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("eq-profiles-{density}x.png")))?;
                 click(&mut rack, "eq-library:close");
             }
@@ -5089,11 +5092,11 @@ impl App {
                     generation: 0,
                 };
                 let scene = rack.scene(view);
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("eq-reference-narrow-{density}x.png")))?;
                 click(&mut rack, "eq-profiles");
                 let scene = rack.scene(view);
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("eq-profiles-narrow-{density}x.png")))?;
                 click(&mut rack, "eq-library:close");
             }
@@ -5341,7 +5344,7 @@ impl App {
         );
         click(&mut rack, "popup:close");
         let grouped_scene = rack.scene(viewport);
-        starkit::terminal_graphics::renderer::render_reference(&grouped_scene)?
+        starcore::terminal_graphics::renderer::render_reference(&grouped_scene)?
             .save(output.join("album-grouping.png"))?;
         // Check actual raster colors and mouse focus after composition and
         // density scaling, including paired panes and their blank interiors.
@@ -5388,7 +5391,7 @@ impl App {
                 });
                 assert_eq!(rack.app.panels.focus, focus);
                 let scene = rack.scene(viewport);
-                let image = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+                let image = starcore::terminal_graphics::renderer::render_reference(&scene)?;
                 let accent = rack.palette().accent;
                 assert_eq!(
                     image
@@ -5457,7 +5460,7 @@ impl App {
                 u32::from(row.x + row.width - 2),
                 u32::from(row.y + row.height / 2),
             );
-            let before = starkit::terminal_graphics::renderer::render_reference(&before)?;
+            let before = starcore::terminal_graphics::renderer::render_reference(&before)?;
             press_button(&mut rack, "playlist:2", 0);
             assert_eq!(rack.app.panels.focus, Focus::Playlist);
             assert_eq!(
@@ -5465,7 +5468,7 @@ impl App {
                 "first click must select immediately"
             );
             let scene = rack.scene(view);
-            let after = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            let after = starcore::terminal_graphics::renderer::render_reference(&scene)?;
             assert_ne!(
                 before.get_pixel(point.0, point.1),
                 after.get_pixel(point.0, point.1),
@@ -5544,7 +5547,7 @@ impl App {
                 .iter()
                 .any(|h| h.action == format!("popup:row:{i}")));
         }
-        starkit::terminal_graphics::renderer::render_reference(&context_scene)?
+        starcore::terminal_graphics::renderer::render_reference(&context_scene)?
             .save(output.join("track-context-menu.png"))?;
         // Pointer anchoring, edge flipping, hover and outside dismissal must
         // work at both physical pixel densities without moving the playlist.
@@ -5594,7 +5597,7 @@ impl App {
                     "hover never executes an action"
                 );
                 if x == 895 {
-                    starkit::terminal_graphics::renderer::render_reference(&scene)?
+                    starcore::terminal_graphics::renderer::render_reference(&scene)?
                         .save(output.join(format!("track-context-edge-{density}x.png")))?;
                 }
             }
@@ -5665,7 +5668,7 @@ impl App {
             assert!(texts.contains("complete-value-39"));
             assert!(surface.hits.iter().any(|h| h.action == "popup:row:39"));
             assert!(rack.app.over.settings.as_ref().unwrap().scroll > 0);
-            starkit::terminal_graphics::renderer::render_reference(&scene)?
+            starcore::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("settings-long-values-{density}x.png")))?;
             click(&mut rack, "popup:close");
         }
@@ -5862,7 +5865,7 @@ impl App {
                     (30 * density as u16, 24 * density as u16)
                 );
             }
-            starkit::terminal_graphics::renderer::render_reference(&scene)?
+            starcore::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("playlist-album-sections-{density}x.png")))?;
         }
         rack.app
@@ -5938,7 +5941,7 @@ impl App {
             assert!(texts.contains(&"Match words in artist, title, album, year or path."));
             assert!(texts.contains(&"Enter apply · Esc cancel · Ctrl+U clear"));
             surface.validate()?;
-            starkit::terminal_graphics::renderer::render_reference(&scene)?
+            starcore::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("filter-live-{density}x.png")))?;
             click(&mut rack, "filter:cancel");
             rack.scene(v);
@@ -5960,7 +5963,7 @@ impl App {
                 .iter()
                 .any(|n| matches!(n,
                 Primitive::Text { text, .. } if text.starts_with("No tracks match"))));
-            starkit::terminal_graphics::renderer::render_reference(&scene)?
+            starcore::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("filter-long-no-results-{density}x.png")))?;
             click(&mut rack, "filter:clear");
             rack.scene(v);
@@ -6008,7 +6011,7 @@ impl App {
             assert_eq!(scene.background, "transparent");
             let surface = rack.surface.as_ref().unwrap();
             assert_eq!(surface.background, "transparent");
-            let frame = starkit::terminal_graphics::renderer::render_reference(&scene)?;
+            let frame = starcore::terminal_graphics::renderer::render_reference(&scene)?;
             assert_eq!(
                 frame.get_pixel(0, 0)[3],
                 0,
@@ -6085,7 +6088,7 @@ impl App {
                 }
                 let (track, thumb) = rack.playlist_bars.visible().next().unwrap();
                 let maximum = rack.app.queue.rows.len() - rack.playlist_visible;
-                // KIT owns proportional sizing, clipping and drag arithmetic.
+                // CORE owns proportional sizing, clipping and drag arithmetic.
                 assert!(thumb.len >= 24 * density as u16 && thumb.len <= track.height / 4);
                 let painted = rack.surface.as_ref().unwrap().nodes.iter().any(|node| {
                     matches!(node,
@@ -6139,7 +6142,7 @@ impl App {
                     .iter()
                     .any(|n| matches!(n,
                     Primitive::Text { text, .. } if text == "no album")));
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("playlist-scroll-{folded}-{density}x.png")))?;
                 let offset = rack.offset;
                 rack.input(Input::Pointer {
@@ -6389,7 +6392,7 @@ impl App {
                 "empty queue target: {action}"
             );
         }
-        starkit::terminal_graphics::renderer::render_reference(&empty)?
+        starcore::terminal_graphics::renderer::render_reference(&empty)?
             .save(output.join("empty-rack.png"))?;
         // The real rack keeps a foreground disk wait visible at both bitmap
         // densities, even with animation effects and the visualizer disabled.
@@ -6436,7 +6439,7 @@ impl App {
                 .hits
                 .iter()
                 .any(|h| h.action == "seek"));
-            starkit::terminal_graphics::renderer::render_reference(&scene)?
+            starcore::terminal_graphics::renderer::render_reference(&scene)?
                 .save(output.join(format!("loading-track-{density}x.png")))?;
         }
         rack.app.player.state.loading.store(false, Relaxed);
@@ -6565,7 +6568,7 @@ impl App {
                     PlaylistAddStep::ImportAlbum
                 ));
                 let scene = rack.scene(viewport);
-                starkit::terminal_graphics::renderer::render_reference(&scene)?
+                starcore::terminal_graphics::renderer::render_reference(&scene)?
                     .save(output.join(format!("import-review-{density}x-{folded}.png")))?;
                 click(&mut rack, "popup:row:0");
                 rack.scene(viewport);
@@ -6714,7 +6717,7 @@ impl App {
                     );
                     if phase == Phase::Copying {
                         assert!(json.contains("50%"));
-                        starkit::terminal_graphics::renderer::render_reference(&scene)?
+                        starcore::terminal_graphics::renderer::render_reference(&scene)?
                             .save(output.join(format!("import-progress-{density}x.png")))?;
                     }
                 }

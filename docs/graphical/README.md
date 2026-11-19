@@ -193,7 +193,7 @@ Specific gaps found in the native embed:
 - AMP owns presentation models, music visualizers, player surfaces, transport
   actions, and standalone layouts. FOLD only supplies bounds/theme/input and
   displays the returned surface.
-- KIT owns generic panels, typography, corner clipping, pointer/hover behavior,
+- CORE owns generic panels, typography, corner clipping, pointer/hover behavior,
   overlays, and the terminal graphical frontend/SSH transport. Prefer additive
   APIs and check AMP, FOLD, and CORD before changing shared signatures.
 - Extract the existing application update/input cycle behind a controller;
@@ -339,7 +339,7 @@ and rigid frames remain supported.
 
 Clock atlases preserve the reference's fractional digit advances. Fixed-label
 lettering must be measured against the source; track titles and other variable
-Unicode content remain shaped text. All AMP artwork belongs to AMP. KIT owns
+Unicode content remain shaped text. All AMP artwork belongs to AMP. CORE owns
 the generic compositor, density handling, caches and transport.
 
 `render-rack` captures the real shared player at 900 and 1352 logical pixels,
@@ -364,7 +364,7 @@ The original plan follows without scope reduction:
 
 Reproduce the approved Classic stacked rack faithfully in native Rust inside Kitty, locally and over SSH.
 
-**Build the rendering foundation in STAR/KIT so STAR/FOLD and other tools can adopt it later.** AMP is the first application; this phase won’t redesign the other apps.
+**Build the rendering foundation in STAR/CORE so STAR/FOLD and other tools can adopt it later.** AMP is the first application; this phase won’t redesign the other apps.
 
 ## 1. Establish a measurable design specification
 
@@ -380,11 +380,11 @@ Use matching content and colors for visual comparisons. Capture populated, empty
 
 **Deliverable:** a reference sheet with annotated measurements and reference images.
 
-## 2. Build a reusable skin system in KIT
+## 2. Build a reusable skin system in CORE
 
 Introduce reusable components rather than more application-specific rectangle drawing.
 
-| KIT capability | Purpose |
+| CORE capability | Purpose |
 |---|---|
 | Nine-slice images | Preserve corners while panels resize |
 | Tiled strips | Repeat borders, grooves, and LED patterns cleanly |
@@ -398,7 +398,7 @@ Assets need explicit dimensions, density, stretch regions, tint roles, and conte
 
 Keep these APIs independent of music playback so FOLD can later use them for tabs, panes, menus, and preview controls.
 
-**Deliverable:** a KIT component showcase rendered through the real terminal frontend.
+**Deliverable:** a CORE component showcase rendered through the real terminal frontend.
 
 ## 3. Prototype typography before committing to custom fonts
 
@@ -495,7 +495,7 @@ Complete the action-by-action parity checklist across:
 - Local and SSH operation.
 - Linux and macOS.
 
-Build and install the matching binaries, document the KIT interfaces, and retain reproducible reference captures.
+Build and install the matching binaries, document the CORE interfaces, and retain reproducible reference captures.
 
 ## Completion standard
 
@@ -504,7 +504,7 @@ Build and install the matching binaries, document the KIT interfaces, and retain
 - **Visual acceptance:** the actual application reproduces the approved treatment.
 - **Functional acceptance:** existing capabilities remain accessible and behave correctly.
 
-The first implementation milestone is the **KIT showcase plus one faithful player module**. That gives us concrete evidence that the approach works before we invest in the entire application again.
+The first implementation milestone is the **CORE showcase plus one faithful player module**. That gives us concrete evidence that the approach works before we invest in the entire application again.
 
 ### Native player button focus
 

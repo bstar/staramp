@@ -1,10 +1,10 @@
 //! The ordered parametric equalizer window.
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use crate::audio::dsp::apo::{BiquadKind, Filter, Profile, Stage, Width};
 use crate::theme::Theme;
@@ -336,9 +336,9 @@ fn format_stage(index: usize, stage: &Stage, width: usize) -> String {
     crate::ui::panels::player::truncate(&format!("{on} {:>2} {ch:<3} {body}", index + 1), width)
 }
 
-/// Keep the selected band visible. One rule, in starkit, for every list that
+/// Keep the selected band visible. One rule, in starcore, for every list that
 /// scrolls.
-pub use starkit::list::clamp_scroll;
+pub use starcore::list::clamp_scroll;
 
 #[cfg(test)]
 mod curve_tests {

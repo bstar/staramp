@@ -30,7 +30,7 @@ outlines aligned at either density without overlapping border strokes.
 digit advances. `transport-glyphs` preserves the five original square-button
 symbols. `fixed-labels` rasterizes the source study's JetBrains Mono control
 lettering; its bounds are recorded in `fixed-labels.json`. Variable Unicode
-metadata uses KIT's native shaped text. The earlier 5×7 control font is retained
+metadata uses CORE's native shaped text. The earlier 5×7 control font is retained
 only for comparison in the independent proof.
 
 The selected Minimal action buttons use `minimal-labels` at 11px, drawn from

@@ -22,8 +22,8 @@ pub fn create(
     sample_rate: u32,
     channels: u16,
 ) -> (
-    Producer<starkit::pcm::Sample>,
-    Consumer<starkit::pcm::Sample>,
+    Producer<starcore::pcm::Sample>,
+    Consumer<starcore::pcm::Sample>,
 ) {
     RingBuffer::new(capacity_samples(sample_rate, channels))
 }

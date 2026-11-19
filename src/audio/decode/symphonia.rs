@@ -124,7 +124,7 @@ impl SymphoniaDecoder {
 
         let mut this = Self {
             spec: StreamSpec {
-                sample_format: starkit::pcm::SampleFormat::F64,
+                sample_format: starcore::pcm::SampleFormat::F64,
                 channel_mask: params.channels.map(|c| c.bits() as u64).unwrap_or(0),
                 sample_rate: declared_rate.unwrap_or(0),
                 channels: declared_channels.unwrap_or(0),
@@ -200,12 +200,12 @@ impl SymphoniaDecoder {
                     self.spec.channel_mask = u64::from(sig.channels.bits());
                     self.spec.sample_format = match &decoded {
                         symphonia::core::audio::AudioBufferRef::F32(_) => {
-                            starkit::pcm::SampleFormat::F32
+                            starcore::pcm::SampleFormat::F32
                         }
                         symphonia::core::audio::AudioBufferRef::F64(_) => {
-                            starkit::pcm::SampleFormat::F64
+                            starcore::pcm::SampleFormat::F64
                         }
-                        _ => starkit::pcm::SampleFormat::I32,
+                        _ => starcore::pcm::SampleFormat::I32,
                     };
 
                     if !self.spec_known {

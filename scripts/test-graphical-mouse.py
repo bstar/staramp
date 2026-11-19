@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='staramp-mouse-') as temporary:
                STARAMP_CONFIG_DIR=str(root / 'config'), XDG_RUNTIME_DIR=str(root / 'runtime'),
                STAR_GRAPHICS_SYSTEM_FONTS='0', DBUS_SESSION_BUS_ADDRESS='unix:path=/nonexistent/staramp-test-bus')
     if args.local_hover or args.fold_playlist:
-        env['STARAMP_LOG'] = 'staramp=debug,starkit=debug'
+        env['STARAMP_LOG'] = 'staramp=debug,starcore=debug'
     for key in ['TMUX', 'STY', 'SSH_CONNECTION', 'SSH_TTY', 'KITTY_WINDOW_ID', 'KITTY_LISTEN_ON']:
         env.pop(key, None)
     # Initialize the disposable history schema before its UI/worker readers

@@ -82,7 +82,7 @@ impl Session {
     /// none, because it parses as far as it got and then loses your place.
     pub fn save(&self) -> Result<()> {
         let path = Self::path()?;
-        starkit::fs::write_atomic(&path, toml::to_string_pretty(self)?.as_bytes())
+        starcore::fs::write_atomic(&path, toml::to_string_pretty(self)?.as_bytes())
     }
 
     pub fn clear() {

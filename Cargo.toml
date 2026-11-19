@@ -22,11 +22,11 @@ categories = ["multimedia::audio", "command-line-utilities"]
 # `wsz` is Winamp skin import and `net` the HTTP client, both of which only
 # this application wants; `image` is on by default and draws the cover art.
 #
-# Development main pins an immutable, unreleased KIT 0.13 candidate revision.
+# Development main pins an immutable, unreleased CORE 0.13 candidate revision.
 # Tagged releases use immutable version tags. Update this manifest and its
 # Git-sourced lock together in a separate dependency commit.
-# Use scripts/check-kit.sh for newer local changes without rewriting the lock.
-starkit = { git = "https://github.com/bstar/starkit", tag = "v0.24.0", version = "0.24", features = [
+# Use scripts/check-core.sh for newer local changes without rewriting the lock.
+starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.0", version = "0.25", features = [
     "image",
     "wsz",
     "audio-output",
@@ -42,7 +42,7 @@ thiserror = "2"
 libc = "0.2"
 
 # Logging — file only; stdout would corrupt the alternate screen. The
-# subscriber and the file writer are starkit's, which is where `init` is; what
+# subscriber and the file writer are starcore's, which is where `init` is; what
 # is needed here is the macros that write the lines.
 tracing = "0.1"
 
@@ -116,7 +116,7 @@ toml = "0.9"
 
 # Marquee scrolling and column truncation break badly on CJK and emoji titles
 # without real width measurement. Named here rather than reached through
-# starkit because starkit does not re-export it: nothing in its API hands a
+# starcore because starcore does not re-export it: nothing in its API hands a
 # `UnicodeWidthStr` back, so there is no type to keep the two copies of.
 unicode-width = "0.2"
 
@@ -125,11 +125,11 @@ unicode-width = "0.2"
 realfft = "3"
 rustfft = "6"
 
-# The HTTP client, named here as well as reached through starkit because the
-# scrobble and cover-art code reads and writes JSON bodies and starkit's `net`
+# The HTTP client, named here as well as reached through starcore because the
+# scrobble and cover-art code reads and writes JSON bodies and starcore's `net`
 # feature does not turn ureq's `json` on -- a theme engine has no use for it.
 # Cargo unifies the two into one copy of one version, which is what matters:
-# an `Agent` built by `starkit::net::agent` is this crate's `Agent`.
+# an `Agent` built by `starcore::net::agent` is this crate's `Agent`.
 ureq = { version = "3", features = ["json"] }
 base64 = "0.22"
 serde_json = "1.0.151"
@@ -162,7 +162,7 @@ proptest = { version = "1", default-features = false, features = [
 
 # Crossterm 0.29.0 underflows on zero mouse/cursor coordinates. Pin the
 # upstream parser fix until a crates.io release includes it. Patching the
-# registry keeps KIT and Ratatui on the same copy of Crossterm.
+# registry keeps CORE and Ratatui on the same copy of Crossterm.
 [patch.crates-io]
 crossterm = { git = "https://github.com/crossterm-rs/crossterm", rev = "d4e9929f9a1c4adf91505d54f8527c817ae504cd" }
 
@@ -213,8 +213,8 @@ opt-level = 2
 
 [features]
 default = ["terminal-graphics", "gpu-renderer"]
-terminal-graphics = ["starkit/terminal-graphics", "starkit/media"]
-gpu-renderer = ["terminal-graphics", "starkit/gpu-renderer"]
+terminal-graphics = ["starcore/terminal-graphics", "starcore/media"]
+gpu-renderer = ["terminal-graphics", "starcore/gpu-renderer"]
 
 [[example]]
 name = "skin-player"

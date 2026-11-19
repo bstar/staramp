@@ -17,16 +17,16 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use starkit::chrome::rgb;
-use starkit::chrome::scrollbar::Scrollbars;
-use starkit::crossterm::event::{
+use starcore::chrome::rgb;
+use starcore::chrome::scrollbar::Scrollbars;
+use starcore::crossterm::event::{
     self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
     MouseEventKind,
 };
-use starkit::mouse::{hit, ClickTracker};
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::mouse::{hit, ClickTracker};
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Color, Style};
+use starcore::ratatui::widgets::Widget;
 use unicode_width::UnicodeWidthStr;
 
 use crate::audio::dsp::eq;
@@ -105,7 +105,7 @@ struct Regions {
     history: Option<Rect>,
     playlist: Option<Rect>,
     status: Rect,
-    panes: starkit::panes::Layout<Focus>,
+    panes: starcore::panes::Layout<Focus>,
 }
 
 /// The cell presentation keeps panel intent separate from viewport hiding.
@@ -115,8 +115,8 @@ fn cell_panes(
     equalizer: bool,
     history: bool,
     playlist: bool,
-) -> starkit::panes::Layout<Focus> {
-    use starkit::panes::{Node, Overflow, Size, Visibility};
+) -> starcore::panes::Layout<Focus> {
+    use starcore::panes::{Node, Overflow, Size, Visibility};
     let optional = |id, rows, open, priority| {
         Node::pane(id)
             .height(Size::fixed(rows))
@@ -303,7 +303,7 @@ enum PlaylistAddStep {
     ImportArtist(Vec<PathBuf>),
     ImportArtistName {
         candidates: Vec<PathBuf>,
-        value: starkit::input::TextInput,
+        value: starcore::input::TextInput,
     },
     ImportConflict(PathBuf),
     ImportReject,
@@ -671,7 +671,7 @@ fn indicator_width(segments: &[(String, bool)]) -> u16 {
 
 fn draw_status_bar(
     area: Rect,
-    buf: &mut starkit::ratatui::buffer::Buffer,
+    buf: &mut starcore::ratatui::buffer::Buffer,
     theme: &Theme,
     segments: &[(String, bool)],
     selecting_theme: bool,
@@ -806,12 +806,12 @@ fn codec_label(codec: &str) -> String {
     named.to_string()
 }
 
-/// Shared KIT command guide; AMP supplies its shortcut and feature catalogue.
+/// Shared CORE command guide; AMP supplies its shortcut and feature catalogue.
 fn draw_help_overlay(
     t: &Theme,
-    guide: &starkit::help::Guide,
+    guide: &starcore::help::Guide,
     area: Rect,
-    buf: &mut starkit::ratatui::buffer::Buffer,
+    buf: &mut starcore::ratatui::buffer::Buffer,
 ) {
     guide.render_cell(area, buf, t);
 }
@@ -830,13 +830,13 @@ mod tests {
     };
     use crate::playlist::queue::RepeatMode;
     use crate::vis::mode::VisMode;
-    use starkit::ratatui::layout::Rect;
+    use starcore::ratatui::layout::Rect;
     use std::path::PathBuf;
 
     #[test]
     fn responsive_cell_panes_restore_user_choices_and_never_focus_hidden_content() {
         use super::{cell_panes, Focus};
-        use starkit::panes::{Focus as PaneFocus, Reason};
+        use starcore::panes::{Focus as PaneFocus, Reason};
         for mask in 0..16 {
             let open = |bit| mask & (1 << bit) != 0;
             for height in MIN_HEIGHT..80 {
@@ -878,7 +878,7 @@ mod tests {
     /// STARAMP_HELP_GOLDEN_OUTPUT to the source checkout's snapshot path.
     #[test]
     fn the_help_overlay_is_drawn_as_recorded() {
-        use starkit::ratatui::buffer::Buffer;
+        use starcore::ratatui::buffer::Buffer;
 
         let theme = crate::theme::builtin::load("cosmic").unwrap();
         let mut out = String::new();
@@ -933,9 +933,9 @@ mod tests {
     ///
     /// Two grids rather than one cell per line: eighty by forty-four is three
     /// thousand cells, and a diff nobody can read is a test nobody trusts.
-    fn dump(buf: &starkit::ratatui::buffer::Buffer) -> String {
+    fn dump(buf: &starcore::ratatui::buffer::Buffer) -> String {
         let area = *buf.area();
-        let mut styles: Vec<starkit::ratatui::style::Style> = Vec::new();
+        let mut styles: Vec<starcore::ratatui::style::Style> = Vec::new();
         let mut out = String::new();
         let mut letters = String::new();
         for y in area.y..area.y + area.height {
@@ -1026,7 +1026,7 @@ mod tests {
 
     #[test]
     fn only_two_plain_g_keys_go_to_the_first_visible_track() {
-        use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let mut pending = false;
         let g = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
@@ -1156,7 +1156,7 @@ mod tests {
 
     #[test]
     fn footer_names_the_theme_only_while_selecting_it() {
-        use starkit::ratatui::buffer::Buffer;
+        use starcore::ratatui::buffer::Buffer;
 
         let segments = status_indicators(VisMode::Dots, false, RepeatMode::Off, false);
         for id in ["kanagawa", "cosmic"] {
@@ -1691,9 +1691,9 @@ struct Panels {
     help: bool,
     picker: bool,
     focus: Focus,
-    responsive_focus: starkit::panes::Focus<Focus>,
-    cell_geometry: Option<starkit::panes::Layout<Focus>>,
-    help_guide: starkit::help::Guide,
+    responsive_focus: starcore::panes::Focus<Focus>,
+    cell_geometry: Option<starcore::panes::Layout<Focus>>,
+    help_guide: starcore::help::Guide,
     /// The area the last frame was drawn into, so a page key can move by a
     /// screenful rather than by a hardcoded ten.
     last_area: Rect,
@@ -1853,7 +1853,7 @@ struct Editing {
     words: String,
     /// The filter box, while it is open: what has been typed so far, seeded
     /// with the filter in force so `/` again shows what is being matched.
-    typing: Option<starkit::input::TextInput>,
+    typing: Option<starcore::input::TextInput>,
     /// Bumped when the filter changes, so the rows rebuild.
     gen: u64,
     /// What a held left button is currently adjusting.
@@ -2272,9 +2272,9 @@ impl App {
     /// Raw filesystem-browser keys. Like the music library, this view owns
     /// navigation while it is open and leaves global playback keys alone only
     /// after it closes.
-    fn file_browser_key(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
+    fn file_browser_key(&mut self, key: starcore::crossterm::event::KeyEvent) -> bool {
         use crate::ui::panels::files::Purpose;
-        use starkit::crossterm::event::KeyCode;
+        use starcore::crossterm::event::KeyCode;
         let Some(browser) = &mut self.over.files else {
             return false;
         };
@@ -2361,8 +2361,8 @@ impl App {
     ///
     /// Raw keys, like the search line and the resume prompt, because while a
     /// name is being typed every letter is a letter.
-    fn name_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    fn name_type(&mut self, k: starcore::crossterm::event::KeyEvent) -> bool {
+        use starcore::crossterm::event::{KeyCode, KeyModifiers};
         let Some(name) = &mut self.edit.naming else {
             return false;
         };
@@ -2413,7 +2413,7 @@ impl App {
     /// Enter takes what was typed as the filter -- nothing at all clears it
     /// -- and Esc leaves the filter as it was. Raw keys, like the name box:
     /// while words are being typed every letter is a letter.
-    fn import_artist_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
+    fn import_artist_type(&mut self, key: starcore::crossterm::event::KeyEvent) -> bool {
         let is_typing =
             self.over.playlist_add.as_ref().is_some_and(|state| {
                 matches!(state.step, PlaylistAddStep::ImportArtistName { .. })
@@ -2432,7 +2432,7 @@ impl App {
             self.over.playlist_add = Some(state);
             return false;
         };
-        use starkit::input::Edit;
+        use starcore::input::Edit;
         match value.handle(key) {
             Edit::Cancel => {
                 state.step = PlaylistAddStep::ImportArtist(candidates);
@@ -2472,7 +2472,7 @@ impl App {
     }
 
     fn filter_type(&mut self, key: KeyEvent) -> bool {
-        use starkit::input::Edit;
+        use starcore::input::Edit;
         let Some(input) = &mut self.edit.typing else {
             return false;
         };
@@ -2521,8 +2521,8 @@ impl App {
         true
     }
 
-    fn auth_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    fn auth_type(&mut self, k: starcore::crossterm::event::KeyEvent) -> bool {
+        use starcore::crossterm::event::{KeyCode, KeyModifiers};
         if self.edit.auth.is_none() {
             return false;
         }
@@ -2659,7 +2659,7 @@ impl App {
         self.panels.playlist = true;
         self.panels.focus = Focus::Playlist;
         self.over.settings = None;
-        self.edit.typing = Some(starkit::input::TextInput::single().with_text(&self.edit.words));
+        self.edit.typing = Some(starcore::input::TextInput::single().with_text(&self.edit.words));
     }
 
     /// Keys typed into the search line, before any table sees them.
@@ -2668,8 +2668,8 @@ impl App {
     /// reason: while a box is being typed into, `j` has to be a letter rather
     /// than a cursor move, and that cannot be expressed in a table keyed only
     /// on the key event.
-    fn library_type(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    fn library_type(&mut self, k: starcore::crossterm::event::KeyEvent) -> bool {
+        use starcore::crossterm::event::{KeyCode, KeyModifiers};
         let Some(lib) = &mut self.over.library else {
             return false;
         };
@@ -3124,7 +3124,7 @@ impl App {
                 } else {
                     Focus::Player
                 },
-                responsive_focus: starkit::panes::Focus::new(Some(if cfg.ui.show_playlist {
+                responsive_focus: starcore::panes::Focus::new(Some(if cfg.ui.show_playlist {
                     Focus::Playlist
                 } else {
                     Focus::Player
@@ -3725,8 +3725,8 @@ impl App {
     /// Returns true when the key was consumed. Anything unrecognised declines
     /// and falls through, so a press of `space` starts playing rather than
     /// being swallowed by a prompt the user has already answered by acting.
-    fn answer_resume(&mut self, k: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::KeyCode;
+    fn answer_resume(&mut self, k: starcore::crossterm::event::KeyEvent) -> bool {
+        use starcore::crossterm::event::KeyCode;
         match k.code {
             KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                 self.accept_resume();
@@ -4209,7 +4209,7 @@ impl App {
 
     fn dispatch_key(&mut self, k: KeyEvent) {
         if self.panels.help {
-            if self.panels.help_guide.handle(k) == starkit::help::Outcome::Close {
+            if self.panels.help_guide.handle(k) == starcore::help::Outcome::Close {
                 self.panels.help = false;
             }
             return;
@@ -4800,7 +4800,7 @@ impl App {
                 if state.cursor == type_at {
                     state.step = PlaylistAddStep::ImportArtistName {
                         candidates: candidates.clone(),
-                        value: starkit::input::TextInput::single().with_text(&album.artist),
+                        value: starcore::input::TextInput::single().with_text(&album.artist),
                     };
                     state.cursor = 0;
                     state.scroll = 0;
@@ -4826,7 +4826,7 @@ impl App {
                         } else {
                             KeyCode::Esc
                         },
-                        starkit::crossterm::event::KeyModifiers::NONE,
+                        starcore::crossterm::event::KeyModifiers::NONE,
                     ));
                 }
             }
@@ -6490,7 +6490,7 @@ impl App {
     /// whatever that bar scrolls, and move that list's cursor into the view
     /// it now shows -- or the next frame's own clamp would pull `above` right
     /// back to wherever the cursor still is, and the thumb would snap back
-    /// under the pointer. See `starkit::chrome::scrollbar::Scrollbars` for the
+    /// under the pointer. See `starcore::chrome::scrollbar::Scrollbars` for the
     /// contract this keeps: `above` here is exactly what the matching
     /// `record`/`draw` must be called with next frame.
     fn scroll_bar_to(&mut self, bar: Bar, above: u32) {
@@ -6513,7 +6513,7 @@ impl App {
                     return;
                 };
                 let cursor =
-                    starkit::list::cursor_into_view(lib.cursor(c), above, height, lib.len(c));
+                    starcore::list::cursor_into_view(lib.cursor(c), above, height, lib.len(c));
                 lib.set_scroll(c, above);
                 // `select` is what a click already does: it also focuses the
                 // column and cascades the columns to its right, which is
@@ -6529,7 +6529,7 @@ impl App {
                 let Some(files) = &mut self.over.files else {
                     return;
                 };
-                files.cursor = starkit::list::cursor_into_view(
+                files.cursor = starcore::list::cursor_into_view(
                     files.cursor,
                     above,
                     height,
@@ -6541,11 +6541,11 @@ impl App {
                 let Some(c) = &mut self.over.chooser else {
                     return;
                 };
-                c.cursor = starkit::list::cursor_into_view(c.cursor, above, height, c.rows.len());
+                c.cursor = starcore::list::cursor_into_view(c.cursor, above, height, c.rows.len());
                 c.scroll = above;
             }
             Bar::Picker => {
-                self.over.picker_cursor = starkit::list::cursor_into_view(
+                self.over.picker_cursor = starcore::list::cursor_into_view(
                     self.over.picker_cursor,
                     above,
                     height,
@@ -6575,7 +6575,7 @@ impl App {
                     _ => None,
                 },
             );
-            if outcome == starkit::help::Outcome::Close {
+            if outcome == starcore::help::Outcome::Close {
                 self.panels.help = false;
             }
             return;
@@ -6990,7 +6990,7 @@ impl App {
     /// and gives up after a full lap so a window with everything but the
     /// player closed does not spin.
     fn move_focus(&mut self, step: i32) {
-        let mut focus = starkit::panes::Focus::new(Some(self.panels.focus));
+        let mut focus = starcore::panes::Focus::new(Some(self.panels.focus));
         let next = if let Some(geometry) = &self.panels.cell_geometry {
             focus.step(geometry, step > 0)
         } else {
@@ -7114,8 +7114,8 @@ impl App {
         });
     }
 
-    fn eq_value_type(&mut self, key: starkit::crossterm::event::KeyEvent) -> bool {
-        use starkit::crossterm::event::{KeyCode, KeyModifiers};
+    fn eq_value_type(&mut self, key: starcore::crossterm::event::KeyEvent) -> bool {
+        use starcore::crossterm::event::{KeyCode, KeyModifiers};
         let Some(input) = &mut self.edit.eq_value else {
             return false;
         };
@@ -7514,7 +7514,7 @@ impl App {
                     if !hit(list, m.column, m.row) {
                         return;
                     }
-                    let scroll = starkit::list::clamp_scroll(
+                    let scroll = starcore::list::clamp_scroll(
                         browser.cursor,
                         browser.scroll,
                         usize::from(list.height),
@@ -7758,7 +7758,7 @@ impl App {
         })
     }
 
-    fn draw(&mut self, full: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw(&mut self, full: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         // Forget last frame's bars; a held drag survives this by design. Read
         // again, narrower, before `draw_overlays` when a modal is up -- see
         // there for why.
@@ -7817,7 +7817,7 @@ impl App {
                 height: area.height.saturating_sub(r.status.height),
                 ..area
             };
-            files.scroll = starkit::list::clamp_scroll(
+            files.scroll = starcore::list::clamp_scroll(
                 files.cursor,
                 files.scroll,
                 usize::from(crate::ui::panels::files::list_rect(browse, files.purpose).height),
@@ -7890,7 +7890,7 @@ impl App {
         self.draw_overlays(area, buf);
     }
 
-    fn draw_library(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_library(&mut self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         use crate::ui::panels::library::{self as lib, Column, LibraryView};
         let Some(l) = &self.over.library else { return };
 
@@ -8158,7 +8158,7 @@ impl App {
     }
 
     /// Everything that draws over the top, whichever view is underneath.
-    fn draw_overlays(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_overlays(&mut self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         if self.panels.help {
             self.bars.begin_frame();
             self.draw_help(area, buf);
@@ -8304,7 +8304,7 @@ impl App {
                 .bg(rgb(t.row_cursor_bg));
             if let Some((x, y)) = input.render(field, buf, style) {
                 buf[(x, y)]
-                    .set_style(style.add_modifier(starkit::ratatui::style::Modifier::REVERSED));
+                    .set_style(style.add_modifier(starcore::ratatui::style::Modifier::REVERSED));
             }
             return;
         }
@@ -8433,7 +8433,7 @@ impl App {
         }
     }
 
-    fn draw_player(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_player(&mut self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         use std::sync::atomic::Ordering::Relaxed;
         // Taken first: it needs `&mut self`, and everything below borrows the
         // player immutably for the rest of the function.
@@ -8559,7 +8559,7 @@ impl App {
                             buf[(x, y)].set_symbol(" ").set_style(panel);
                         }
                     }
-                    starkit::ratatui_image::Image::new(p).render(rect, buf);
+                    starcore::ratatui_image::Image::new(p).render(rect, buf);
                 }
             }
         }
@@ -8636,7 +8636,7 @@ impl App {
         playing
     }
 
-    fn draw_playlist(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_playlist(&mut self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         let playing = self.prepare_playlist_rows();
         let visible = playlist::list_rect(area).height as usize;
         let row = self.queue.rows.row_of_track(self.queue.cursor).unwrap_or(0);
@@ -8723,7 +8723,7 @@ impl App {
                 .then(|| self.graphics.picture(mark, rect, fg, bg, bg))
                 .flatten()
             {
-                starkit::ratatui_image::Image::new(p).render(rect, buf);
+                starcore::ratatui_image::Image::new(p).render(rect, buf);
                 crate::ui::graphics::mend_unit_placeholder(buf, x, y);
             }
         }
@@ -8750,7 +8750,7 @@ impl App {
         self.buttons != crate::ui::graphics::Buttons::Text && self.graphics.pictures_available()
     }
 
-    fn draw_album(&mut self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_album(&mut self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         let item = self.player.current_item();
         let album = self
             .current_uri()
@@ -10455,7 +10455,7 @@ impl App {
         self.art_uri = uri;
     }
 
-    fn draw_status(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_status(&self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         // The right-hand indicators are always shown, lit or dim. A transient
         // message must not be the only way to learn what mode you are in --
         // that is state, not news, and the visualizer had exactly that problem:
@@ -10487,7 +10487,7 @@ impl App {
         }
     }
 
-    fn draw_help(&self, area: Rect, buf: &mut starkit::ratatui::buffer::Buffer) {
+    fn draw_help(&self, area: Rect, buf: &mut starcore::ratatui::buffer::Buffer) {
         draw_help_overlay(&self.look.theme, &self.panels.help_guide, area, buf)
     }
 }

@@ -1,11 +1,11 @@
 //! The playlist editor window.
 
-use starkit::chrome::frame::{Badge, Tone};
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Modifier, Style};
-use starkit::ratatui::widgets::Widget;
+use starcore::chrome::frame::{Badge, Tone};
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Modifier, Style};
+use starcore::ratatui::widgets::Widget;
 
 use std::collections::HashSet;
 
@@ -390,7 +390,7 @@ impl Rows {
 
     /// Where the cursor should land after a scrollbar drag sets `scroll` to a
     /// new row: the inverse of [`Self::row_of_track`], through
-    /// [`starkit::list::cursor_into_view`].
+    /// [`starcore::list::cursor_into_view`].
     ///
     /// `scroll` is a row, not a track, so the row `cursor_into_view` returns
     /// can land on a divider -- there is nothing there to select, so this
@@ -400,7 +400,7 @@ impl Rows {
     /// nothing to put it on.
     pub fn cursor_after_scroll(&self, cursor: usize, scroll: usize, height: usize) -> usize {
         let row = self.row_of_track(cursor).unwrap_or(0);
-        let want = starkit::list::cursor_into_view(row, scroll, height, self.len());
+        let want = starcore::list::cursor_into_view(row, scroll, height, self.len());
         if let Some(track) = self.track_at_or_after(want) {
             return track;
         }
@@ -564,18 +564,18 @@ pub struct PlaylistView<'a> {
     pub header_items: &'a [super::header::Item],
     /// Where this frame's scrollbar is recorded, so a later press or drag can
     /// find it. See `App::bars`.
-    pub bars: &'a mut starkit::chrome::scrollbar::Scrollbars<super::Bar>,
+    pub bars: &'a mut starcore::chrome::scrollbar::Scrollbars<super::Bar>,
 }
 
 impl<'a> PlaylistView<'a> {
     /// Keep the cursor on screen, returning the scroll offset to use.
     ///
     /// An associated function rather than a bare call to
-    /// `starkit::list::clamp_scroll`, because the queue reaches it through
+    /// `starcore::list::clamp_scroll`, because the queue reaches it through
     /// `PlaylistView::` from half a dozen places and that spelling is what
     /// says which list is being scrolled.
     pub fn clamp_scroll(cursor: usize, scroll: usize, height: usize) -> usize {
-        starkit::list::clamp_scroll(cursor, scroll, height)
+        starcore::list::clamp_scroll(cursor, scroll, height)
     }
 }
 
@@ -795,7 +795,7 @@ impl<'a> Widget for PlaylistView<'a> {
         }
 
         // One scrollbar, on the border -- the same thumb every panel with a
-        // list draws now, in starkit. Recorded as well as drawn, so a press
+        // list draws now, in starcore. Recorded as well as drawn, so a press
         // or drag on it can find its way back here.
         self.bars.draw(
             super::Bar::Playlist,
@@ -814,7 +814,7 @@ mod render_tests {
     use crate::playlist::queue::QueueItem;
     use crate::playlist::uri::TrackUri;
     use crate::theme::builtin;
-    use starkit::ratatui::style::Color;
+    use starcore::ratatui::style::Color;
 
     fn draw(total: usize, scroll: usize, height: u16) -> Vec<String> {
         let theme = builtin::load("cosmic").unwrap();
@@ -842,7 +842,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..height)
@@ -916,7 +916,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         buf[(x, list_of(height).y + row)].style().fg.unwrap()
@@ -971,7 +971,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs: crate::ui::panels::player::Glyphs::default(),
             header_items: crate::ui::panels::header::WITH_FILTER,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
         (0..height)
@@ -1291,7 +1291,7 @@ mod render_tests {
     #[test]
     fn dragging_the_playlist_scrollbar_scrolls_it_and_keeps_the_cursor_in_view() {
         use crate::ui::panels::Bar;
-        use starkit::chrome::scrollbar::Scrollbars;
+        use starcore::chrome::scrollbar::Scrollbars;
 
         let total = 200;
         let area = Rect::new(0, 0, 100, 40);
@@ -1446,7 +1446,7 @@ mod render_tests {
             tagged: &Default::default(),
             glyphs,
             header_items: crate::ui::panels::header::WITH_FILTER,
-            bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+            bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
         }
         .render(area, &mut buf);
 
@@ -1659,10 +1659,10 @@ mod tests {
         use crate::playlist::queue::QueueItem;
         use crate::playlist::uri::TrackUri;
         use crate::theme::Theme;
-        use starkit::ratatui::buffer::Buffer;
-        use starkit::ratatui::layout::Rect;
-        use starkit::ratatui::style::Color;
-        use starkit::ratatui::widgets::Widget;
+        use starcore::ratatui::buffer::Buffer;
+        use starcore::ratatui::layout::Rect;
+        use starcore::ratatui::style::Color;
+        use starcore::ratatui::widgets::Widget;
         use std::collections::HashSet;
 
         fn draw_tagged(
@@ -1695,7 +1695,7 @@ mod tests {
                 tagged,
                 glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
-                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+                bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             (buf, list_rect(area), theme)
@@ -1755,7 +1755,7 @@ mod tests {
                 tagged: &tagged,
                 glyphs: crate::ui::panels::player::Glyphs::default(),
                 header_items: crate::ui::panels::header::WITH_FILTER,
-                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+                bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             let list = list_rect(area);
@@ -1832,7 +1832,7 @@ mod tests {
                 tagged: &tagged,
                 glyphs,
                 header_items: crate::ui::panels::header::WITH_FILTER,
-                bars: &mut starkit::chrome::scrollbar::Scrollbars::new(),
+                bars: &mut starcore::chrome::scrollbar::Scrollbars::new(),
             }
             .render(area, &mut buf);
             let list = list_rect(area);

@@ -243,7 +243,7 @@ impl Rack<'_> {
     }
 
     /// A real editable filter, independent of the terminal settings grid.
-    /// KIT owns text editing and horizontal scrolling; AMP owns filter meaning.
+    /// CORE owns text editing and horizontal scrolling; AMP owns filter meaning.
     pub(super) fn filter_popup(&mut self, s: &mut Surface, c: &Colors) -> bool {
         if self.app.edit.typing.is_none() {
             return false;
@@ -299,7 +299,7 @@ impl Rack<'_> {
             action: "filter:field".into(),
         });
         let area = Rect::new(0, 0, (field.width - 20) / ADVANCE as u16, 1);
-        let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);
+        let mut buffer = starcore::ratatui::buffer::Buffer::empty(area);
         let input = self.app.edit.typing.as_mut().unwrap();
         let caret = input.render(area, &mut buffer, Style::default());
         if input.is_empty() {
@@ -438,7 +438,7 @@ impl Rack<'_> {
             radius: 2,
         });
         let area = Rect::new(0, 0, (field.width - 20) / ADVANCE as u16, 1);
-        let mut buffer = starkit::ratatui::buffer::Buffer::empty(area);
+        let mut buffer = starcore::ratatui::buffer::Buffer::empty(area);
         let PlaylistAddStep::ImportArtistName { value: input, .. } =
             &mut self.app.over.playlist_add.as_mut().unwrap().step
         else {

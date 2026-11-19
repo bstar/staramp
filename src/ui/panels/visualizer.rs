@@ -6,10 +6,10 @@
 //! Colouring by *row* rather than by level is what makes it look like Winamp
 //! rather than like a bar chart with a gradient.
 
-use starkit::chrome::rgb;
-use starkit::ratatui::buffer::Buffer;
-use starkit::ratatui::layout::Rect;
-use starkit::ratatui::style::{Color, Style};
+use starcore::chrome::rgb;
+use starcore::ratatui::buffer::Buffer;
+use starcore::ratatui::layout::Rect;
+use starcore::ratatui::style::{Color, Style};
 
 use crate::theme::Theme;
 use crate::vis::mode::VisMode;
@@ -618,7 +618,7 @@ mod tests {
 mod render_tests {
     use super::*;
     use crate::theme::builtin;
-    use starkit::ratatui::layout::Rect;
+    use starcore::ratatui::layout::Rect;
 
     /// Render a mode into a buffer and return it as plain text, so the shapes
     /// can be asserted on and eyeballed without a terminal.

@@ -445,7 +445,7 @@ fn cover_art_url(index: Option<&Connection>, uri: &str) -> Option<String> {
 }
 
 fn discord_http_agent() -> ureq::Agent {
-    starkit::net::agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
+    starcore::net::agent(concat!("staramp/", env!("CARGO_PKG_VERSION")))
 }
 
 fn musicbrainz_cover_url(agent: &ureq::Agent, artist: &str, album: &str) -> Option<String> {

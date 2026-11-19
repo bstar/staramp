@@ -6,7 +6,7 @@
 //! different things. Here the help overlay and the dispatcher read the same
 //! table, so they cannot drift.
 
-use starkit::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use starcore::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Action {
@@ -98,7 +98,7 @@ pub enum Action {
 ///
 /// Same single-table rule as the key bindings: the help overlay reads this, so
 /// a gesture cannot be implemented and left undocumented in a second place.
-pub use starkit::keymap::MouseHelp;
+pub use starcore::keymap::MouseHelp;
 
 pub const MOUSE: &[MouseHelp] = &[
     MouseHelp {
@@ -227,9 +227,9 @@ pub const MOUSE: &[MouseHelp] = &[
 ///
 /// The table below is the only place a key is written down. Dispatch is the
 /// hand-written `resolve`/`module`/`library` match further on rather than
-/// `starkit::keymap::Keymap`, because the same key means different things
+/// `starcore::keymap::Keymap`, because the same key means different things
 /// depending on which panel has focus and a flat map cannot say that.
-pub type Binding = starkit::keymap::Binding<Action>;
+pub type Binding = starcore::keymap::Binding<Action>;
 
 /// Displayed in the help overlay, in this order.
 pub const BINDINGS: &[Binding] = &[

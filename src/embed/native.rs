@@ -6,7 +6,7 @@ use super::{
 use crate::audio::player::PlayState;
 use crate::ui::panels::player::SeekStyle;
 use crate::vis::mode::VisMode;
-use starkit::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
+use starcore::native_surface::{HitRegion, Metrics, PixelRect as R, Primitive, Surface};
 
 pub(super) const CACHE_BASE: &str = "#3e424e";
 pub(super) const CACHE_DOT: &str = "#6b717e";
@@ -100,13 +100,13 @@ pub(crate) fn hex(c: [u8; 3]) -> String {
 pub(crate) fn panel_header(
     surface: &mut Surface,
     width: u16,
-    colors: &starkit::native_surface::classic::Colors,
+    colors: &starcore::native_surface::classic::Colors,
 ) {
-    starkit::native_surface::style::panel_header(surface, width, colors);
+    starcore::native_surface::style::panel_header(surface, width, colors);
 }
 /// A restrained raised edge, independent of the heading's text metrics.
 pub(crate) fn heading_depth(surface: &mut Surface, rect: R, background: &str, ink: &str) {
-    starkit::native_surface::style::heading_depth(surface, rect, background, ink);
+    starcore::native_surface::style::heading_depth(surface, rect, background, ink);
 }
 
 /// A single accent stroke follows the unskinned frame's corner geometry.
@@ -122,11 +122,11 @@ pub(crate) fn focus_outline(surface: &mut Surface, rect: R, accent: &str, radius
 pub(crate) fn close_button(
     surface: &mut Surface,
     rect: R,
-    colors: &starkit::native_surface::classic::Colors,
+    colors: &starcore::native_surface::classic::Colors,
     action: &str,
     hovered: bool,
 ) {
-    starkit::native_surface::style::close_button(surface, rect, colors, action, hovered);
+    starcore::native_surface::style::close_button(surface, rect, colors, action, hovered);
 }
 
 fn clock(seconds: f64) -> String {
@@ -213,14 +213,14 @@ fn player_frame(
     art: Option<&dyn PlayerArtwork>,
     s: &mut Surface,
     r: R,
-    c: &starkit::native_surface::classic::Colors,
+    c: &starcore::native_surface::classic::Colors,
     radius: u16,
     inset: bool,
 ) {
     if let Some(art) = art {
         art.frame(s, r, inset);
     } else {
-        starkit::native_surface::classic::frame(s, r, c, radius, inset);
+        starcore::native_surface::classic::frame(s, r, c, radius, inset);
     }
 }
 #[allow(clippy::too_many_arguments)]
@@ -228,7 +228,7 @@ fn player_button(
     art: Option<&dyn PlayerArtwork>,
     s: &mut Surface,
     r: R,
-    c: &starkit::native_surface::classic::Colors,
+    c: &starcore::native_surface::classic::Colors,
     text: &str,
     action: &str,
     size: u16,
@@ -253,7 +253,7 @@ fn player_button(
             .saturating_div(2)
             .max(3)
             .min(face.width / 4);
-        starkit::native_surface::classic::label(
+        starcore::native_surface::classic::label(
             s,
             R::new(
                 face.x + pad,
@@ -271,7 +271,7 @@ fn player_button(
             action: action.into(),
         });
     } else {
-        starkit::native_surface::classic::button(s, r, c, text, action, size, active);
+        starcore::native_surface::classic::button(s, r, c, text, action, size, active);
     }
 }
 
@@ -304,7 +304,7 @@ fn player_readout(
     size: u16,
 ) {
     if !artwork.is_some_and(|art| art.readout(s, rect, text, color, size)) {
-        starkit::native_surface::classic::label(s, rect, text, color, size, false);
+        starcore::native_surface::classic::label(s, rect, text, color, size, false);
     }
 }
 
@@ -318,7 +318,7 @@ pub(super) fn player_surface(
     radius: u16,
     artwork: Option<&dyn PlayerArtwork>,
 ) -> Surface {
-    use starkit::native_surface::classic::{self, Colors};
+    use starcore::native_surface::classic::{self, Colors};
     // Fixed chassis controls keep their type within the original artwork boxes.
     // Terminal zoom changes the host allocation, not the 100px toggle faces.
     let mut m = Metrics::from_cell(graphics.cell_width, graphics.cell_height);
@@ -836,8 +836,8 @@ pub fn hit_test(surface: &Surface, x: u16, y: u16, duration: f64) -> Option<HitT
     })
 }
 
-// The compact player and external video hosts use KIT's shared controls.
-use starkit::media_controls::paint_transport as draw_transport;
+// The compact player and external video hosts use CORE's shared controls.
+use starcore::media_controls::paint_transport as draw_transport;
 
 fn compact_surface(
     width: u16,

@@ -611,7 +611,7 @@ fn agent() -> ureq::Agent {
 /// rule itself is asserted separately, so making it switchable here does not
 /// make it untested.
 fn build_agent(https_only: bool) -> ureq::Agent {
-    starkit::net::builder(USER_AGENT)
+    starcore::net::builder(USER_AGENT)
         // Every endpoint this talks to is https, and a redirect is the one
         // place that could quietly stop being true: without this, a
         // compromised or intercepted service can answer 302 to an http:// URL

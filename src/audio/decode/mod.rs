@@ -19,7 +19,7 @@ use crate::vfs::Media;
 /// What a decoder is producing, discovered when the stream is opened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamSpec {
-    pub sample_format: starkit::pcm::SampleFormat,
+    pub sample_format: starcore::pcm::SampleFormat,
     pub channel_mask: u64,
     pub sample_rate: u32,
     pub channels: u16,
@@ -29,8 +29,8 @@ pub struct StreamSpec {
 }
 
 impl StreamSpec {
-    pub fn pcm(self) -> starkit::pcm::Spec {
-        starkit::pcm::Spec {
+    pub fn pcm(self) -> starcore::pcm::Spec {
+        starcore::pcm::Spec {
             sample_rate: self.sample_rate,
             channels: self.channels,
             channel_mask: self.channel_mask,

@@ -1,7 +1,7 @@
 //! Offline visual proof. Does not change the installed AMP interface.
 use anyhow::Result;
-use starkit::native_surface::HitRegion;
-use starkit::{
+use starcore::native_surface::HitRegion;
+use starcore::{
     image::{self, Rgba, RgbaImage},
     native_surface::{
         skin::{
@@ -110,18 +110,18 @@ impl Proof {
             self.active_theme = index;
             return Ok(());
         }
-        let builtin = starkit::theme::BUILTINS
+        let builtin = starcore::theme::BUILTINS
             .get(index - 1)
             .ok_or_else(|| anyhow::anyhow!("Invalid theme index"))?;
         let theme =
-            starkit::theme::Theme::resolve(&starkit::theme::ThemeFile::parse(builtin.toml)?);
+            starcore::theme::Theme::resolve(&starcore::theme::ThemeFile::parse(builtin.toml)?);
         let mut colors = BTreeMap::new();
         for (role, original) in &self.manifest.roles {
             let c = match role.as_str() {
                 "panel" | "quiet_panel" => theme.panel_bg,
                 "background" => theme.bg,
                 "shadow" | "edge_shadow" | "well_shadow" => {
-                    theme.bg.mix(starkit::theme::BLACK, 0.3)
+                    theme.bg.mix(starcore::theme::BLACK, 0.3)
                 }
                 "highlight" | "control_highlight" => theme.panel_bg.mix(theme.fg, 0.35),
                 "title" => theme.header_bg,
@@ -153,12 +153,12 @@ impl Proof {
                     };
                 if theme.accent.contrast(candidate) >= 4.5 {
                     candidate
-                } else if theme.accent.contrast(starkit::theme::BLACK)
-                    >= theme.accent.contrast(starkit::theme::WHITE)
+                } else if theme.accent.contrast(starcore::theme::BLACK)
+                    >= theme.accent.contrast(starcore::theme::WHITE)
                 {
-                    starkit::theme::BLACK
+                    starcore::theme::BLACK
                 } else {
-                    starkit::theme::WHITE
+                    starcore::theme::WHITE
                 }
             }),
             ("#151920", theme.border),
@@ -695,7 +695,7 @@ fn main() -> Result<()> {
         },
     )?
     .save(out.join("player-fold-rack.png"))?;
-    for (i, theme) in starkit::theme::BUILTINS.iter().enumerate() {
+    for (i, theme) in starcore::theme::BUILTINS.iter().enumerate() {
         player(
             &mut proof,
             1352,
@@ -758,7 +758,7 @@ fn adjust(state: &mut State, index: usize, x: u16, width: u16) {
     }
 }
 fn live(proof: &mut Proof) -> Result<()> {
-    use starkit::crossterm::{
+    use starcore::crossterm::{
         cursor::{Hide, MoveTo, Show},
         event::{
             self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
@@ -767,7 +767,7 @@ fn live(proof: &mut Proof) -> Result<()> {
         execute,
         terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
     };
-    use starkit::terminal_graphics::{protocol::Viewport, renderer::KittyPresenter};
+    use starcore::terminal_graphics::{protocol::Viewport, renderer::KittyPresenter};
     use std::{
         io::{self, IsTerminal, Write},
         sync::Arc,
@@ -791,7 +791,7 @@ fn live(proof: &mut Proof) -> Result<()> {
         }
     }
     // Probe before raw input ownership; SSH PTYs often omit pixel dimensions.
-    let graphics = starkit::graphics::Graphics::probe(starkit::graphics::Mode::Kitty);
+    let graphics = starcore::graphics::Graphics::probe(starcore::graphics::Mode::Kitty);
     let cell = graphics.cell_size().unwrap_or((8, 16));
     terminal::enable_raw_mode()?;
     let _restore = Restore;
@@ -847,7 +847,7 @@ fn live(proof: &mut Proof) -> Result<()> {
                             if state.theme == 0 {
                                 "reference"
                             } else {
-                                starkit::theme::BUILTINS[state.theme - 1].id
+                                starcore::theme::BUILTINS[state.theme - 1].id
                             }
                         )
                     });
@@ -902,9 +902,9 @@ fn live(proof: &mut Proof) -> Result<()> {
                     KeyCode::Char('t')
                         if key
                             .modifiers
-                            .contains(starkit::crossterm::event::KeyModifiers::ALT) =>
+                            .contains(starcore::crossterm::event::KeyModifiers::ALT) =>
                     {
-                        state.theme = (state.theme + 1) % (starkit::theme::BUILTINS.len() + 1);
+                        state.theme = (state.theme + 1) % (starcore::theme::BUILTINS.len() + 1);
                         theme_notice = Some(std::time::Instant::now());
                         dirty = true;
                     }
@@ -1026,15 +1026,15 @@ mod tests {
     #[test]
     fn all_builtin_themes_preserve_readable_active_controls() {
         let mut proof = Proof::new().unwrap();
-        for i in 1..=starkit::theme::BUILTINS.len() {
+        for i in 1..=starcore::theme::BUILTINS.len() {
             proof.prepare_theme(i).unwrap();
-            let ink = starkit::theme::color::Rgb::parse_hex(&proof.palette["#10161a"]).unwrap();
+            let ink = starcore::theme::color::Rgb::parse_hex(&proof.palette["#10161a"]).unwrap();
             let background =
-                starkit::theme::color::Rgb::parse_hex(&proof.palette["#6b7282"]).unwrap();
+                starcore::theme::color::Rgb::parse_hex(&proof.palette["#6b7282"]).unwrap();
             assert!(
                 ink.contrast(background) >= 4.5,
                 "{} has unreadable active controls",
-                starkit::theme::BUILTINS[i - 1].id
+                starcore::theme::BUILTINS[i - 1].id
             );
         }
     }

@@ -19,10 +19,10 @@ developed on feature branches and folded in for the 0.1.0 release on
 pre-flatten commits exist only on local `backup/*` branches on the machine
 that did it; nothing on GitHub refers to them. Start new work from `main`.
 
-## STAR/KIT
+## STAR/CORE
 
 Everything that is not about playing music lives in a separate crate,
-[starkit](https://github.com/bstar/starkit), checked out beside this one: the
+[starcore](https://github.com/bstar/starcore), checked out beside this one: the
 theme engine and the sixteen theme files, the directory rule, file logging,
 terminal graphics and the picture cache, the panel frame and the settings
 list, the key table and the help overlay, atomic and mode-0600 file writes,
@@ -30,40 +30,40 @@ marquee and truncation, the HTTP agent defaults, and the layout engine and
 text field written there for STAR/CORD. It also re-exports `ratatui`,
 `crossterm`, `ratatui_image` and `image`, which is why none of those are
 dependencies here any more and why every import spells them
-`starkit::ratatui::` and so on. There is one copy of each in the build, and a
+`starcore::ratatui::` and so on. There is one copy of each in the build, and a
 widget written in one repository fits a signature declared in the other.
 
-KIT is becoming a public framework with AMP, FOLD, CORD and WIRE as reference
+CORE is becoming a public framework with AMP, FOLD, CORD and WIRE as reference
 consumers. Read all four before changing shared signatures. AMP's cell layout
-uses `starkit::panes`; automatic viewport hiding never changes panel preferences,
+uses `starcore::panes`; automatic viewport hiding never changes panel preferences,
 services or playback. Shared focus skips hidden cell panes and restores the last
 requested pane when space returns. Native rack presentation clears cell geometry
 before handling its own surface layout and input.
 
-Releases pin a KIT git tag; development main may pin an immutable candidate
+Releases pin a CORE git tag; development main may pin an immutable candidate
 revision. Local changes remain invisible until the pin moves. To try one
 before publishing it:
 
 ```toml
 # .cargo/config.toml -- untracked, and in .gitignore
-[patch."https://github.com/bstar/starkit"]
-starkit = { path = "../starkit" }
+[patch."https://github.com/bstar/starcore"]
+starcore = { path = "../starcore" }
 ```
 
 Delete it once the published revision exists and this repository has moved to
-it. Moving to a new KIT pin is its own commit, "Take starkit 0.Y", carrying nothing but the
+it. Moving to a new CORE pin is its own commit, "Take starcore 0.Y", carrying nothing but the
 `Cargo.toml` bump and the `Cargo.lock` change, so that what came with the new
 version is one diff to read rather than a line buried in a feature.
 
 `Graphics::probe` must run **before** `term::init` enables raw mode: it writes
 capability queries to the terminal and reads the replies off stdin, and after
-raw mode it reads the user's keystrokes instead. starkit debug-asserts the
+raw mode it reads the user's keystrokes instead. starcore debug-asserts the
 ordering across the crate boundary; a release build degrades to
 `Graphics::disabled()` rather than corrupting the session.
 
 ## Two-machine SSH testing
 
-After publishing player or shared KIT changes, update and build the Linux music
+After publishing player or shared CORE changes, update and build the Linux music
 server as well as the Mac frontend. This is part of the requested testing workflow;
 the user does not need to run remote builds manually. Use:
 
@@ -100,7 +100,7 @@ system audio dependencies are available in the ambient shell.
 nix develop -c cargo build --release
 ```
 
-Standard builds include KIT's optional GPU renderer. Terminal frontends prefer
+Standard builds include CORE's optional GPU renderer. Terminal frontends prefer
 hardware and recover through CPU on initialization/frame errors, including
 with `STAR_GRAPHICS_RENDERER=gpu`; explicit `cpu` skips GPU setup. The frontend's
 small GPU/CPU badge reports actual frame rendering. CPU-only builds use
@@ -111,7 +111,7 @@ Graphical launches initialize file logging before the early frontend dispatch,
 so backend selection/fallback and connection errors reach `cache/staramp.log`.
 Interactive launches (including local import review) prefer graphics, with
 capability-based cell fallback and an explicit `--cells` override. Stock
-crossterm does not parse OSC 72: use the ordinary KIT preference entry point,
+crossterm does not parse OSC 72: use the ordinary CORE preference entry point,
 which leaves extension negotiation disabled. Its `t=q` reply previously quit
 AMP after its first Kitty frame. The PTY responder models that reply; real
 private Kitty import startup must remain open until an explicit quit.
@@ -121,7 +121,7 @@ Run other Cargo commands through the flake in the same way, for example
 
 Crossterm 0.29.0 is patched to upstream revision `d4e9929` in the root
 `Cargo.toml`: its released mouse parser underflows on zero coordinates. Keep
-the registry patch so KIT and Ratatui share one copy. Remove it when a compatible
+the registry patch so CORE and Ratatui share one copy. Remove it when a compatible
 crates.io release contains the fix. `scripts/test-graphical-mouse.py` exercises
 zero-coordinate reports and the main close X through an isolated real frontend
 PTY; it must not use the user's configuration or playback session.
@@ -307,7 +307,7 @@ publishing, while version tags create a draft release.
 ## Native graphical embed experiment
 
 `experiment/native-embed` owns the Rust native player in `src/embed/native.rs`.
-It consumes the player's render state and returns bounded STAR/KIT primitives
+It consumes the player's render state and returns bounded STAR/CORE primitives
 and hit regions through negotiated `native_surface_v1`. Keep transport, seeking,
 volume and visualizer layout here; FOLD is only an embedding host. The ordinary
 cell embed protocol remains the compatibility path. No browser renderer.
@@ -344,7 +344,7 @@ output is the default and does not capture or relay samples.
 ## Active Classic skin work
 
 The skin implementation is on `main`, with generic foundation work in
-STAR/KIT.
+STAR/CORE.
 The full recovered seven-step plan is in `docs/graphical/README.md` under
 "Recovered skin implementation plan". On 2026-10-09 the user explicitly selected
 **01 — Classic stacked rack · parametric EQ** and required precise bitmap artwork
@@ -360,23 +360,23 @@ actual verification. The isolated example is not the production UI.
 
 ## Shared media controls
 
-KIT owns render-only transport buttons, volume hit geometry and movie track
-pickers. The legacy `embed --stdio --transport` entry point delegates to KIT;
+CORE owns render-only transport buttons, volume hit geometry and movie track
+pickers. The legacy `embed --stdio --transport` entry point delegates to CORE;
 keep its JSON framing compatible. AMP retains music artwork, queue/scrobble
 state and playback ownership. Fixed native rack/skin text opts into physical
 pixel sizes so terminal zoom cannot inflate labels inside bitmap controls.
-Graphics explicitly enables KIT media; do not rely on terminal-graphics to
+Graphics explicitly enables CORE media; do not rely on terminal-graphics to
 pull codecs or devices into every consumer.
 
-## KIT 0.13 candidate compatibility
+## CORE 0.13 candidate compatibility
 
-Development main pins an immutable KIT 0.13 candidate revision with a git-sourced
+Development main pins an immutable CORE 0.13 candidate revision with a git-sourced
 lockfile, so ordinary builds need no sibling checkout. This is an unreleased
 testing candidate; use immutable version tags when making a framework release.
 Keep dependency updates in their own commit, with the manifest and lock together.
 
-`scripts/check-kit.sh` checks every target and feature against the sibling KIT
-checkout in a disposable tracked copy. `STAR_KIT_CHECKOUT` selects another
+`scripts/check-core.sh` checks every target and feature against the sibling CORE
+checkout in a disposable tracked copy. `STAR_CORE_CHECKOUT` selects another
 candidate. No candidate path or path-patched lock is committed. Live canvases
 and embedded input are opt-in; ordinary application keys, media, SSH and
 presentation retain their current contracts.

@@ -14,8 +14,8 @@ keys, agent and configuration. `--ssh-config FILE` chooses another SSH config;
 folder or playlist belongs to the server: `staramp --ssh music-server ui /music`.
 
 The same commands without `--ssh` work from an existing SSH shell when the
-local Kitty STAR/KIT integration is installed. Its local `star-kit-terminal`
-frontend must also use the matching KIT build. Without that bridge, the player
+local Kitty STAR/CORE integration is installed. Its local `star-core-terminal`
+frontend must also use the matching CORE build. Without that bridge, the player
 explains how to launch from the local machine. F9 switches terminal and Classic
 presentation while retaining the same player.
 
@@ -64,8 +64,8 @@ more bandwidth and temporary disk space. Transport and playback memory remain
 bounded; the temporary file can hold the whole current song. Older PCM frontends
 retain their bounded playback credit window.
 
-STAR/AMP pins the published STAR/KIT v0.5.0 release. Cargo fetches the shared
-PCM and frontend implementation automatically; no adjacent KIT checkout is
+STAR/AMP pins the published STAR/CORE v0.5.0 release. Cargo fetches the shared
+PCM and frontend implementation automatically; no adjacent CORE checkout is
 needed. Remove any development `.cargo/config.toml` path override before
 building this release.
 

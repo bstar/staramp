@@ -1,7 +1,7 @@
 //! One remote presentation lease on the application's existing playback owner.
 use super::*;
 use crate::audio::relay::Packet;
-use starkit::terminal_graphics::{
+use starcore::terminal_graphics::{
     media::{ToClient, ToHost},
     protocol::ServerMessage,
 };
@@ -15,7 +15,7 @@ pub(super) struct RemoteAudio {
     epoch: u64,
     awaiting_worker: Option<u64>,
     failed: bool,
-    source: Option<(u64, starkit::pcm::Spec)>,
+    source: Option<(u64, starcore::pcm::Spec)>,
     pending: Option<Packet>,
     credits: usize,
     effects: Vec<ServerMessage>,
@@ -78,7 +78,7 @@ impl RemoteAudio {
     pub(super) fn capabilities(
         &mut self,
         app: &App,
-        cap: starkit::terminal_graphics::capabilities::Capabilities,
+        cap: starcore::terminal_graphics::capabilities::Capabilities,
     ) {
         if cap.local_media {
             return;
@@ -89,7 +89,7 @@ impl RemoteAudio {
             self.active = app.audio_request(&format!("audio-route {}", self.token)) == "ok";
             app.audio_request("pause");
             self.notices.push(
-                "Update the local STAR/KIT frontend for precision-preserving SSH audio".into(),
+                "Update the local STAR/CORE frontend for precision-preserving SSH audio".into(),
             );
             return;
         }
@@ -181,7 +181,7 @@ impl RemoteAudio {
                             s.channels,
                             s.format,
                             s.valid_bits.unwrap_or(
-                                if s.format == starkit::pcm::SampleFormat::F64 {
+                                if s.format == starcore::pcm::SampleFormat::F64 {
                                     64
                                 } else {
                                     32

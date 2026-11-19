@@ -1,8 +1,8 @@
 //! AMP-owned player artwork. Standalone and embedding use the same real state,
-//! controls and geometry; KIT owns sprites, density and transport.
+//! controls and geometry; CORE owns sprites, density and transport.
 use super::{native, render::PlayerRenderState, GraphicsConfig, Palette};
 use anyhow::{Context, Result};
-use starkit::native_surface::{
+use starcore::native_surface::{
     skin::assets::{AssetCache, Layer, Sprite},
     PixelRect, Primitive, Surface,
 };
@@ -18,7 +18,7 @@ fn button_background(palette: &Palette, kind: &str) -> String {
         "button-pressed" => c.title,
         "button-hover" if *palette == REFERENCE_PALETTE => "#383d49".into(),
         "button-hover" => {
-            use starkit::theme::color::Rgb;
+            use starcore::theme::color::Rgb;
             Rgb::parse_hex(&c.panel)
                 .unwrap()
                 .mix(Rgb::parse_hex(&c.ink).unwrap(), 0.06)
@@ -49,13 +49,13 @@ fn seek_texture(
         std::array::from_fn(|index| {
             let scale = index as u32 + 1;
             let rgba = |hex| {
-                let c = starkit::theme::color::Rgb::parse_hex(hex).unwrap();
-                starkit::image::Rgba([c.r, c.g, c.b, 255])
+                let c = starcore::theme::color::Rgb::parse_hex(hex).unwrap();
+                starcore::image::Rgba([c.r, c.g, c.b, 255])
             };
             let base = rgba(native::CACHE_BASE);
             let dot = rgba(native::CACHE_DOT);
             let pixels =
-                starkit::image::RgbaImage::from_fn(pitch * scale, pitch * scale, |x, y| {
+                starcore::image::RgbaImage::from_fn(pitch * scale, pitch * scale, |x, y| {
                     let marked = match texture {
                         native::SeekTexture::FineDots => x < scale && y < scale,
                         native::SeekTexture::Checker => (x / scale + y / scale).is_multiple_of(2),
@@ -66,7 +66,7 @@ fn seek_texture(
                         base
                     }
                 });
-            starkit::terminal_graphics::assets::encode_skin(&pixels)
+            starcore::terminal_graphics::assets::encode_skin(&pixels)
                 .expect("fixed seek texture is a valid skin asset")
         })
     });
@@ -87,8 +87,8 @@ fn transport_button(action: &str) -> bool {
 
 /// Three satin planes across the blue-gray chassis, behind the original
 /// fixed-corner bitmap outline. Bounded strips scale with native pixel density.
-pub(crate) fn silver_panel_color(y: u16, height: u16) -> starkit::theme::color::Rgb {
-    use starkit::theme::color::Rgb;
+pub(crate) fn silver_panel_color(y: u16, height: u16) -> starcore::theme::color::Rgb {
+    use starcore::theme::color::Rgb;
     let inner_height = height.saturating_sub(2).max(1);
     let step = inner_height.div_ceil(96);
     let row = y.saturating_sub(1).min(inner_height - 1) / step * step;
@@ -138,7 +138,7 @@ fn display_relief(s: &mut Surface, rect: PixelRect, palette: &Palette) {
     if rect.width < 320 || rect.height < 64 {
         return;
     }
-    use starkit::theme::color::Rgb;
+    use starcore::theme::color::Rgb;
     let c = colors(palette);
     let base = Rgb::parse_hex(&c.inset).unwrap();
     let accent = Rgb::new(palette.accent[0], palette.accent[1], palette.accent[2]);
@@ -202,7 +202,7 @@ fn display_relief(s: &mut Surface, rect: PixelRect, palette: &Palette) {
 }
 fn role_color(role: &str, original: &str, palette: &Palette) -> String {
     if *palette != REFERENCE_PALETTE {
-        use starkit::theme::color::Rgb;
+        use starcore::theme::color::Rgb;
         let c = colors(palette);
         let blend = |a: &str, b: &str, amount| {
             Rgb::parse_hex(a)
@@ -248,7 +248,7 @@ fn role_base(role: &str, p: &Palette) -> String {
         "well" | "background" => c.inset,
         "control" => c.raised,
         "hover" | "quiet_hover" => {
-            use starkit::theme::color::Rgb;
+            use starcore::theme::color::Rgb;
             Rgb::new(p.selected[0], p.selected[1], p.selected[2])
                 .mix(Rgb::new(p.accent[0], p.accent[1], p.accent[2]), 0.16)
                 .to_hex()
@@ -282,7 +282,7 @@ struct ReadoutGlyph {
     advance: u16,
 }
 pub(crate) struct PlayerSkin {
-    chrome: starkit::native_surface::style::Style,
+    chrome: starcore::native_surface::style::Style,
     source: AssetCache,
     manifest: Manifest,
     prepared: BTreeMap<String, Prepared>,
@@ -303,7 +303,7 @@ impl PlayerSkin {
         }
         let mut glyphs = BTreeMap::new();
         for (density, name, png) in super::skin_assets::GLYPHS {
-            let pixels = starkit::image::load_from_memory(png)?.to_rgba8();
+            let pixels = starcore::image::load_from_memory(png)?.to_rgba8();
             let mut label_ink = BTreeMap::new();
             let mut readouts = BTreeMap::new();
             if *name == "minimal-labels" {
@@ -376,7 +376,7 @@ impl PlayerSkin {
                     );
                 }
             }
-            let (id, png) = starkit::terminal_graphics::assets::encode_skin(&pixels)?;
+            let (id, png) = starcore::terminal_graphics::assets::encode_skin(&pixels)?;
             glyphs.insert(
                 (*density, *name),
                 GlyphAsset {
@@ -388,7 +388,7 @@ impl PlayerSkin {
             );
         }
         Ok(Self {
-            chrome: starkit::native_surface::style::Style::default(),
+            chrome: starcore::native_surface::style::Style::default(),
             source,
             manifest: serde_json::from_str(include_str!(
                 "../../assets/skins/classic/manifest.json"
@@ -409,7 +409,7 @@ impl PlayerSkin {
         {
             return Ok(());
         }
-        self.chrome = starkit::native_surface::style::Style::new(*palette);
+        self.chrome = starcore::native_surface::style::Style::new(*palette);
         let mut roles = BTreeMap::new();
         for (role, original) in &self.manifest.roles {
             let value = role_color(role, original, palette);
@@ -473,7 +473,7 @@ impl PlayerSkin {
                 .source
                 .compose(24 * density, 24 * density, layers, sprite_roles)?;
             // encode_png does not thumbnail or resize these original assets.
-            let (id, png) = starkit::terminal_graphics::assets::encode_skin(&pixels)?;
+            let (id, png) = starcore::terminal_graphics::assets::encode_skin(&pixels)?;
             let i = sprite.nine_slice.context("Missing slice metadata")?.insets;
             prepared.insert(
                 name.into(),
@@ -816,16 +816,16 @@ impl native::PlayerArtwork for PlayerSkin {
     }
     fn clock(&self, s: &mut Surface, origin: [u16; 2], value: &str, color: &str) {
         let p = self.palette.expect("prepared skin palette");
-        let inactive = starkit::theme::color::Rgb::new(p.bg[0], p.bg[1], p.bg[2])
+        let inactive = starcore::theme::color::Rgb::new(p.bg[0], p.bg[1], p.bg[2])
             .mix(
-                starkit::theme::color::Rgb::new(p.accent[0], p.accent[1], p.accent[2]),
+                starcore::theme::color::Rgb::new(p.accent[0], p.accent[1], p.accent[2]),
                 0.14,
             )
             .to_hex();
         let r = REFERENCE_PALETTE;
-        let reference = starkit::theme::color::Rgb::new(r.bg[0], r.bg[1], r.bg[2])
+        let reference = starcore::theme::color::Rgb::new(r.bg[0], r.bg[1], r.bg[2])
             .mix(
-                starkit::theme::color::Rgb::new(r.accent[0], r.accent[1], r.accent[2]),
+                starcore::theme::color::Rgb::new(r.accent[0], r.accent[1], r.accent[2]),
                 0.14,
             )
             .to_hex();
@@ -898,7 +898,7 @@ impl native::PlayerArtwork for PlayerSkin {
         }
     }
     fn button_ink(&self, action: &str, active: bool) -> String {
-        use starkit::theme::color::Rgb;
+        use starcore::theme::color::Rgb;
         let p = self.palette.expect("prepared skin palette");
         let kind = self.button_kind(action, active);
         if p == SILVER_PALETTE && transport_button(action) {
@@ -937,7 +937,7 @@ impl native::PlayerArtwork for PlayerSkin {
             ink.to_hex()
         } else {
             background
-                .best_contrast_against(&[starkit::theme::BLACK, starkit::theme::WHITE])
+                .best_contrast_against(&[starcore::theme::BLACK, starcore::theme::WHITE])
                 .to_hex()
         }
     }
@@ -961,7 +961,7 @@ impl native::PlayerArtwork for PlayerSkin {
             return;
         }
         let p = self.palette.expect("prepared skin palette");
-        starkit::native_surface::style::minimal_button(
+        starcore::native_surface::style::minimal_button(
             s,
             rect,
             &p,
@@ -1025,7 +1025,7 @@ mod tests {
     }
     #[test]
     fn thicker_seek_bar_renders_played_buffered_and_empty_at_both_densities() {
-        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        use starcore::terminal_graphics::renderer::SurfaceOverlayRenderer;
         let mut skin = PlayerSkin::new().unwrap();
         let mut state = state();
         state.buffered = 84.;
@@ -1052,7 +1052,7 @@ mod tests {
                 .rect;
             let image = SurfaceOverlayRenderer::new("monospace")
                 .render(
-                    &starkit::image::RgbaImage::new(
+                    &starcore::image::RgbaImage::new(
                         u32::from(surface.width),
                         u32::from(surface.height),
                     ),
@@ -1090,7 +1090,7 @@ mod tests {
 
     #[test]
     fn fully_cached_track_reaches_the_end_and_is_labeled() {
-        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        use starcore::terminal_graphics::renderer::SurfaceOverlayRenderer;
         let mut skin = PlayerSkin::new().unwrap();
         let mut state = state();
         state.position = state.duration * 0.8;
@@ -1121,7 +1121,7 @@ mod tests {
                 .rect;
             let image = SurfaceOverlayRenderer::new("monospace")
                 .render(
-                    &starkit::image::RgbaImage::new(
+                    &starcore::image::RgbaImage::new(
                         u32::from(surface.width),
                         u32::from(surface.height),
                     ),
@@ -1167,9 +1167,9 @@ mod tests {
                 _ => None,
             })
             .unwrap();
-        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+        let image = starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
             .render(
-                &starkit::image::RgbaImage::new(
+                &starcore::image::RgbaImage::new(
                     u32::from(surface.width),
                     u32::from(surface.height),
                 ),
@@ -1197,7 +1197,7 @@ mod tests {
     fn silver_shading_and_metal_buttons_render_at_both_densities() {
         let mut skin = PlayerSkin::new().unwrap();
         let mut renderer =
-            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace");
+            starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace");
         for density in [1, 2] {
             skin.prepare(&SILVER_PALETTE, density, false).unwrap();
             let mut surface = Surface::new(300, 240, "#000000".into());
@@ -1225,7 +1225,7 @@ mod tests {
             let scale = u32::from(density);
             let image = renderer
                 .render(
-                    &starkit::image::RgbaImage::new(300 * scale, 240 * scale),
+                    &starcore::image::RgbaImage::new(300 * scale, 240 * scale),
                     &surface,
                 )
                 .unwrap();
@@ -1278,8 +1278,8 @@ mod tests {
                 1,
             )
             .unwrap();
-        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
-            .render(&starkit::image::RgbaImage::new(1352, 230), &surface)
+        let image = starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+            .render(&starcore::image::RgbaImage::new(1352, 230), &surface)
             .unwrap();
         for (x, y, color) in [
             (700, 180, [48, 51, 64, 255]),
@@ -1346,7 +1346,7 @@ mod tests {
     #[test]
     fn kanagawa_displays_and_inactive_leds_follow_the_theme_background() {
         let t = crate::theme::builtin::load("kanagawa").unwrap();
-        let rgb = |c: starkit::theme::color::Rgb| [c.r, c.g, c.b];
+        let rgb = |c: starcore::theme::color::Rgb| [c.r, c.g, c.b];
         let p = Palette {
             bg: rgb(t.bg),
             inset_bg: None,
@@ -1361,7 +1361,7 @@ mod tests {
         assert_eq!(c.panel, t.bg.to_hex());
         assert_eq!(
             c.inset,
-            t.bg.mix(starkit::theme::color::Rgb::new(0, 0, 0), 0.06)
+            t.bg.mix(starcore::theme::color::Rgb::new(0, 0, 0), 0.06)
                 .to_hex()
         );
         assert_eq!(c.accent, t.accent.to_hex());
@@ -1369,7 +1369,7 @@ mod tests {
         assert_eq!(role_color("quiet_panel", "#20212a", &p), c.panel);
         assert_eq!(role_color("well", "#101813", &p), c.inset);
         assert_eq!(role_color("background", "#171820", &p), native::hex(p.bg));
-        let off = starkit::theme::color::Rgb::parse_hex(&inactive_led(&p)).unwrap();
+        let off = starcore::theme::color::Rgb::parse_hex(&inactive_led(&p)).unwrap();
         assert!(
             off.b > off.g && off.b > off.r,
             "Kanagawa's unlit LEDs retain its blue background hue"
@@ -1389,10 +1389,10 @@ mod tests {
                 1,
             )
             .unwrap();
-        let image = starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
-            .render(&starkit::image::RgbaImage::new(1352, 230), &surface)
+        let image = starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new("monospace")
+            .render(&starcore::image::RgbaImage::new(1352, 230), &surface)
             .unwrap();
-        let expected = starkit::theme::color::Rgb::parse_hex(&c.inset).unwrap();
+        let expected = starcore::theme::color::Rgb::parse_hex(&c.inset).unwrap();
         let body = image.get_pixel(700, 104).0;
         let top = image.get_pixel(700, 45).0;
         assert_ne!(body, [expected.r, expected.g, expected.b, 255]);
@@ -1533,7 +1533,7 @@ mod tests {
                 .find(|(d, name, _)| *d == density && *name == "minimal-labels")
                 .unwrap()
                 .2;
-            let atlas = starkit::image::load_from_memory(png).unwrap().to_rgba8();
+            let atlas = starcore::image::load_from_memory(png).unwrap().to_rgba8();
             for (text, width) in [
                 ("SAVE", 64),
                 ("SAVE AS", 88),
@@ -1613,7 +1613,7 @@ mod tests {
     #[test]
     fn active_hover_pressed_and_focus_ink_remains_readable_across_palettes() {
         use native::PlayerArtwork;
-        use starkit::theme::color::Rgb;
+        use starcore::theme::color::Rgb;
         let mut skin = PlayerSkin::new().unwrap();
         for mut palette in [
             palette(),
@@ -1661,15 +1661,15 @@ mod tests {
                                 [Primitive::Border { .. }]
                             ));
                         }
-                        let bg =
-                            starkit::theme::color::Rgb::parse_hex(&colors(&palette).panel).unwrap();
-                        let base = starkit::image::RgbaImage::from_pixel(
+                        let bg = starcore::theme::color::Rgb::parse_hex(&colors(&palette).panel)
+                            .unwrap();
+                        let base = starcore::image::RgbaImage::from_pixel(
                             24,
                             24,
-                            starkit::image::Rgba([bg.r, bg.g, bg.b, 255]),
+                            starcore::image::Rgba([bg.r, bg.g, bg.b, 255]),
                         );
                         let image =
-                            starkit::terminal_graphics::renderer::SurfaceOverlayRenderer::new(
+                            starcore::terminal_graphics::renderer::SurfaceOverlayRenderer::new(
                                 "monospace",
                             )
                             .render(&base, &surface)
@@ -1684,7 +1684,7 @@ mod tests {
     }
     #[test]
     fn readout_ink_has_equal_track_gaps_at_both_densities() {
-        use starkit::terminal_graphics::renderer::SurfaceOverlayRenderer;
+        use starcore::terminal_graphics::renderer::SurfaceOverlayRenderer;
         let mut skin = PlayerSkin::new().unwrap();
         let graphics = GraphicsConfig {
             cell_width: 8,
@@ -1738,7 +1738,7 @@ mod tests {
                 }
                 let mut previous_pixels = None;
                 for family in ["Liberation Mono", "JetBrainsMono Nerd Font"] {
-                    let base = starkit::image::RgbaImage::new(
+                    let base = starcore::image::RgbaImage::new(
                         u32::from(surface.width),
                         u32::from(surface.height),
                     );

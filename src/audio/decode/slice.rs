@@ -144,7 +144,7 @@ mod tests {
     impl Decoder for Ramp {
         fn spec(&self) -> StreamSpec {
             StreamSpec {
-                sample_format: starkit::pcm::SampleFormat::F64,
+                sample_format: starcore::pcm::SampleFormat::F64,
                 channel_mask: 0,
                 sample_rate: 44_100,
                 channels: 1,

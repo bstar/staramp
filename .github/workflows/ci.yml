@@ -35,8 +35,9 @@ jobs:
             pkg-config clang libclang-dev \
             libasound2-dev libdbus-1-dev libvulkan1 libgl1 \
             libavcodec-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libavfilter-dev
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # pinned below to match the Nix devshell
         with:
+          toolchain: "1.98.1"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: ./scripts/check-version.sh
@@ -55,7 +56,7 @@ jobs:
   # there breaks at compile time -- an unguarded D-Bus dependency, an abstract
   # socket, a `cfg` that assumed Linux -- so a build is most of the value.
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install build dependencies
@@ -63,8 +64,9 @@ jobs:
         # process; pkg-config so its build script can find them. No ALSA and
         # no D-Bus: cpal uses CoreAudio here and MPRIS is compiled out.
         run: brew install ffmpeg pkg-config
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # pinned below to match the Nix devshell
         with:
+          toolchain: "1.98.1"
           components: clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Point bindgen at the active toolchain's libclang

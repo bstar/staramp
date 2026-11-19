@@ -97,7 +97,7 @@ rayon = "1"
 # surface of a vendored SQLite that already parses a database downloaded from
 # another machine, which is the one dependency here where unused features are
 # worth removing rather than leaving in case.
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 
 # Tags. Over symphonia's metadata because symphonia cannot read APE tags on
 # .ape/.wv/.mpc at all -- 148 files in the reference library would have none --

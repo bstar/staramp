@@ -82,7 +82,7 @@ checkout on the Mac:
 
 ```sh
 python3 scripts/build-ssh-host.py bstar@192.168.86.57 \
-  --repo /home/bstar/projects/star/staramp-graphical
+  --repo /home/bstar/projects/star/staramp
 ```
 
 The command uses SSH, fast-forwards a clean remote `main`, verifies it matches

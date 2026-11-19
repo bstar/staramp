@@ -69,7 +69,7 @@ the user does not need to run remote builds manually. Use:
 
 ```sh
 python3 scripts/build-ssh-host.py bstar@192.168.86.57 \
-  --repo /home/bstar/projects/star/staramp-graphical
+  --repo /home/bstar/projects/star/staramp
 ```
 
 If direct authentication is unavailable, pass `--control-path` for a currently
@@ -343,9 +343,8 @@ output is the default and does not capture or relay samples.
 
 ## Active Classic skin work
 
-The skin implementation is on `main`; the active desktop checkout is the
-sibling `staramp-graphical` worktree, with generic foundation work in
-`starkit-amp-rack`.
+The skin implementation is on `main`, with generic foundation work in
+STAR/KIT.
 The full recovered seven-step plan is in `docs/graphical/README.md` under
 "Recovered skin implementation plan". On 2026-10-09 the user explicitly selected
 **01 — Classic stacked rack · parametric EQ** and required precise bitmap artwork

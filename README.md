@@ -9,7 +9,7 @@ A terminal player for a more civilized age.
 No subscription. No radio stations. No account required. Winamp inspired. It plays
 the files on your disk, and it plays _all_ of them.
 
-[![STAR/AMP playing a FLAC album bit-perfect, with the analyzer, album art, listening activity and a library timeline playlist](docs/screenshot.png)](docs/screenshot.png)
+<a href="docs/screenshot.gif"><img src="docs/screenshot.gif" width="450" alt="STAR/AMP in graphical mode with the Kanagawa theme, playing Van Halen's Jump with the analyzer moving, a custom parametric EQ, the 1984 album art and a Van Halen playlist"></a>
 
 ## Get it
 

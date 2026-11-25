@@ -362,6 +362,9 @@ fn bit_depth_of(decoder: &ff::decoder::Audio) -> Option<u32> {
         Sample::F32(_) => None, // float: no meaningful integer depth
         Sample::F64(_) => None,
         Sample::I64(_) => Some(64),
-        Sample::None => None,
+        // `Sample::None`, and formats ffmpeg-next exposes only for some FFmpeg
+        // releases: 9.1 adds `DSD`, 9.0 does not have it. Naming it would
+        // break the build against the other, so a wildcard covers both.
+        _ => None,
     }
 }

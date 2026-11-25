@@ -17,11 +17,19 @@ omarchy plugin add https://github.com/bstar/staramp.git --enable
 
 The plugin manifest is at the repository root because Omarchy requires it
 there. Omarchy clones the source repository into its plugin directory; it does
-not build or launch STAR/AMP as part of the plugin installation. To update,
-update the STAR/AMP application first, then run:
+not build or launch STAR/AMP as part of the plugin installation. To update the
+widget:
 
 ```sh
 omarchy plugin update bstar.staramp
+```
+
+To remove it, run the command below. It deletes the plugin folder and takes the
+widget off the bar. STAR/AMP itself, its library and its settings stay as they
+are.
+
+```sh
+omarchy plugin remove bstar.staramp
 ```
 
 The manifest, widget, and application are released together under one

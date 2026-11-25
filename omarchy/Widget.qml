@@ -12,7 +12,7 @@ BarWidget {
   // Release version, kept equal to Cargo.toml by scripts/check-version.sh.
   // Compatibility with the installed player is decided by `protocol`, not by
   // this: the widget updates by git and the player by pacman, in either order.
-  readonly property string pluginVersion: "0.1.1"
+  readonly property string pluginVersion: "0.1.2"
   readonly property int supportedProtocol: 1
   readonly property string installGuide: "https://github.com/bstar/staramp/blob/main/docs/installing.md"
 

@@ -5,6 +5,8 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-24
+
 ### Framework
 
 - KIT owns generic media controls; the legacy render-only protocol delegates to it.
@@ -40,6 +42,19 @@ and this project uses [semantic versioning](https://semver.org/spec/v2.0.0.html)
   through. A failed import now also takes back an artist folder it created.
 
 ### Added
+
+- **An Arch package with every release.** `staramp-<version>-1-x86_64.pkg.tar.zst`
+  installs with `pacman -U`, and the release also carries the `PKGBUILD` and
+  source tarball it was built from. CI builds it in a clean Arch container,
+  installs it in a fresh one, decodes a test file and removes it again.
+- **The Omarchy widget explains a missing player.** When `staramp` isn't on
+  `PATH` the popup says so and links to the install guide; when it isn't
+  running it says that instead. The widget never installs anything.
+- **The widget and player check a protocol number, not the release version.**
+  `ctl status` and `scrobble snapshot` now include `"protocol": 1`. The plugin
+  updates by git and the player by its package manager, so either can arrive
+  first; a mismatch tells you which one to update. `omarchy plugin remove` is
+  now documented.
 
 - Standalone SSH audio in terminal and Classic presentations with `--ssh`.
   Playback stays on the server and bounded PCM streams to the local device;
@@ -238,6 +253,7 @@ First release.
   PKGBUILD, an AppImage carrying its own ffmpeg, and a portable tarball built
   against glibc 2.31.
 
-[Unreleased]: https://github.com/bstar/staramp/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/bstar/staramp/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/bstar/staramp/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bstar/staramp/releases/tag/v0.1.1
 [0.1.0]: https://github.com/bstar/staramp/releases/tag/v0.1.0

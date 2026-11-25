@@ -13,8 +13,16 @@ the files on your disk, and it plays _all_ of them.
 
 ## Get it
 
-Linux releases use Nix and AppImage. Apple Silicon macOS builds are available
-on the [releases page](https://github.com/bstar/staramp/releases/latest).
+On Arch Linux and Omarchy, add the signed [star] package repository once, and
+STAR/AMP then updates with `pacman -Syu` and `omarchy update`. Its
+[setup page](https://github.com/bstar/star-packages) has the steps. After that:
+
+```sh
+sudo pacman -S staramp
+```
+
+Linux releases also come as an AppImage and through Nix. Apple Silicon macOS
+builds are on the [releases page](https://github.com/bstar/staramp/releases/latest).
 
 ```sh
 nix run github:bstar/staramp        # Nix, on Linux or Apple Silicon macOS
@@ -23,8 +31,21 @@ nix run github:bstar/staramp        # Nix, on Linux or Apple Silicon macOS
 [Installing](docs/installing.md) covers every route, including building from
 source on Linux and macOS.
 
-On Omarchy, the optional [STAR/AMP shell widget](docs/omarchy.md) adds a
-now-playing popup with playback controls to the bar.
+### Omarchy bar widget
+
+The optional STAR/AMP widget adds a now-playing popup with playback controls
+to the Omarchy bar. It needs STAR/AMP installed, as above, and installs nothing
+itself.
+
+```sh
+omarchy plugin add https://github.com/bstar/staramp.git --enable   # install
+omarchy plugin update bstar.staramp                                # update
+omarchy plugin remove bstar.staramp                                # remove
+```
+
+Removing the widget leaves STAR/AMP, its library and its settings untouched.
+[The widget guide](docs/omarchy.md) explains what it shows and how it copes
+with a player of a different version.
 
 ## Play something
 

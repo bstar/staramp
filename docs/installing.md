@@ -40,16 +40,29 @@ Declaratively, with the home-manager module:
 ## Arch and Omarchy
 
 Each release includes a pacman package built and tested on a clean Arch
-system. Download `staramp-<version>-1-x86_64.pkg.tar.zst` from the release,
-then install it:
+system. The easiest way to get it is the signed [star] package repository,
+which serves each published release. Set it up once by following
+[its instructions](https://github.com/bstar/star-packages), then:
+
+```sh
+sudo pacman -S staramp
+```
+
+From then on STAR/AMP updates with the rest of the system on `pacman -Syu`,
+which is also what `omarchy update` runs.
+
+To install a single release without the repository, download
+`staramp-<version>-1-x86_64.pkg.tar.zst` from the release and run:
 
 ```sh
 sudo pacman -U ./staramp-*-x86_64.pkg.tar.zst
 ```
 
-Pacman pulls in FFmpeg and ALSA and installs the launcher entry and icon.
-`sudo pacman -R staramp` removes it. Installing a downloaded file this way
-does not update itself. Install the next release's package the same way.
+A package installed this way doesn't update itself; install the next
+release's package the same way.
+
+Either way, pacman pulls in FFmpeg and ALSA and installs the launcher entry and
+icon, and `sudo pacman -R staramp` removes it.
 
 On Omarchy, add the [shell widget](omarchy.md) afterwards if you want
 now-playing controls in the bar.

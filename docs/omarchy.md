@@ -24,10 +24,22 @@ update the STAR/AMP application first, then run:
 omarchy plugin update bstar.staramp
 ```
 
-The manifest, widget, and application share one release version, checked by
-`scripts/check-version.sh`. Basic MPRIS controls still work with an older
-installed player; the popup identifies a version mismatch and waits for a
-matching version before enabling repeat and queue details.
+The manifest, widget, and application are released together under one
+version, checked by `scripts/check-version.sh`. They don't have to be
+*installed* at the same version, though. The plugin updates by git and the
+player through your package manager, so either can arrive first. The widget
+decides compatibility from the `protocol` number that `staramp ctl status`
+and `staramp scrobble snapshot` report, not from the release version:
+
+| Widget sees | What works |
+| --- | --- |
+| `staramp` not on `PATH` | The bar icon says STAR/AMP isn't installed, and the popup links to [installing](installing.md) |
+| Installed but not running | The popup says STAR/AMP isn't running |
+| Same protocol | Everything |
+| Older or newer protocol, or a player too old to report one | Basic MPRIS controls. Repeat, queue position and history wait, and the popup says which side to update |
+
+The protocol number goes up only when a field the widget reads changes
+meaning or is removed. New fields don't change it.
 Queue details are queried with `staramp ctl status` only while the popup is
 open. They disappear if the CLI is missing or reports a different track.
 Listening details come from `staramp scrobble snapshot`, which reads STAR/AMP's

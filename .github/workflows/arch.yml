@@ -1,0 +1,72 @@
+name: arch
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: &docs
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'LICENSES/**'
+  pull_request:
+    paths-ignore: *docs
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install the native Arch toolchain
+        run: pacman -Syu --needed --noconfirm base-devel rust git ffmpeg alsa-lib clang pkgconf
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Prepare an unprivileged builder
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Build and test the pacman package
+        run: runuser -u builder -- ./scripts/dist/arch.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: staramp-arch
+          path: |
+            dist/*.pkg.tar.zst
+            dist/PKGBUILD
+            dist/staramp-*.tar.gz
+          if-no-files-found: error
+
+  install:
+    needs: package
+    runs-on: ubuntu-latest
+    # A fresh container verifies runtime dependencies rather than inheriting
+    # the compiler and libraries installed on the package builder.
+    container: archlinux:latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: staramp-arch
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: repo
+      - name: Install and run the package
+        run: |
+          pacman -Syu --noconfirm
+          pacman -U --noconfirm ./*.pkg.tar.zst
+          staramp --version
+          # Through libavcodec: proves the system ffmpeg the package depends on
+          # actually decodes, not just that the loader found it.
+          staramp probe repo/testdata/tone.wv
+          staramp decode repo/testdata/tone.wv -o /tmp/out.wav
+          test -f /usr/share/applications/staramp.desktop
+          test -f /usr/share/icons/hicolor/scalable/apps/staramp.svg
+          test -f /usr/share/licenses/staramp/ffmpeg-LGPL-2.1.txt
+      - name: Remove it cleanly
+        run: |
+          pacman -R --noconfirm staramp
+          ! command -v staramp

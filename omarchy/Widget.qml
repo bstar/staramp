@@ -9,7 +9,12 @@ import qs.Ui
 BarWidget {
   id: root
   moduleName: "bstar.staramp"
+  // Release version, kept equal to Cargo.toml by scripts/check-version.sh.
+  // Compatibility with the installed player is decided by `protocol`, not by
+  // this: the widget updates by git and the player by pacman, in either order.
   readonly property string pluginVersion: "0.1.1"
+  readonly property int supportedProtocol: 1
+  readonly property string installGuide: "https://github.com/bstar/staramp/blob/main/docs/installing.md"
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
   readonly property var player: {
@@ -27,7 +32,11 @@ BarWidget {
   readonly property string face: bar ? bar.fontFamily : Style.font.family
   property bool popupOpen: false
   property var queueStatus: null
-  property string observedVersion: ""
+  // -1 not yet asked; 0 a player too old to report a protocol.
+  property int observedProtocol: -1
+  // -1 not yet checked; 0 `staramp` is not on PATH; 1 it is.
+  property int installState: -1
+  readonly property bool notInstalled: installState === 0
   property bool statusFailed: false
   property var listeningSnapshot: null
   readonly property bool opened: popupOpen
@@ -36,7 +45,9 @@ BarWidget {
   readonly property real openPanelIndicatorWidth: player && !vertical
     ? Math.max(1, Math.ceil(titleMetrics.tightBoundingRect(button.text).width))
     : button.labelWidth
-  readonly property bool versionMismatch: observedVersion !== "" && observedVersion !== pluginVersion
+  readonly property bool compatible: observedProtocol === supportedProtocol
+  readonly property bool protocolMismatch: observedProtocol >= 0 && !compatible
+  readonly property string unavailableText: notInstalled ? "STAR/AMP isn't installed" : "STAR/AMP is not running"
 
   function close() { popupOpen = false }
   function open() { popoutSwitchClosing = false; popupOpen = true }
@@ -57,7 +68,7 @@ BarWidget {
   function queueMatches(status) {
     if (!player || !status || !player.metadata) return false
     var id = player.metadata["mpris:trackid"]
-    return !versionMismatch && id !== undefined
+    return compatible && id !== undefined
       && String(id).indexOf(String(status.trackId)) !== -1
       && root.title === String(status.title || "")
       && root.artist === String(status.artist || "")
@@ -71,13 +82,14 @@ BarWidget {
 
   onPlayerChanged: {
     queueStatus = null
-    observedVersion = ""
+    observedProtocol = -1
     statusFailed = false
     if (player) refreshQueue()
   }
   onPopupOpenChanged: {
     if (popupOpen) {
       popoutSwitchClosing = false
+      if (installState !== 1 && !installProcess.running) installProcess.running = true
       statusFailed = false
       refreshQueue()
       refreshListening()
@@ -112,13 +124,23 @@ BarWidget {
       : (root.player.isPlaying ? "󰐊  " : "󰏤  ") + (root.title || "STAR/AMP")
     fontSize: Style.font.body
     horizontalMargin: 6
-    tooltipText: root.player ? (root.title || "STAR/AMP") + (root.artist ? " — " + root.artist : "") : "STAR/AMP is not running"
+    tooltipText: root.player ? (root.title || "STAR/AMP") + (root.artist ? " — " + root.artist : "") : root.unavailableText
     onPressed: function(b) {
       if (b === Qt.MiddleButton) root.playPause()
       else if (b === Qt.RightButton && root.player && root.player.canGoNext) root.player.next()
       else if (b === Qt.LeftButton) root.popupOpen = !root.popupOpen
     }
 
+  }
+
+  // Absent is a state to explain, not an error: the plugin installs by git
+  // and cannot install the player. Checked at load and again on each open
+  // until found, so installing STAR/AMP needs no shell restart.
+  Process {
+    id: installProcess
+    command: ["sh", "-c", "command -v staramp"]
+    running: true
+    onExited: function(exitCode) { root.installState = exitCode === 0 ? 1 : 0 }
   }
 
   // The CLI supplies only queue context. MPRIS owns all transport and slider state.
@@ -134,7 +156,7 @@ BarWidget {
         if (!root.popupOpen || !root.player) return
         try {
           var next = JSON.parse(String(text))
-          root.observedVersion = String(next.version || "older")
+          root.observedProtocol = Number(next.protocol) || 0
           root.queueStatus = root.queueMatches(next) ? next : null
         } catch (e) {
           root.queueStatus = null
@@ -151,7 +173,7 @@ BarWidget {
         if (!root.popupOpen) return
         try {
           var next = JSON.parse(String(text))
-          root.listeningSnapshot = next.version === root.pluginVersion ? next : null
+          root.listeningSnapshot = Number(next.protocol) === root.supportedProtocol ? next : null
         } catch (e) {
           root.listeningSnapshot = null
         }
@@ -241,7 +263,7 @@ BarWidget {
           Text {
             width: parent.width
             textFormat: Text.PlainText
-            text: !root.player ? "STAR/AMP is not running" : root.title || "Nothing playing"
+            text: !root.player ? root.unavailableText : root.title || "Nothing playing"
             color: root.ink
             font.family: root.face
             font.pixelSize: Style.font.subtitle
@@ -277,12 +299,26 @@ BarWidget {
           }
           Text {
             width: parent.width
-            visible: root.versionMismatch
-            text: "STAR/AMP and widget versions differ"
+            visible: root.protocolMismatch
+            text: root.observedProtocol < root.supportedProtocol
+              ? "Update STAR/AMP for queue, repeat and history"
+              : "Update the widget: omarchy plugin update bstar.staramp"
             color: root.ink
             font.family: root.face
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
+          }
+          Text {
+            width: parent.width
+            visible: root.notInstalled
+            textFormat: Text.StyledText
+            text: "The widget needs the player. <a href=\"" + root.installGuide + "\">How to install STAR/AMP</a>"
+            linkColor: root.ink
+            color: Qt.darker(root.ink, 1.3)
+            font.family: root.face
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+            onLinkActivated: function(link) { Qt.openUrlExternally(link) }
           }
         }
       }
@@ -386,7 +422,7 @@ BarWidget {
           focusable: true
           foreground: root.ink
           enabled: !!root.player && root.player.loopSupported && root.player.canControl
-            && root.observedVersion === root.pluginVersion
+            && root.compatible
           selected: enabled && root.player.loopState !== MprisLoopState.None
           onClicked: {
             if (!root.player) return

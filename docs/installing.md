@@ -6,6 +6,7 @@ route that matches your machine.
 
 | Route | For | Needs on the machine |
 | --- | --- | --- |
+| [Arch and Omarchy](#arch-and-omarchy) | Arch Linux, Omarchy | nothing beyond what pacman installs |
 | [AppImage](#appimage) | any desktop Linux | ALSA, which every desktop already has |
 | [Nix](#nix-and-nixos) | NixOS, or Nix on Linux or macOS | Nix with flakes |
 | [macOS](#macos) | Apple Silicon | release archive or Nix; FFmpeg for STAR/AMP |
@@ -35,6 +36,23 @@ Declaratively, with the home-manager module:
   };
 }
 ```
+
+## Arch and Omarchy
+
+Each release includes a pacman package built and tested on a clean Arch
+system. Download `staramp-<version>-1-x86_64.pkg.tar.zst` from the release,
+then install it:
+
+```sh
+sudo pacman -U ./staramp-*-x86_64.pkg.tar.zst
+```
+
+Pacman pulls in FFmpeg and ALSA and installs the launcher entry and icon.
+`sudo pacman -R staramp` removes it. Installing a downloaded file this way
+does not update itself. Install the next release's package the same way.
+
+On Omarchy, add the [shell widget](omarchy.md) afterwards if you want
+now-playing controls in the bar.
 
 ## AppImage
 

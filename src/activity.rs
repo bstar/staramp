@@ -1421,6 +1421,7 @@ pub fn print_snapshot() -> Result<()> {
         "{}",
         serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
+            "protocol": crate::ipc::INTEGRATION_PROTOCOL,
             "providers": providers,
             "pending": store.pending_count(),
             "recent": recent,

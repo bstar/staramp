@@ -15,6 +15,14 @@ use anyhow::{Context, Result};
 
 use crate::audio::player::{Command, PlayState, Player};
 
+/// The shape of the JSON that `ctl status` and `scrobble snapshot` print for
+/// integrations such as the Omarchy widget. Raise it only when a field those
+/// readers depend on changes meaning or disappears. Adding a field is not a
+/// protocol change. Readers compare this number, not the release version, so
+/// a widget updated by git and a player updated by pacman can arrive in
+/// either order.
+pub const INTEGRATION_PROTOCOL: u32 = 1;
+
 /// `$XDG_RUNTIME_DIR/staramp.sock`, falling back to the cache directory.
 ///
 /// On Linux the file is not what is actually bound -- see [`listen`] -- but it
@@ -694,8 +702,9 @@ fn handle_with_activity(
             // JSON by hand: one object with fixed keys does not justify a
             // serialisation dependency on the control path.
             format!(
-                r#"{{"version":"{}","state":"{state}","artist":{},"title":{},"position":{:.2},"buffered":{:.3},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
+                r#"{{"version":"{}","protocol":{},"state":"{state}","artist":{},"title":{},"position":{:.2},"buffered":{:.3},"duration":{:.2},"volume":{:.2},"crossfade":{},"bit_perfect":{},"loading":{},"trackId":"/org/staramp/track/{track_revision}","index":{index},"total":{total},"shuffle":{shuffle},"repeat":"{repeat}"}}"#,
                 env!("CARGO_PKG_VERSION"),
+                INTEGRATION_PROTOCOL,
                 json_string(&artist),
                 json_string(&title),
                 st.position_secs(),
@@ -1497,6 +1506,7 @@ mod tests {
         let status: serde_json::Value = serde_json::from_str(&ask(&client, "status")).unwrap();
         assert_eq!(status["index"], 0);
         assert_eq!(status["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(status["protocol"], INTEGRATION_PROTOCOL);
         assert_eq!(status["total"], 0);
         assert_eq!(status["shuffle"], false);
         assert_eq!(status["repeat"], "Off");

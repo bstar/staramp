@@ -41,6 +41,12 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: ./scripts/check-version.sh
+      # The repository root is also the Omarchy plugin folder, and
+      # `omarchy plugin add` refuses any folder that contains a symlink.
+      - name: No symlinks in the plugin folder
+        run: |
+          links=$(git ls-files -s | awk '$1 == "120000" { print $4 }')
+          [ -z "$links" ] || { echo "symlinks break omarchy plugin add:"; echo "$links"; exit 1; }
       - run: cargo fmt --check
       # dead_code is allowed rather than denied: a few modules are complete and
       # tested ahead of the UI that will reach them. Every other lint is an

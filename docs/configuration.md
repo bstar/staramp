@@ -67,7 +67,9 @@ All of these are off until you turn them on.
 
 `theme = "system"` follows the desktop. STAR/AMP reads Stylix's
 `~/.config/stylix/palette.json`, so whatever base16 scheme the rest of the
-desktop is set to, the player matches it, analyzer ramp included.
+desktop is set to, the player matches it, analyzer ramp included. Without
+Stylix it uses the active Omarchy theme's colours and light or dark mode, and
+a theme switch reaches the running player within a second.
 
 ```sh
 staramp theme list          # what is available, and what the system is set to

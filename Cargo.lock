@@ -337,7 +337,7 @@ dependencies = [
  "regex",
  "rustc-hash 2.1.3",
  "shlex",
- "syn 2.0.119",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -3902,8 +3902,8 @@ dependencies = [
 
 [[package]]
 name = "starcore"
-version = "0.25.1"
-source = "git+https://github.com/bstar/starcore?tag=v0.25.1#13c0d21cfcdc093e6b670a65c47541e5bef7a256"
+version = "0.25.4"
+source = "git+https://github.com/bstar/starcore?tag=v0.25.4#f80985cb2ad9f3ff093b3bcd19a72a699801e8db"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

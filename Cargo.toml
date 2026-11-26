@@ -26,7 +26,7 @@ categories = ["multimedia::audio", "command-line-utilities"]
 # Tagged releases use immutable version tags. Update this manifest and its
 # Git-sourced lock together in a separate dependency commit.
 # Use scripts/check-core.sh for newer local changes without rewriting the lock.
-starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.1", version = "0.25", features = [
+starcore = { git = "https://github.com/bstar/starcore", tag = "v0.25.4", version = "0.25", features = [
     "image",
     "wsz",
     "audio-output",
